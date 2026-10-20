@@ -2,15 +2,16 @@
 #include <Arduino.h>
 #include <vector>
 #include <string>
+#include <map>
 #include "config.h"
 
 // ---------------------------------------------------------------------------
 // Macro data model + execution engine.
 //
 // A macro is an ordered list of Steps. Steps include key taps, key down/up,
-// typed text, media keys, fixed delays, and loops (with a repeat count; 0 = run
-// until the macro is stopped). Configured key-hold and delay durations receive
-// a random +/-1000 ms variation each time their step runs.
+// typed text, media keys, delays, workflow calls, random choices and loops
+// (repeat count 0 = until stopped). Optional timing variation is +/-10 ms
+// below 2 seconds and +/-1000 ms for longer durations.
 //
 // Each physical key, on each layer, has a trigger mode:
 //   TAP    - run the macro once per key press
@@ -28,10 +29,13 @@ enum class StepType : uint8_t {
     LOOP_START, // begin loop; 'value' = repeat count (0 = until stopped)
     LOOP_END,   // end of innermost loop
     LAYER,      // switch active layer to 'value'
+    CALL,       // execute a named workflow once
     RANDOM,     // run one randomly selected macro from 'choices'
 };
 
 struct MacroRef {
+    std::string workflow; // empty selects the legacy layer/key binding
+    uint16_t weight = 1;
     uint8_t layer = 0;
     uint8_t key = 0;
 };
@@ -43,6 +47,7 @@ struct Step {
     uint16_t    value   = 0;      // ms / repeat / usage / layer, per type
     std::string text;            // only for TEXT
     std::vector<MacroRef> choices;
+    uint8_t avoidRecent = 0; // exclude up to 16 recent choices; skip if exhausted
     int         matchIndex = -1; // LOOP_START<->LOOP_END pairing (precomputed)
 };
 
@@ -76,7 +81,14 @@ struct Layer {
     KeyBinding  keys[KEY_COUNT];
 };
 
+struct Workflow : KeyBinding {
+    std::string id;
+    std::string kind = "nano";
+};
+
 struct Config {
+    std::vector<Workflow> workflows;
+    const KeyBinding* findWorkflow(const std::string& id) const;
     std::vector<Layer> layers;
     bool randomizedDelay = true;
     void ensureLayer(size_t n);
@@ -149,6 +161,9 @@ private:
 
     static void validateLoops(KeyBinding& kb);
 
+    // History lasts for one key activation, including all toggle/hold passes.
+    std::map<const Step*, std::vector<const KeyBinding*>> choiceHistory_;
+    std::vector<const std::vector<Step>*> callStack_;
     Config cfg_;
     int    layer_      = 0;
 

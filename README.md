@@ -84,6 +84,85 @@ pio device monitor            # view the serial log (115200)
 
 The first `uploadfs` installs the config UI and the example `macros.json`.
 
+## Reusable nano and micro workflows
+
+The editor's **+ nano** and **+ micro** buttons create named workflows without
+using physical key slots. Select a workflow in the editor dropdown, name it,
+and add steps. Nano workflows typically represent one action (walk, attack,
+heal); micro workflows compose these actions with **Call workflow** steps.
+These labels organize the library; both support the same steps and can call
+other workflows. Calls execute once, independent of the entry key's trigger.
+
+Select a physical key to build a controller with **Random workflow**. Select
+its candidate workflows, set their relative weights, and choose how many
+recent selections to exclude (0–16). A Toggle key repeats the controller until
+pressed again; Hold runs until released. Save before testing. Named workflows
+can be tested by calling them from a physical key; Stop releases held keys.
+
+Random selection excludes recent choices **per random step**, across nested
+calls and repeated Toggle/Hold passes within one key activation. Starting a
+key again resets the history. Weights apply only to remaining candidates.
+If no candidate remains, the step skips and logs the reason; it does not
+relax the exclusion rule. Keep the exclusion window smaller than the number
+of distinct non-empty candidates. Two choices excluding the previous one
+will alternate, so use at least three choices for variety. Finite workflows
+can still repeat longer patterns; randomness does not guarantee uniqueness.
+
+A complete example is in [`examples/workflows.json`](examples/workflows.json):
+three nano actions, three composed micro workflows, and a weighted Toggle
+controller. Its bindings (`W`, `A`, `H`) are illustrative. To use it, back up
+`data/macros.json`, copy the example there, then upload the filesystem. This
+replaces the device configuration; normal editor saves retain existing keys.
+
+The firmware sends keyboard input without observing game state. The example
+heals when randomly selected, not when health is low. Health/enemy conditions,
+cooldowns and per-action timing ranges are not implemented by this change.
+The existing global timing variation is still available.
+
+The library supports up to 64 workflows, 256 steps each, and eight nested
+calls. Missing references are rejected on save. Runtime cycles/depth overflow
+skip with a log entry. Existing configs and layer/key random choices remain
+supported. Workflow IDs stay stable when names change; remove references
+before deleting a workflow in the editor. Config version 2 adds:
+
+```json
+{"type":"call", "workflow":"walk"}
+```
+
+```json
+{"type":"random", "avoidRecent":1, "choices":[
+  {"workflow":"approach", "weight":3},
+  {"workflow":"burst", "weight":2},
+  {"workflow":"recover", "weight":1}
+]}
+```
+
+See [`tests/README.md`](tests/README.md) for host tests and firmware checks.
+
+## Preview and export JSON
+
+- **JSON / Export** in the editor previews the selected key or workflow,
+  including unsaved changes. Call/random references remain references in this
+  fragment; choose **Full configuration** to include all their targets.
+- **Export JSON** in the header opens a full configuration backup, including
+  workflows, relative weights, recent-choice exclusions and timing settings.
+- After stopping a browser recording, **JSON / Export** in the recorder exports
+  it without applying it to a key. This is a standalone `macros.json` with
+  `randomizedDelay: false`, preserving captured key transitions and delays.
+  Loading this recording configuration replaces existing macros; back them up
+  first. Use **Use steps** instead to apply the recording within the editor.
+
+Every preview is formatted, read-only JSON with **Copy JSON** and **Download
+JSON**. If clipboard access is unavailable on the device's HTTP page, Copy
+selects the text for the browser/device's Copy command. Export does not save
+changes to the keyboard.
+
+Use these definitions to inspect action order, repeated sequences, delays,
+loops and selection weights. They are not expanded execution traces: random
+choices and timing jitter are resolved during execution, and exports cannot
+guarantee that a sequence will never repeat. The execution log remains the
+place to inspect actions actually chosen and their measured timings.
+
 ## Configuring macros
 
 1. After flashing, the device creates a Wi-Fi network:

@@ -2,6 +2,7 @@
 #include "keymap.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <set>
 
 bool storageBegin() {
     if (LittleFS.begin(false)) return true;
@@ -82,20 +83,87 @@ static bool parseStep(JsonObjectConst o, Step& step) {
         step.value = o["layer"] | 0;
         return true;
     }
+    if (type == "call") {
+        step.type = StepType::CALL;
+        step.text = (const char*)(o["workflow"] | "");
+        return !step.text.empty();
+    }
     if (type == "random") {
         step.type = StepType::RANDOM;
+        int recent = o["avoidRecent"] | 0;
+        if (recent < 0 || recent > 16) return false;
+        step.avoidRecent = recent;
         JsonArrayConst choices = o["choices"].as<JsonArrayConst>();
         for (JsonObjectConst choice : choices) {
-            if (step.choices.size() >= MAX_LAYERS * KEY_COUNT) return false;
+            if (step.choices.size() >= MAX_LAYERS * KEY_COUNT + 64) return false;
             MacroRef ref;
+            ref.workflow = (const char*)(choice["workflow"] | "");
+            int weight = choice["weight"] | 1;
+            if (weight < 1 || weight > 1000) return false;
+            ref.weight = weight;
             ref.layer = choice["layer"] | MAX_LAYERS;
             ref.key = choice["key"] | KEY_COUNT;
-            if (ref.layer >= MAX_LAYERS || ref.key >= KEY_COUNT) return false;
+            if (ref.workflow.empty() && (ref.layer >= MAX_LAYERS || ref.key >= KEY_COUNT)) return false;
             step.choices.push_back(ref);
         }
         return !step.choices.empty();
     }
     return false;
+}
+
+// Validate new references before replacing the saved file. Existing v1 configs
+// with only layer/key random steps remain supported.
+static bool validateWorkflows(JsonDocument& doc, String& err) {
+    std::set<std::string> ids;
+    JsonVariantConst library = doc["workflows"];
+    if (!library.isNull() && !library.is<JsonArrayConst>()) {
+        err = "workflows must be an array"; return false;
+    }
+    JsonArrayConst workflows = library.as<JsonArrayConst>();
+    if (workflows.size() > 64) { err = "maximum 64 workflows"; return false; }
+    for (JsonObjectConst w : workflows) {
+        std::string id = w["id"] | "";
+        String kind = w["kind"] | "nano";
+        if (id.empty() || id.size() > 48 || !ids.insert(id).second ||
+            (kind != "nano" && kind != "micro")) {
+            err = "workflow IDs must be unique (1-48 characters); kind must be nano or micro";
+            return false;
+        }
+        if (!w["steps"].is<JsonArrayConst>() || w["steps"].size() > MAX_MACRO_STEPS) {
+            err = "workflow requires steps (maximum 256)"; return false;
+        }
+    }
+    auto checkSteps = [&](JsonArrayConst steps, bool strict) -> bool {
+        int loops = 0;
+        for (JsonObjectConst so : steps) {
+            String type = so["type"] | "";
+            type.toLowerCase();
+            if (strict || type == "call" || type == "random") {
+                Step step;
+                if (!parseStep(so, step)) { err = "invalid workflow step or random choice"; return false; }
+                if (step.type == StepType::CALL && !ids.count(step.text)) {
+                    err = "call references a missing workflow"; return false;
+                }
+                for (const auto& ref : step.choices) {
+                    if (!ref.workflow.empty() && !ids.count(ref.workflow)) {
+                        err = "random choice references a missing workflow"; return false;
+                    }
+                }
+            }
+            if (type == "loop") ++loops;
+            if (type == "endloop" && --loops < 0 && strict) {
+                err = "unbalanced workflow loops"; return false;
+            }
+        }
+        if (strict && loops) { err = "unbalanced workflow loops"; return false; }
+        return true;
+    };
+    for (JsonObjectConst w : workflows)
+        if (!checkSteps(w["steps"].as<JsonArrayConst>(), true)) return false;
+    for (JsonObjectConst layer : doc["layers"].as<JsonArrayConst>())
+        for (JsonObjectConst key : layer["keys"].as<JsonArrayConst>())
+            if (!checkSteps(key["steps"].as<JsonArrayConst>(), false)) return false;
+    return true;
 }
 
 static TriggerMode parseTrigger(const char* s) {
@@ -108,6 +176,7 @@ static TriggerMode parseTrigger(const char* s) {
 
 bool loadConfig(Config& cfg) {
     cfg.layers.clear();
+    cfg.workflows.clear();
     File f = LittleFS.open(MACRO_FILE, "r");
     if (!f) { cfg.ensureLayer(0); return false; }
 
@@ -116,6 +185,19 @@ bool loadConfig(Config& cfg) {
     f.close();
     if (e) { cfg.ensureLayer(0); return false; }
 
+    String validationError;
+    if (!validateWorkflows(doc, validationError)) { cfg.ensureLayer(0); return false; }
+    for (JsonObjectConst wo : doc["workflows"].as<JsonArrayConst>()) {
+        Workflow workflow;
+        workflow.id = (const char*)(wo["id"] | "");
+        workflow.name = (const char*)(wo["name"] | "");
+        workflow.kind = (const char*)(wo["kind"] | "nano");
+        for (JsonObjectConst so : wo["steps"].as<JsonArrayConst>()) {
+            Step step;
+            if (parseStep(so, step)) workflow.steps.push_back(step);
+        }
+        cfg.workflows.push_back(workflow);
+    }
     cfg.randomizedDelay = doc["randomizedDelay"] | true;
     JsonArrayConst layers = doc["layers"].as<JsonArrayConst>();
     for (JsonObjectConst lo : layers) {
@@ -193,13 +275,19 @@ static void stepToJson(const Step& s, JsonObject o) {
             o["type"]  = "layer";
             o["layer"] = s.value;
             break;
+        case StepType::CALL:
+            o["type"] = "call";
+            o["workflow"] = s.text;
+            break;
         case StepType::RANDOM: {
             o["type"] = "random";
+            o["avoidRecent"] = s.avoidRecent;
             JsonArray choices = o["choices"].to<JsonArray>();
             for (const MacroRef& ref : s.choices) {
                 JsonObject choice = choices.add<JsonObject>();
-                choice["layer"] = ref.layer;
-                choice["key"] = ref.key;
+                if (!ref.workflow.empty()) choice["workflow"] = ref.workflow;
+                else { choice["layer"] = ref.layer; choice["key"] = ref.key; }
+                choice["weight"] = ref.weight;
             }
             break;
         }
@@ -215,7 +303,17 @@ static const char* triggerName(TriggerMode t) {
 }
 
 static void buildDoc(const Config& cfg, JsonDocument& doc) {
-    doc["version"] = 1;
+    doc["version"] = cfg.workflows.empty() ? 1 : 2;
+    doc["randomizedDelay"] = cfg.randomizedDelay;
+    JsonArray workflows = doc["workflows"].to<JsonArray>();
+    for (const auto& workflow : cfg.workflows) {
+        JsonObject wo = workflows.add<JsonObject>();
+        wo["id"] = workflow.id;
+        wo["name"] = workflow.name;
+        wo["kind"] = workflow.kind;
+        JsonArray steps = wo["steps"].to<JsonArray>();
+        for (const auto& step : workflow.steps) stepToJson(step, steps.add<JsonObject>());
+    }
     JsonArray layers = doc["layers"].to<JsonArray>();
     for (const auto& layer : cfg.layers) {
         JsonObject lo = layers.add<JsonObject>();
@@ -247,6 +345,7 @@ bool saveRawJson(const String& json, String& err) {
     DeserializationError e = deserializeJson(doc, json);
     if (e) { err = String("invalid json: ") + e.c_str(); return false; }
     if (!doc["layers"].is<JsonArrayConst>()) { err = "missing 'layers' array"; return false; }
+    if (!validateWorkflows(doc, err)) return false;
     File f = LittleFS.open(MACRO_FILE, "w");
     if (!f) { err = "cannot open file for writing"; return false; }
     bool ok = serializeJson(doc, f) > 0;

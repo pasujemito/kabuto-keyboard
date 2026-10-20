@@ -1,7 +1,9 @@
+#include <algorithm>
 #include "macro_engine.h"
 #include "hid_keyboard.h"
 #include "keymap.h"
 #include "storage.h"
+#include "workflow_selection.h"
 #include <cstdio>
 #include <cstring>
 
@@ -15,6 +17,12 @@ static uint32_t macroLogNextId = 1;
 static portMUX_TYPE macroLogMux = portMUX_INITIALIZER_UNLOCKED;
 
 struct CmdMsg { EngineCmd cmd; int16_t a; int16_t b; char text[48] = {}; };
+
+const KeyBinding* Config::findWorkflow(const std::string& id) const {
+    for (const auto& workflow : workflows)
+        if (workflow.id == id) return &workflow;
+    return nullptr;
+}
 
 void Config::ensureLayer(size_t n) {
     while (layers.size() <= n) {
@@ -192,6 +200,7 @@ void MacroEngine::validateLoops(KeyBinding& kb) {
 }
 
 void MacroEngine::commit() {
+    for (auto& workflow : cfg_.workflows) validateLoops(workflow);
     for (auto& layer : cfg_.layers)
         for (auto& kb : layer.keys)
             validateLoops(kb);
@@ -216,6 +225,9 @@ void MacroEngine::setLayer(int n) {
 // --- step execution --------------------------------------------------------
 void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& stop,
                                ExecutionState& state, uint8_t depth) {
+    // Bound recursion and reject cycles, including legacy layer/key references.
+    if (depth > 8 || std::find(callStack_.begin(), callStack_.end(), &steps) != callStack_.end()) return;
+    callStack_.push_back(&steps);
     struct Frame { int startIdx; int endIdx; uint32_t remaining; bool infinite; uint32_t iteration; };
     std::vector<Frame> loops;
 
@@ -232,7 +244,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         entry.modifiers = step.modifiers;
         entry.value = step.value;
         entry.complete = complete;
-        if (step.type == StepType::TEXT || step.type == StepType::RANDOM)
+        if (step.type == StepType::TEXT || step.type == StepType::RANDOM || step.type == StepType::CALL)
             std::strncpy(entry.text, step.text.c_str(), sizeof(entry.text) - 1);
         size_t pathLength = 0;
         for (const Frame& frame : loops) {
@@ -348,27 +360,50 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 setLayer(s.value);
                 logStep(s, pc, stepStartedAt, 0, true);
                 break;
+            case StepType::CALL:
             case StepType::RANDOM: {
-                constexpr uint8_t MAX_RANDOM_DEPTH = 8;
-                const KeyBinding* candidates[MAX_LAYERS * KEY_COUNT];
-                size_t candidateCount = 0;
-                if (depth < MAX_RANDOM_DEPTH) {
+                const KeyBinding* selected = nullptr;
+                if (s.type == StepType::CALL) {
+                    selected = cfg_.findWorkflow(s.text);
+                } else {
+                    std::vector<const KeyBinding*> candidates;
+                    std::vector<uint16_t> weights;
                     for (const MacroRef& ref : s.choices) {
-                        if (ref.layer >= cfg_.layers.size() || ref.key >= KEY_COUNT) continue;
-                        const KeyBinding& candidate = cfg_.layers[ref.layer].keys[ref.key];
-                        if (!candidate.empty()) candidates[candidateCount++] = &candidate;
+                        const KeyBinding* candidate = nullptr;
+                        if (!ref.workflow.empty()) candidate = cfg_.findWorkflow(ref.workflow);
+                        else if (ref.layer < cfg_.layers.size() && ref.key < KEY_COUNT)
+                            candidate = &cfg_.layers[ref.layer].keys[ref.key];
+                        if (!candidate || candidate->empty() || !ref.weight ||
+                            std::find(candidates.begin(), candidates.end(), candidate) != candidates.end()) continue;
+                        candidates.push_back(candidate);
+                        weights.push_back(ref.weight);
+                    }
+                    auto& history = choiceHistory_[&s];
+                    std::vector<bool> eligible;
+                    for (const auto* candidate : candidates) {
+                        eligible.push_back(!workflowIsRecent(candidate, history, s.avoidRecent));
+                    }
+                    uint32_t total = workflowWeightTotal(weights, eligible);
+                    int index = total ? selectWorkflow(weights, eligible, (uint32_t)random((long)total)) : -1;
+                    if (index >= 0) {
+                        selected = candidates[index];
+                        rememberWorkflow(selected, history, s.avoidRecent);
                     }
                 }
-                if (candidateCount) {
-                    const KeyBinding& selected = *candidates[random((long)candidateCount)];
-                    Step entryStep = s;
-                    entryStep.text = selected.name.empty() ? "unnamed macro" : selected.name;
-                    uint32_t id = logStep(entryStep, pc, stepStartedAt, 0, false);
-                    executeSteps(selected.steps, stop, state, depth + 1);
+                Step entryStep = s;
+                const char* skipReason = nullptr;
+                if (!selected) skipReason = s.type == StepType::CALL ? "skipped: missing workflow" : "skipped: no eligible choices";
+                else if (depth >= 8) skipReason = "skipped: nesting limit";
+                else if (std::find(callStack_.begin(), callStack_.end(), &selected->steps) != callStack_.end())
+                    skipReason = "skipped: recursive call";
+                const bool canCall = !skipReason;
+                entryStep.text = canCall ? (selected->name.empty() ? "unnamed workflow" : selected->name) : skipReason;
+                uint32_t id = logStep(entryStep, pc, stepStartedAt, 0, !canCall);
+                if (canCall) {
+                    executeSteps(selected->steps, stop, state, depth + 1);
                     updateLogDuration(id, millis() - stepStartedAt, true);
-                } else {
-                    logStep(s, pc, stepStartedAt, 0, true);
                 }
+                yieldTick();
                 break;
             }
             case StepType::LOOP_START:
@@ -399,6 +434,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         }
         pc++;
     }
+    callStack_.pop_back();
     if (depth == 0) {
         uint32_t endedAt = millis();
         for (int keycode = 0; keycode < 256; keycode++) {
@@ -414,6 +450,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
 }
 
 void MacroEngine::runMacro(const KeyBinding& kb) {
+    choiceHistory_.clear();
+    callStack_.clear();
     if (oneShot_) {                       // Test / single pass
         macroPass_ = 1;
         ExecutionState state{};

@@ -64,6 +64,7 @@ static const char* stepTypeName(StepType type) {
         case StepType::LOOP_START: return "loop-start";
         case StepType::LOOP_END:   return "loop-end";
         case StepType::LAYER:      return "layer";
+        case StepType::CALL:       return "call";
         case StepType::RANDOM:     return "random";
     }
     return "unknown";

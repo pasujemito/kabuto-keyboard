@@ -187,6 +187,12 @@
   .capture-controls input{min-width:0;background:var(--panel2);border:1px solid var(--edge);border-radius:var(--r);color:var(--ink);padding:9px 10px}
   .capture-controls .hint{grid-column:1/-1;margin:0}
 
+  .json-dialog{width:min(760px,calc(100vw - 32px));max-height:90vh;box-sizing:border-box;background:var(--panel);color:var(--ink);border:1px solid var(--edge);border-radius:var(--r);padding:16px}
+  .json-dialog::backdrop{background:rgba(0,0,0,.65)}
+  .json-dialog header{position:static;display:flex;padding:0 0 12px;gap:12px;flex-wrap:wrap;background:none}
+  .json-dialog h3{margin:0;flex:1}
+  .json-dialog textarea{display:block;box-sizing:border-box;width:100%;height:50vh;resize:vertical;background:var(--bg);color:var(--ink);font:12px/1.5 var(--mono);border:1px solid var(--edge);padding:12px;tab-size:2}
+  .json-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
   .toast{position:fixed;left:50%;bottom:calc(16px + var(--safe-b));transform:translateX(-50%);background:var(--panel2);border:1px solid var(--edge);padding:10px 16px;border-radius:var(--r);font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
   .toast.show{opacity:1}
   .toast.err{border-color:var(--stop);color:var(--stop)}
@@ -201,6 +207,7 @@
   </div>
   <div class="hdr-actions">
     <button class="btn danger sm" id="stopBtn">Stop</button>
+    <button class="btn sm" id="configJson">Export JSON</button>
     <button class="btn primary sm" id="saveBtn">Save</button>
   </div>
 </header>
@@ -274,26 +281,57 @@
       <button class="on" data-m="replace">Replace</button>
       <button data-m="append">Append</button>
     </div>
+    <button class="btn sm" id="recJson" disabled title="Stop recording to preview or export JSON">JSON / Export</button>
     <button class="btn primary" id="recUse" disabled>Use steps</button>
   </div>
 </div>
 
+<dialog class="json-dialog" id="jsonDialog" aria-labelledby="jsonTitle">
+  <header><h3 id="jsonTitle">JSON preview</h3><button class="btn sm" id="jsonClose" aria-label="Close JSON preview">Close</button></header>
+  <label>Preview <select id="jsonScope" aria-label="JSON export scope"></select></label>
+  <p class="hint" id="jsonHint"></p>
+  <textarea id="jsonText" readonly spellcheck="false" aria-label="JSON preview"></textarea>
+  <div class="json-actions"><button class="btn" id="jsonCopy">Copy JSON</button><button class="btn primary" id="jsonDownload">Download JSON</button></div>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script>
 const $=s=>document.querySelector(s);
-let meta=null,cfg=null,selLayer=0,selKey=0,status={},savedSnapshot="";
+let meta=null,cfg=null,selLayer=0,selKey=0,status={},savedSnapshot="",selectedWorkflow=null;
 function updateDirty(){if(!cfg)return;const d=JSON.stringify(cfg)!==savedSnapshot;const b=$("#saveBtn");b.classList.toggle("dirty",d);b.textContent=d?"Save •":"Save";}
 
 const MOD_SET=["ctrl","shift","alt","gui"];
-const STEP_TYPES=[["key","Tap key"],["down","Key down"],["up","Key up"],["text","Type text"],["media","Media key"],["delay","Delay"],["loop","Loop start"],["endloop","Loop end"],["layer","Switch layer"],["random","Random macro"]];
+const STEP_TYPES=[["key","Tap key"],["down","Key down"],["up","Key up"],["text","Type text"],["media","Media key"],["delay","Delay"],["loop","Loop start"],["endloop","Loop end"],["layer","Switch layer"],["call","Call workflow"],["random","Random workflow"]];
 
 async function api(p,o){return fetch(p,o);}
 function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast",1900);}
 function esc(s){return(s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function blankKey(){return{name:"",trigger:"tap",steps:[]};}
 
+function currentBinding(){return selectedWorkflow===null?cfg.layers[selLayer].keys[selKey]:cfg.workflows.find(w=>w.id===selectedWorkflow);}
+function renderWorkflowPicker(w){
+  const bar=document.createElement("div");bar.className="ed-tools";
+  const select=document.createElement("select");select.setAttribute("aria-label","Edit key or workflow");
+  const option=document.createElement("option");option.value="";option.textContent="Key "+(selKey+1)+" · "+(cfg.layers[selLayer].name||"Layer");select.appendChild(option);
+  cfg.workflows.forEach(workflow=>{const o=document.createElement("option");o.value=workflow.id;o.textContent=workflow.kind+" · "+(workflow.name||workflow.id);select.appendChild(o);});
+  select.value=selectedWorkflow||"";select.onchange=()=>{selectedWorkflow=select.value||null;renderEditor();};bar.appendChild(select);
+  ["nano","micro"].forEach(kind=>{const b=document.createElement("button");b.className="btn sm";b.textContent="+ "+kind;
+    b.onclick=()=>{if(cfg.workflows.length>=64){toast("Maximum 64 workflows",true);return;}
+      const name=prompt("Workflow name",kind==="nano"?"Walk forward":"Approach and attack");if(name===null)return;
+      const id="wf-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
+      cfg.workflows.push({id,name,kind,steps:[]});cfg.version=2;selectedWorkflow=id;renderEditor();updateDirty();};bar.appendChild(b);});
+  if(selectedWorkflow!==null){const remove=document.createElement("button");remove.className="btn sm";remove.textContent="Delete workflow";
+    remove.onclick=()=>{const bindings=cfg.workflows.concat(cfg.layers.flatMap(l=>l.keys));
+      const used=bindings.some(b=>b.steps.some(s=>(s.type==="call"&&s.workflow===selectedWorkflow)||(s.choices||[]).some(c=>c.workflow===selectedWorkflow)));
+      if(used){toast("Remove calls and random choices referring to this workflow first",true);return;}
+      if(!confirm("Delete this workflow?"))return;
+      cfg.workflows=cfg.workflows.filter(w=>w.id!==selectedWorkflow);selectedWorkflow=null;renderEditor();updateDirty();};bar.appendChild(remove);}
+  w.appendChild(bar);
+}
 function normalize(){
+  if(!Array.isArray(cfg.workflows))cfg.workflows=[];
+  for(const workflow of cfg.workflows){if(!workflow.steps)workflow.steps=[];if(!workflow.kind)workflow.kind="nano";}
+  if(selectedWorkflow!==null&&!cfg.workflows.some(w=>w.id===selectedWorkflow))selectedWorkflow=null;
   if(typeof cfg.randomizedDelay!=="boolean")cfg.randomizedDelay=true;
   if(!cfg.layers)cfg.layers=[];
   if(!cfg.layers.length)cfg.layers.push({name:"Base",keys:[]});
@@ -331,13 +369,13 @@ function renderLayers(){
     const btn=document.createElement("button");
     btn.className=i===selLayer?"on":"";
     btn.innerHTML=`<b>${i}</b>${esc(L.name||"Layer")}`;
-    btn.onclick=()=>{selLayer=i;selKey=0;renderLayers();renderGrid();renderEditor();postLayer(i);};
+    btn.onclick=()=>{selLayer=i;selKey=0;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();postLayer(i);};
     btn.ondblclick=()=>{const n=prompt("Layer name",L.name||"");if(n!=null){L.name=n;renderLayers();}};
     b.appendChild(btn);
   });
   if(cfg.layers.length<meta.maxLayers){
     const add=document.createElement("button");add.className="add";add.textContent="+ layer";
-    add.onclick=()=>{cfg.layers.push({name:"Layer "+cfg.layers.length,keys:[]});normalize();selLayer=cfg.layers.length-1;renderLayers();renderGrid();renderEditor();};
+    add.onclick=()=>{cfg.layers.push({name:"Layer "+cfg.layers.length,keys:[]});normalize();selLayer=cfg.layers.length-1;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();};
     b.appendChild(add);
   }
 }
@@ -360,7 +398,7 @@ function renderGrid(){
       cap.addEventListener("pointerup",e=>{e.preventDefault();runRelease(i);});
       cap.addEventListener("pointercancel",()=>runRelease(i));
     }else{
-      cap.onclick=()=>{selKey=i;renderGrid();renderEditor();if(window.innerWidth<620)showTab('edit');};
+      cap.onclick=()=>{selKey=i;selectedWorkflow=null;renderGrid();renderEditor();if(window.innerWidth<620)showTab('edit');};
     }
     g.appendChild(cap);
   });
@@ -381,16 +419,16 @@ function setGridMode(m){
 
 /* editor */
 function renderEditor(){
-  const w=$("#editor");const k=cfg.layers[selLayer].keys[selKey];w.innerHTML="";
+  const w=$("#editor");const k=currentBinding();w.innerHTML="";renderWorkflowPicker(w);
   const head=document.createElement("div");head.className="ed-head";
-  const name=document.createElement("input");name.className="name";name.placeholder="Key name";name.value=k.name||"";
-  name.oninput=()=>{k.name=name.value;renderGrid();};
+  const name=document.createElement("input");name.className="name";name.placeholder=selectedWorkflow===null?"Key name":"Workflow name";name.value=k.name||"";
+  name.oninput=()=>{k.name=name.value;renderGrid();updateDirty();};
   head.appendChild(name);
   const seg=document.createElement("div");seg.className="seg";
   [["tap","Tap"],["toggle","Toggle"],["hold","Hold"]].forEach(([v,l])=>{
     const b=document.createElement("button");b.textContent=l;b.className=k.trigger===v?"on":"";
     b.onclick=()=>{k.trigger=v;renderEditor();renderGrid();};seg.appendChild(b);});
-  head.appendChild(seg);
+  if(selectedWorkflow===null)head.appendChild(seg);
   w.appendChild(head);
 
   const setting=document.createElement("label");setting.className="macro-setting";
@@ -402,7 +440,8 @@ function renderEditor(){
   const tools=document.createElement("div");tools.className="ed-tools";
   const rec=document.createElement("button");rec.className="btn";rec.textContent="⦿ Record with keyboard";rec.onclick=openRecorder;
   const test=document.createElement("button");test.className="btn sm";test.textContent="Test ▸";test.onclick=testKey;
-  tools.appendChild(rec);tools.appendChild(test);
+  tools.appendChild(rec);if(selectedWorkflow===null)tools.appendChild(test);
+  const json=document.createElement("button");json.className="btn sm";json.textContent="JSON / Export";json.onclick=()=>openJsonPreview("selected");tools.appendChild(json);
   const bal=document.createElement("span");const d=loopBalance(k.steps);
   bal.className="loopbal"+(d!==0?" bad":"");bal.textContent=d===0?"loops balanced":("loops off by "+d);
   tools.appendChild(bal);
@@ -415,21 +454,23 @@ function renderEditor(){
   w.appendChild(steps);
 
   const add=document.createElement("div");add.className="add-row";
-  STEP_TYPES.forEach(([v,l])=>{const b=document.createElement("button");b.textContent="+ "+l;b.onclick=()=>{k.steps.push(newStep(v));renderEditor();renderGrid();};add.appendChild(b);});
+  STEP_TYPES.forEach(([v,l])=>{const b=document.createElement("button");b.textContent="+ "+l;b.onclick=()=>{if(k.steps.length>=256){toast("Maximum 256 steps",true);return;}k.steps.push(newStep(v));renderEditor();renderGrid();};add.appendChild(b);});
   w.appendChild(add);
   const h=document.createElement("p");h.className="hint";
   h.textContent="Loop count 0 repeats until stopped (pair with Toggle/Hold). When enabled, timings under 2 seconds vary by +/-10 ms; longer timings vary by +/-1000 ms.";
-  w.appendChild(h);
+  h.append(" Named workflows run once per call. Random history resets when a key is started; excluded choices cause a skip if none remain. Nano and micro are organizational labels; either can call the other. Test named workflows by calling them from a key.");
+  w.appendChild(h);updateDirty();
 }
 
 function defaultRandomChoices(){
   const choices=[];
   cfg.layers.forEach((layer,layerIndex)=>layer.keys.forEach((macro,keyIndex)=>{
-    if(macro.steps.length&&(layerIndex!==selLayer||keyIndex!==selKey))choices.push({layer:layerIndex,key:keyIndex});
+    if(macro.steps.length&&macro!==currentBinding())choices.push({layer:layerIndex,key:keyIndex});
   }));
+  cfg.workflows.filter(w=>w.id!==selectedWorkflow&&w.steps.length).forEach(w=>choices.push({workflow:w.id,weight:1}));
   return choices;
 }
-function newStep(t){return{key:{type:"key",key:"A",mods:[],hold:0},down:{type:"down",key:"A",mods:[]},up:{type:"up",key:"A"},text:{type:"text",text:""},media:{type:"media",media:"PLAY"},delay:{type:"delay",ms:100},loop:{type:"loop",count:1},endloop:{type:"endloop"},layer:{type:"layer",layer:0},random:{type:"random",choices:defaultRandomChoices()}}[t];}
+function newStep(t){return{key:{type:"key",key:"A",mods:[],hold:0},down:{type:"down",key:"A",mods:[]},up:{type:"up",key:"A"},text:{type:"text",text:""},media:{type:"media",media:"PLAY"},delay:{type:"delay",ms:100},loop:{type:"loop",count:1},endloop:{type:"endloop"},layer:{type:"layer",layer:0},call:{type:"call",workflow:""},random:{type:"random",avoidRecent:1,choices:defaultRandomChoices()}}[t];}
 
 function renderStep(k,st,i,depth){
   const row=document.createElement("div");
@@ -459,12 +500,19 @@ function buildFields(f,st){
   else if(st.type==="loop"){f.appendChild(numField("count (0=∞)",st.count||0,v=>st.count=v,0));}
   else if(st.type==="endloop"){const s=document.createElement("span");s.style.color="var(--faint)";s.textContent="end of innermost loop";f.appendChild(s);}
   else if(st.type==="layer"){const s=document.createElement("select");s.className="val";cfg.layers.forEach((L,i)=>{const o=document.createElement("option");o.value=i;o.textContent=i+": "+(L.name||"Layer");if(i===st.layer)o.selected=true;s.appendChild(o);});s.onchange=()=>st.layer=parseInt(s.value,10);f.appendChild(s);}
+  else if(st.type==="call"){
+    const select=document.createElement("select");select.setAttribute("aria-label","Workflow to call");
+    const blank=document.createElement("option");blank.value="";blank.textContent="Choose workflow";select.appendChild(blank);
+    cfg.workflows.filter(w=>w.id!==selectedWorkflow).forEach(w=>{const o=document.createElement("option");o.value=w.id;o.textContent=w.kind+" · "+(w.name||w.id);select.appendChild(o);});
+    select.value=st.workflow||"";select.onchange=()=>{st.workflow=select.value;updateDirty();};f.appendChild(select);
+  }
   else if(st.type==="random"){
+    f.appendChild(numField("exclude last (0–16)",st.avoidRecent||0,v=>{st.avoidRecent=Math.max(0,Math.min(16,v));updateDirty();},0));
     if(!st.choices)st.choices=[];
     const choices=document.createElement("div");choices.className="random-choices";
     let count=0;
     cfg.layers.forEach((layer,layerIndex)=>{
-      const available=layer.keys.map((macro,keyIndex)=>({macro,keyIndex})).filter(({macro,keyIndex})=>macro.steps.length&&(layerIndex!==selLayer||keyIndex!==selKey));
+      const available=layer.keys.map((macro,keyIndex)=>({macro,keyIndex})).filter(({macro,keyIndex})=>macro.steps.length&&macro!==currentBinding());
       if(!available.length)return;
       const heading=document.createElement("span");heading.style.cssText="width:100%;color:var(--faint);font:11px var(--mono)";heading.textContent=layer.name||("Layer "+layerIndex);choices.appendChild(heading);
       available.forEach(({macro,keyIndex})=>{
@@ -476,14 +524,30 @@ function buildFields(f,st){
         checkbox.onchange=()=>{
           st.choices=st.choices.filter(choice=>choice.layer!==ref.layer||choice.key!==ref.key);
           if(checkbox.checked)st.choices.push(ref);
-          updateDirty();
+          renderEditor();
         };
         const text=document.createElement("span");text.textContent=macro.name||("Key "+(keyIndex+1));
         label.append(checkbox,text);choices.appendChild(label);
+        const choice=st.choices.find(c=>!c.workflow&&c.layer===ref.layer&&c.key===ref.key);
+        if(choice)choices.appendChild(numField("weight",choice.weight||1,v=>{choice.weight=Math.max(1,Math.min(1000,v));updateDirty();},1));
       });
+    });
+    cfg.workflows.filter(w=>w.id!==selectedWorkflow).forEach(workflow=>{
+      count++;
+      const label=document.createElement("label");label.className="random-choice";
+      const checkbox=document.createElement("input");checkbox.type="checkbox";
+      checkbox.checked=st.choices.some(c=>c.workflow===workflow.id);
+      checkbox.onchange=()=>{st.choices=st.choices.filter(c=>c.workflow!==workflow.id);if(checkbox.checked)st.choices.push({workflow:workflow.id,weight:1});renderEditor();};
+      const text=document.createElement("span");text.textContent=workflow.kind+" · "+(workflow.name||workflow.id);
+      label.append(checkbox,text);choices.appendChild(label);
+      const choice=st.choices.find(c=>c.workflow===workflow.id);
+      if(choice)choices.appendChild(numField("weight",choice.weight||1,v=>{choice.weight=Math.max(1,Math.min(1000,v));updateDirty();},1));
     });
     if(!count){const empty=document.createElement("span");empty.className="hint";empty.textContent="Assign another macro before adding it to the random choice.";choices.appendChild(empty);}
     f.appendChild(choices);
+    const hint=document.createElement("span");hint.className="hint";
+    hint.textContent="Use at least three choices for variety when excluding the last one. If the exclusion window covers every choice, this step skips until the next key activation.";
+    f.appendChild(hint);
   }
 }
 function loopBalance(steps){let d=0;for(const s of steps){if(s.type==="loop")d++;if(s.type==="endloop")d--;}return d;}
@@ -700,6 +764,7 @@ function vkUp(name,b){
 }
 
 function startRec(){
+  $("#recJson").disabled=true;
   rec.on=true;rec.t0=now();rec.events=[];rec.held.clear();
   document.querySelectorAll(".vk.held").forEach(e=>e.classList.remove("held"));
   $("#recStatus").classList.add("live");$("#recState").textContent="recording";
@@ -721,11 +786,12 @@ function stopRec(){
   $("#recBtn").textContent="● Record";$("#recBtn").classList.remove("danger");
   rec.steps=eventsToSteps(rec.events);
   $("#recUse").disabled=rec.steps.length===0;
+  $("#recJson").disabled=rec.steps.length===0;
 }
 function notifyRecordingLed(active){
   fetch("/api/recording?active="+(active?"1":"0"),{method:"POST",keepalive:true}).catch(()=>{});
 }
-function refreshRec(){rec.steps=eventsToSteps(rec.events);$("#recSteps").textContent=rec.steps.length;$("#recUse").disabled=!(rec.on?false:rec.steps.length);renderCaptureHeld();}
+function refreshRec(){rec.steps=eventsToSteps(rec.events);$("#recJson").disabled=rec.on||!rec.steps.length;$("#recSteps").textContent=rec.steps.length;$("#recUse").disabled=!(rec.on?false:rec.steps.length);renderCaptureHeld();}
 function renderCaptureHeld(){
   const names=new Set([...capturedMods.values()].map(mod=>MOD_VK[mod]));
   const keys=[...capturedKeys.values()];
@@ -762,6 +828,7 @@ function openRecorder(){
   if(captureOn)stopKeyboardCapture();
   rec.on=false;rec.events=[];rec.steps=[];rec.held.clear();
   $("#recSteps").textContent="0";$("#recTime").textContent="0.0s";$("#recState").textContent="idle";
+  $("#recJson").disabled=true;
   $("#recUse").disabled=true;$("#recBtn").textContent="● Record";$("#recBtn").classList.remove("danger");
   $("#recStatus").classList.remove("live");
   $("#sheetBg").classList.add("show");$("#sheet").classList.add("show");
@@ -769,12 +836,56 @@ function openRecorder(){
 function closeRecorder(){if(captureOn)stopKeyboardCapture();if(rec.on)stopRec();liveSend("releaseall");flushLiveBatch();$("#sheetBg").classList.remove("show");$("#sheet").classList.remove("show");}
 function useSteps(){
   if(rec.on)stopRec();
-  const k=cfg.layers[selLayer].keys[selKey];
+  const k=currentBinding();
   const mode=$("#recMode").querySelector(".on").dataset.m;
   if(mode==="replace")k.steps=rec.steps.slice();
   else k.steps=k.steps.concat(rec.steps);
   renderEditor();renderGrid();closeRecorder();
   toast(rec.steps.length+" steps added — review, then Save");
+}
+
+/* JSON preview/export: snapshots only; never save to the device. */
+let jsonFilename="kabuto.json",jsonReturnFocus=null;
+function openJsonPreview(scope){
+  if(scope==="recording"&&(rec.on||!rec.steps.length)){toast("Stop a recording before exporting it",true);return;}
+  jsonReturnFocus=document.activeElement;
+  const select=$("#jsonScope");select.replaceChildren();
+  const scopes=[["selected","Selected key / workflow"],["config","Full configuration"]];
+  if(!rec.on&&rec.steps.length)scopes.push(["recording","Recorded macro"]);
+  scopes.forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;select.appendChild(option);});
+  select.value=scope;refreshJsonPreview();$("#jsonDialog").showModal();
+}
+function refreshJsonPreview(){
+  const scope=$("#jsonScope").value;
+  let payload,name,hint;
+  if(scope==="recording"){
+    payload={version:1,randomizedDelay:false,layers:[{name:"Recording",keys:[{name:"Recorded macro",trigger:"tap",steps:rec.steps}]}]};
+    name="kabuto-recording";
+    hint="Standalone macros.json configuration with exact recorded delays and key transitions. Loading it replaces the configuration; back up existing macros first.";
+  }else if(scope==="config"){
+    payload=cfg;name="kabuto-config";
+    hint="Full configuration, including unsaved edits, all keys, workflows, references, weights and timing settings. This is a backup, not a trace of randomly chosen actions.";
+  }else{
+    payload=currentBinding();name=payload.name||payload.id||("key-"+(selKey+1));
+    hint="Selected macro definition, including unsaved edits. Calls and random choices remain references; export Full configuration to include their targets. Timing variation is "+(cfg.randomizedDelay?"enabled":"disabled")+" in the configuration. This fragment is for inspection, not a complete macros.json file.";
+  }
+  $("#jsonText").value=JSON.stringify(payload,null,2)+"\n";
+  $("#jsonHint").textContent=hint;
+  jsonFilename=(name.replace(/[^a-z0-9_-]+/gi,"-").replace(/^-+|-+$/g,"").slice(0,80)||"kabuto")+".json";
+}
+function closeJsonPreview(){$("#jsonDialog").close();}
+async function copyJson(){
+  const text=$("#jsonText");
+  try{
+    if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text.value);toast("JSON copied");
+  }catch(e){text.focus();text.select();toast("JSON selected — use your device’s Copy command");}
+}
+function downloadJson(){
+  const blob=new Blob([$("#jsonText").value],{type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=jsonFilename;
+  document.body.appendChild(link);
+  try{link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 }
 
 /* actions */
@@ -806,6 +917,7 @@ function macroEventLabel(e){
     case "loop-start":return "LOOP START "+(e.value?"x"+e.value:"∞");
     case "loop-end":return "LOOP END";
     case "layer":return "SWITCH LAYER "+e.value;
+    case "call":return "CALL "+(e.text||"workflow");
     case "random":return "RANDOM "+(e.text||"macro");
     default:return e.type;
   }
@@ -851,6 +963,13 @@ async function pollStatus(){
   setTimeout(pollStatus,700);
 }
 
+$("#configJson").onclick=()=>openJsonPreview("config");
+$("#recJson").onclick=()=>openJsonPreview("recording");
+$("#jsonScope").onchange=refreshJsonPreview;
+$("#jsonClose").onclick=closeJsonPreview;
+$("#jsonDialog").addEventListener("close",()=>{if(jsonReturnFocus&&jsonReturnFocus.isConnected)jsonReturnFocus.focus();});
+$("#jsonCopy").onclick=copyJson;
+$("#jsonDownload").onclick=downloadJson;
 $("#saveBtn").onclick=save;
 $("#stopBtn").onclick=stopMacro;
 $("#clearLog").onclick=async()=>{await api("/api/log/clear",{method:"POST"});renderMacroLog({events:[],running:false});};
@@ -860,7 +979,7 @@ $("#phoneCapture").addEventListener("input",handlePhoneCaptureInput);
 $("#phoneCapture").addEventListener("compositionend",handlePhoneCaptureInput);
 window.addEventListener("blur",()=>{if(captureOn)stopKeyboardCapture();});
 window.addEventListener("pagehide",()=>{if(captureOn)stopKeyboardCapture();if(rec.on)stopRec();flushLiveBatch();});
-$("#recClear").onclick=()=>{if(captureOn)stopKeyboardCapture();rec.events=[];rec.steps=[];rec.held.clear();document.querySelectorAll(".vk.held").forEach(e=>e.classList.remove("held"));$("#recSteps").textContent="0";$("#recUse").disabled=true;};
+$("#recClear").onclick=()=>{if(captureOn)stopKeyboardCapture();rec.events=[];rec.steps=[];rec.held.clear();document.querySelectorAll(".vk.held").forEach(e=>e.classList.remove("held"));$("#recSteps").textContent="0";$("#recUse").disabled=true;$("#recJson").disabled=true;};
 $("#recUse").onclick=useSteps;
 $("#recLive").onchange=e=>{liveOn=e.target.checked;if(liveOn&&!status.connected)toast("Live send needs a paired host",true);};
 $("#gridMode").querySelectorAll("button").forEach(b=>b.onclick=()=>setGridMode(b.dataset.g));

@@ -16,6 +16,7 @@ std::function<void()> testDelayHook;
 std::function<long(long)> testRandomHook;
 HidKeyboard Keyboard;
 std::vector<uint8_t> taps, held;
+std::vector<uint16_t> tapHoldDurations;
 unsigned releases = 0;
 uint8_t heldMods=0;
 uint32_t ctrlStarted=0;
@@ -24,7 +25,7 @@ struct HidEvent { uint32_t at; uint8_t key; uint8_t mods; bool down; };
 std::vector<HidEvent> hidEvents;
 std::vector<uint8_t> tapModifiers;
 
-void HidKeyboard::tap(uint8_t key, uint8_t, uint16_t) { taps.push_back(key);tapModifiers.push_back(heldMods); }
+void HidKeyboard::tap(uint8_t key, uint8_t, uint16_t holdMs) { taps.push_back(key);tapHoldDurations.push_back(holdMs);tapModifiers.push_back(heldMods); }
 void HidKeyboard::pressKey(uint8_t key, uint8_t mods) {
     if((mods&1)&&!(heldMods&1))ctrlStarted=millis();
     heldMods|=mods;
@@ -177,16 +178,42 @@ int main() {
     run(engine,{utilities});assert(taps.empty());testClock=100;
     run(engine,{utilities});assert(taps.size()==1);
     // One visible recording can span internal parts without releasing Ctrl.
-    // Captured fixed timings override old global jitter settings.
+    // Captured fixed timings use the same jitter as other steps.
     Step ctrlUp;ctrlUp.type=StepType::KEY_UP;ctrlUp.modifiers=1;
     Step capturedDelay;capturedDelay.type=StepType::DELAY;capturedDelay.value=100;
     Workflow part1=workflow("rec-part1",{attackDown,capturedDelay});part1.recordingPartOf="recording";
     Workflow part2=workflow("rec-part2",{tap(11),ctrlUp});part2.recordingPartOf="recording";
     Workflow recording=workflow("recording",{call("rec-part1"),call("rec-part2")});recording.recording=true;
     engine.config().workflows={recording,part1,part2};engine.config().randomizedDelay=true;
+    testRandomHook=[](long upper){return upper-1;};
     ctrlDurations.clear();tapModifiers.clear();run(engine,{call("recording")});
     assert(tapModifiers.back()==1);
-    assert(ctrlDurations.size()==1&&ctrlDurations[0]==101); // 100ms + one scheduler yield
+    assert(ctrlDurations.size()==1&&ctrlDurations[0]==107); // 100ms + 6ms jitter + one scheduler yield
     assert(!heldMods&&held.empty());
+    // Upper jitter endpoints at the 5-second and 40-second boundaries.
+    const uint32_t bases[]={5000,5001,40000,40001};
+    const uint32_t expected[]={5015,5201,40200,45001};
+    for(size_t index=0;index<4;++index) {
+        Step sampledDelay;sampledDelay.type=StepType::DELAY;sampledDelay.value=bases[index];
+        uint32_t startedAt=millis();run(engine,{sampledDelay});
+        assert(millis()-startedAt==expected[index]);
+    }
+    // Tap-style keystrokes receive +/-6 ms around their recorded hold time.
+    Step jitteredTap=tap(26);jitteredTap.value=50;
+    testRandomHook=[](long upper){return upper-1;};
+    tapHoldDurations.clear();run(engine,{jitteredTap});
+    assert(tapHoldDurations.size()==1&&tapHoldDurations[0]==56);
+    testRandomHook=[](long){return 0;};
+    tapHoldDurations.clear();run(engine,{jitteredTap});
+    assert(tapHoldDurations.size()==1&&tapHoldDurations[0]==44);
+    // Repeated loop iterations draw independent jitter for the same step.
+    Step loopStart;loopStart.type=StepType::LOOP_START;loopStart.value=2;loopStart.matchIndex=4;
+    Step loopEnd;loopEnd.type=StepType::LOOP_END;loopEnd.matchIndex=0;
+    Step loopDelay;loopDelay.type=StepType::DELAY;loopDelay.value=5000;
+    int randomCall=0;
+    testRandomHook=[&randomCall](long upper){return randomCall++%2==0?0:upper-1;};
+    ctrlDurations.clear();run(engine,{loopStart,attackDown,loopDelay,ctrlUp,loopEnd});
+    assert((ctrlDurations==std::vector<uint32_t>{4994,5006}));
+    testRandomHook={};engine.config().randomizedDelay=false;
     std::cout << "workflow engine tests passed\n";
 }

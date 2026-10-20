@@ -10,8 +10,9 @@
 //
 // A macro is an ordered list of Steps. Steps include key taps, key down/up,
 // typed text, media keys, delays, workflow calls, random choices and loops
-// (repeat count 0 = until stopped). Optional timing variation is +/-10 ms
-// below 2 seconds and +/-1000 ms for longer durations.
+// (repeat count 0 = until stopped). Optional timing variation is +/-6 ms for
+// key holds, +/-15 ms up to 5 seconds, +/-200 ms up to 40 seconds and +/-5000
+// ms beyond that.
 //
 // Each physical key, on each layer, has a trigger mode:
 //   TAP    - run the macro once per key press
@@ -77,7 +78,7 @@ struct KeyBinding {
     TriggerMode       trigger = TriggerMode::TAP;
     std::string       name;      // label shown in the UI
     std::string       playbackMode; // simple UI: single / sequence / random
-    bool              recording = false; // replay captured fixed timings exactly
+    bool              recording = false; // workflow timings originated in a recording
     std::vector<Step> steps;
     bool              empty() const { return steps.empty(); }
 };
@@ -167,7 +168,7 @@ private:
     static void taskTrampoline(void* arg);
     void runMacro(const KeyBinding& kb);
     void executeSteps(const std::vector<Step>& steps, volatile bool& stopFlag,
-                      ExecutionState& state, uint8_t depth = 0, bool exactTiming = false);
+                      ExecutionState& state, uint8_t depth = 0);
     void startMacroTask(int keyIndex, bool oneShot = false);
     uint32_t appendLog(const MacroLogEntry& entry);
     void updateLogDuration(uint32_t id, uint32_t durationMs, bool complete);

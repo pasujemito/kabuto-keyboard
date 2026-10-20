@@ -46,18 +46,21 @@ static void sleepMs(uint32_t ms, volatile bool& stop) {
     }
 }
 
-static uint32_t randomizedDuration(uint32_t ms, bool enabled) {
+static uint32_t randomizedDuration(uint32_t ms, bool enabled, bool keyTiming = false) {
     if (!enabled || ms == 0) return ms;
-    int32_t jitter = ms < 2000 ? random(-10L, 11L) : random(-1000L, 1001L);
+    int32_t jitter = keyTiming ? random(-6L, 7L) :
+                     ms <= 5000 ? random(-15L, 16L) :
+                     ms <= 40000 ? random(-200L, 201L) :
+                                   random(-5000L, 5001L);
     int32_t duration = (int32_t)ms + jitter;
     return duration > 0 ? (uint32_t)duration : 1;
 }
 
 // Explicit timing ranges take precedence over global jitter.
-static uint32_t stepDuration(const Step& step, bool jitter) {
+static uint32_t stepDuration(const Step& step, bool jitter, bool keyTiming = false) {
     if (step.maxValue >= step.value && step.maxValue)
         return step.value + (uint32_t)random((long)(step.maxValue - step.value + 1));
-    return randomizedDuration(step.value, jitter);
+    return randomizedDuration(step.value, jitter, keyTiming);
 }
 
 // Give the scheduler at least one tick. The macro task runs at a higher
@@ -234,7 +237,7 @@ void MacroEngine::setLayer(int n) {
 
 // --- step execution --------------------------------------------------------
 void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& stop,
-                               ExecutionState& state, uint8_t depth, bool exactTiming) {
+                               ExecutionState& state, uint8_t depth) {
     // Bound recursion and reject cycles, including legacy layer/key references.
     if (depth > 8 || std::find(callStack_.begin(), callStack_.end(), &steps) != callStack_.end()) return;
     callStack_.push_back(&steps);
@@ -285,6 +288,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         }
         sleepMs(ms, stop);
     };
+    auto hasHeldInput = [&]() {
+        for (bool held : state.heldKey) if (held) return true;
+        for (bool held : state.heldMod) if (held) return true;
+        return false;
+    };
     auto releaseTracked = [&]() {
         uint32_t ended = millis();
         for (int k = 0; k < 256; ++k) if (state.heldKey[k])
@@ -311,7 +319,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         }
         switch (s.type) {
             case StepType::KEY: {
-                uint32_t holdMs = stepDuration(s, cfg_.randomizedDelay && !exactTiming);
+                uint32_t holdMs = stepDuration(s, cfg_.randomizedDelay, true);
                 uint32_t id = logStep(s, pc, stepStartedAt, holdMs, false);
                 // Long taps and combat taps must remain interruptible. Retain
                 // modifiers that were already held by the parent workflow.
@@ -394,7 +402,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 break;
             }
             case StepType::DELAY: {
-                uint32_t duration = stepDuration(s, cfg_.randomizedDelay && !exactTiming);
+                uint32_t duration = stepDuration(s, cfg_.randomizedDelay, hasHeldInput());
                 uint32_t id = logStep(s, pc, stepStartedAt, duration, false);
                 wait(duration);
                 updateLogDuration(id, millis() - stepStartedAt, true);
@@ -441,7 +449,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if (std::find(callStack_.begin(),callStack_.end(),&w.steps)!=callStack_.end()) break;
                     Step entry=s;entry.text=w.name;
                     uint32_t id=logStep(entry,pc,stepStartedAt,0,false);
-                    executeSteps(w.steps,stop,state,depth+1,exactTiming || w.recording);
+                    executeSteps(w.steps,stop,state,depth+1);
                     releaseTracked();
                     utilityLastRun_[w.id]=millis();
                     updateLogDuration(id,millis()-stepStartedAt,true);
@@ -504,7 +512,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     entryStep.text = canCall ? (selected->name.empty() ? "unnamed workflow" : selected->name) : skipReason;
                     uint32_t id = logStep(entryStep, pc, choiceStartedAt, 0, !canCall);
                     if (canCall) {
-                        executeSteps(selected->steps, stop, state, depth + 1, exactTiming || selected->recording);
+                        executeSteps(selected->steps, stop, state, depth + 1);
                         updateLogDuration(id, millis() - choiceStartedAt, true);
                     }
                     if (!stop && !combatExpired()) yieldTick();
@@ -566,7 +574,7 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
     if (oneShot_) {                       // Test / single pass
         macroPass_ = 1;
         ExecutionState state{};
-        executeSteps(kb.steps, stopFlag_, state, 0, kb.recording);
+        executeSteps(kb.steps, stopFlag_, state, 0);
         return;
     }
     switch (kb.trigger) {
@@ -574,7 +582,7 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
             macroPass_ = 1;
             {
                 ExecutionState state{};
-                executeSteps(kb.steps, stopFlag_, state, 0, kb.recording);
+                executeSteps(kb.steps, stopFlag_, state, 0);
             }
             break;
         case TriggerMode::HOLD:
@@ -583,7 +591,7 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
             while (!stopFlag_) {
                 macroPass_++;
                 ExecutionState state{};
-                executeSteps(kb.steps, stopFlag_, state, 0, kb.recording);
+                executeSteps(kb.steps, stopFlag_, state, 0);
                 if (kb.steps.empty()) break;
                 yieldTick();              // don't spin if the macro has no delays
             }

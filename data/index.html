@@ -191,7 +191,16 @@
   .json-dialog::backdrop{background:rgba(0,0,0,.65)}
   .json-dialog header{position:static;display:flex;padding:0 0 12px;gap:12px;flex-wrap:wrap;background:none}
   .json-dialog h3{margin:0;flex:1}
+  .json-preview-grid{display:grid;grid-template-columns:1fr;gap:10px;align-items:start}
+  .json-preview-grid.with-timing{grid-template-columns:minmax(0,1fr) minmax(220px,.58fr)}
   .json-dialog textarea{display:block;box-sizing:border-box;width:100%;height:50vh;resize:vertical;background:var(--bg);color:var(--ink);font:12px/1.5 var(--mono);border:1px solid var(--edge);padding:12px;tab-size:2}
+  .timing-preview{height:50vh;min-height:120px;overflow:auto;border:1px solid var(--edge);background:var(--bg);padding:10px;box-sizing:border-box}
+  .timing-preview h4{font-size:12px;margin:0 0 4px;color:var(--amber)}
+  .timing-preview .hint{margin:0 0 8px}
+  .timing-range-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid var(--edge);font-size:11px}
+  .timing-range-row code{font:11px/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+  .timing-range-value{font:11px/1.4 var(--mono);color:var(--ink);text-align:right;white-space:nowrap}
+  @media(max-width:700px){.json-preview-grid.with-timing{grid-template-columns:1fr}.timing-preview{height:24vh;min-height:100px}}
   .json-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
   #panelRecordings{border-right:1px solid var(--edge)}
   .recording-card{border:1px solid var(--edge);border-radius:var(--r);padding:12px;margin:12px 0}
@@ -328,7 +337,14 @@
   <header><h3 id="jsonTitle">JSON preview</h3><button class="btn sm" id="jsonClose" aria-label="Close JSON preview">Close</button></header>
   <label>Preview <select id="jsonScope" aria-label="JSON export scope"></select></label>
   <p class="hint" id="jsonHint"></p>
-  <textarea id="jsonText" readonly spellcheck="false" aria-label="JSON preview"></textarea>
+  <div class="json-preview-grid">
+    <textarea id="jsonText" readonly spellcheck="false" aria-label="JSON preview"></textarea>
+    <aside class="timing-preview" id="jsonTimingPreview" aria-label="Playback timing ranges">
+      <h4>Timing ranges</h4>
+      <p class="hint" id="jsonTimingHint"></p>
+      <div id="jsonTimingRanges"></div>
+    </aside>
+  </div>
   <div class="json-actions"><button class="btn" id="jsonCopy">Copy JSON</button><button class="btn primary" id="jsonDownload">Download JSON</button></div>
 </dialog>
 <div class="toast" id="toast"></div>
@@ -950,7 +966,56 @@ function refreshJsonPreview(){
   }
   $("#jsonText").value=JSON.stringify(payload,null,2)+"\n";
   $("#jsonHint").textContent=hint;
+  renderTimingRanges(payload,scope);
   jsonFilename=(name.replace(/[^a-z0-9_-]+/gi,"-").replace(/^-+|-+$/g,"").slice(0,80)||"kabuto")+".json";
+}
+function renderTimingRanges(payload,scope){
+  const panel=$("#jsonTimingPreview"),list=$("#jsonTimingRanges"),hint=$("#jsonTimingHint");
+  list.replaceChildren();
+  const groups=[];
+  if(Array.isArray(payload?.steps))groups.push([payload.steps,"steps"]);
+  (payload?.layers||[]).forEach((layer,layerIndex)=>(layer.keys||[]).forEach((key,keyIndex)=>{
+    if(Array.isArray(key.steps))groups.push([key.steps,`layers[${layerIndex}].keys[${keyIndex}].steps`]);
+  }));
+  (payload?.workflows||[]).forEach((workflow,index)=>{
+    if(Array.isArray(workflow.steps))groups.push([workflow.steps,`workflows[${index}].steps`]);
+  });
+  const timingFields=[];
+  for(const [steps,path] of groups){
+    const held=new Set();
+    steps.forEach((step,index)=>{
+      const type=step?.type;
+      const tokens=[...(step?.key?[`key:${step.key}`]:[]),...(step?.mods||[]).map(mod=>`mod:${mod}`)];
+      if(type==="up")tokens.forEach(token=>held.delete(token));
+      if(type==="delay"&&Number.isInteger(step.ms)){
+        timingFields.push({path:`${path}[${index}].ms`,value:step.ms,max:step.maxMs,keyTiming:held.size>0});
+      }
+      if(type==="key"&&Number.isInteger(step.hold)){
+        timingFields.push({path:`${path}[${index}].hold`,value:step.hold,max:step.maxHold,keyTiming:true});
+      }
+      if(type==="down")tokens.forEach(token=>held.add(token));
+    });
+  }
+  panel.hidden=scope==="log"||!timingFields.length;
+  panel.parentElement.classList.toggle("with-timing",!panel.hidden);
+  if(panel.hidden)return;
+  const enabled=cfg?.randomizedDelay!==false;
+  hint.textContent=`Device timing variation ${enabled?"on":"off"}; ranges shown per recorded value.`;
+  timingFields.forEach(field=>{
+    const row=document.createElement("div");row.className="timing-range-row";
+    const path=document.createElement("code");path.textContent=field.path;
+    const value=document.createElement("span");value.className="timing-range-value";
+    if(Number.isInteger(field.max)&&field.max>=field.value&&field.max>0){
+      value.textContent=`${field.value}–${field.max} ms`;
+    }else if(!enabled||field.value===0){
+      value.textContent=`${field.value} ms exact`;
+    }else{
+      const jitter=field.keyTiming?6:field.value<=5000?15:field.value<=40000?200:5000;
+      const minimum=Math.max(1,field.value-jitter),maximum=field.value+jitter;
+      value.textContent=`±${jitter} ms · ${minimum}–${maximum} ms`;
+    }
+    row.append(path,value);list.appendChild(row);
+  });
 }
 function closeJsonPreview(){$("#jsonDialog").close();}
 async function copyJson(){

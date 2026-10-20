@@ -49,5 +49,6 @@ require device tests.
 
 Recording persistence tests round-trip the shipped library, hidden storage-part
 metadata and button playback preferences. Interpreter tests ensure Ctrl holds
-continue across internal parts and captured fixed delays bypass legacy global
-jitter, while existing custom macros remain supported.
+continue across internal parts and captured fixed delays use the configured
+global jitter, with smaller variation on key holds, while existing custom
+macros remain supported.

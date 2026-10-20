@@ -65,6 +65,10 @@ async function main(){
   evaluate(`openRecorder(${JSON.stringify(long)});rec.on=true;rec.events=[[0,'down','key','W'],[750,'up','key','W']];refreshRec();`);
   assert(w.document.querySelector('#recJson').disabled);evaluate('stopRec()');assert(!w.document.querySelector('#recJson').disabled);
   w.document.querySelector('#recJson').click();const recording=JSON.parse(jsonText.value);assert.equal(recording.randomizedDelay,false);assert.equal(recording.layers[0].keys[0].steps[1].ms,750);evaluate('closeJsonPreview()');
+  w.document.querySelector('#recJson').click();
+  assert.match(w.document.querySelector('#jsonTimingRanges').textContent,/layers\[0\]\.keys\[0\]\.steps\[1\]\.ms/);
+  assert.match(w.document.querySelector('#jsonTimingRanges').textContent,/±6 ms · 744–756 ms/);
+  evaluate('closeJsonPreview()');
   w.document.querySelector('#recClear').click();assert(w.document.querySelector('#recJson').disabled);
   evaluate('closeRecorder()');
   // Failed imports/storage capacity leave data intact.

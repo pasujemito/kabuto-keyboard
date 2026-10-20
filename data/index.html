@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kabuto Console</title>
+<style>
+  :root{
+    --bg:#16181d; --panel:#1e2128; --panel2:#23262e; --edge:#2b2f39;
+    --ink:#e8eaed; --muted:#8b919e; --faint:#5b616c;
+    --amber:#ffb020; --amber-dim:#5a4718;
+    --live:#45d6b5; --stop:#ff5d5d; --rec:#ff4d57;
+    --r:8px;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+  button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  input,select{font-family:inherit;font-size:13px}
+  :focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:12px;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));border-bottom:1px solid var(--edge);background:linear-gradient(180deg,#1b1e24,#16181d);position:sticky;top:0;z-index:30}
+  .brand{font-family:var(--mono);font-weight:600;letter-spacing:.03em;white-space:nowrap}
+  .brand b{color:var(--amber)}
+  .brand span{color:var(--faint);font-size:11px;margin-left:6px}
+  .chips{display:flex;gap:10px;align-items:center;margin-left:auto;font-family:var(--mono);font-size:12px;overflow:hidden}
+  .chip{color:var(--muted);white-space:nowrap}
+  .chip b{color:var(--ink)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);display:inline-block;margin-right:5px;vertical-align:middle}
+  .dot.on{background:var(--live);box-shadow:0 0 8px var(--live)}
+  .dot.off{background:var(--stop)}
+  .hdr-actions{display:flex;gap:7px}
+  .btn{background:var(--panel2);color:var(--ink);border:1px solid var(--edge);padding:8px 12px;border-radius:var(--r);font-size:13px;white-space:nowrap}
+  .btn:hover{border-color:var(--faint)}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--amber);color:#1a1300;border-color:var(--amber);font-weight:600}
+  .btn.primary.dirty{box-shadow:0 0 0 2px var(--amber-dim),0 0 10px var(--amber-dim)}
+  .btn.danger{color:var(--stop);border-color:#3a2626}
+  .btn.danger:hover{background:#2a1c1c}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn.sm{padding:6px 10px;font-size:12px}
+
+  /* ---------- layout shell ---------- */
+  main{display:grid;grid-template-columns:1fr;height:calc(100% - 53px)}
+  .panel{overflow:auto;padding:16px;-webkit-overflow-scrolling:touch}
+  #panelKeys{border-right:1px solid var(--edge)}
+  h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 10px;font-weight:600}
+
+  /* tab bar (mobile only) */
+  .tabbar{display:none;position:sticky;bottom:0;z-index:20;border-top:1px solid var(--edge);background:var(--panel);padding-bottom:var(--safe-b)}
+  .tabbar button{flex:1;background:none;border:0;color:var(--muted);padding:11px 0;font-size:12px;font-family:var(--mono);letter-spacing:.03em}
+  .tabbar button.on{color:var(--amber);box-shadow:inset 0 2px 0 var(--amber)}
+
+  /* ---------- wide: two columns side by side ---------- */
+  @media (min-width:620px){
+    main{grid-template-columns:minmax(240px,320px) 1fr}
+    .panel{display:block!important}
+  }
+  @media (max-width:619px){
+    main{grid-template-rows:1fr;height:calc(100% - 53px - 48px)}
+    .panel{grid-column:1;grid-row:1;display:none}
+    .panel.show{display:block}
+    .tabbar{display:flex}
+    #panelKeys{border-right:0}
+  }
+
+  /* ---------- layers ---------- */
+  .layerbar{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;scrollbar-width:thin}
+  .layerbar button{flex:0 0 auto;background:var(--panel);border:1px solid var(--edge);color:var(--muted);padding:7px 12px;border-radius:20px;font-size:12px;white-space:nowrap}
+  .layerbar button.on{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
+  .layerbar button b{font-family:var(--mono);margin-right:6px;opacity:.7}
+  .layerbar .add{color:var(--faint);border-style:dashed}
+
+  /* ---------- key grid ---------- */
+  .grid{display:grid;gap:9px}
+  .keycap{position:relative;aspect-ratio:1/.8;min-height:62px;border:1px solid var(--edge);background:linear-gradient(180deg,#242831,#1c1f26);border-radius:9px;color:var(--muted);padding:9px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;transition:border-color .12s,box-shadow .12s}
+  .keycap:hover{border-color:var(--faint)}
+  .keycap.sel{border-color:var(--amber);box-shadow:inset 0 0 0 1px var(--amber)}
+  .keycap.empty .kname{color:var(--faint);font-style:italic}
+  .keycap .idx{font-family:var(--mono);font-size:10px;color:var(--faint)}
+  .keycap .kname{font-size:13px;color:var(--ink);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .keycap .trig{font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--amber)}
+  .keycap.running{animation:pulse 1s ease-in-out infinite}
+  .keycap.down{border-color:var(--live);box-shadow:inset 0 0 0 2px var(--live)}
+  @keyframes pulse{0%,100%{box-shadow:inset 0 0 0 1px var(--amber)}50%{box-shadow:inset 0 0 0 1px var(--amber),0 0 16px var(--amber-dim)}}
+  @media (prefers-reduced-motion:reduce){.keycap.running{animation:none}}
+
+  /* ---------- live monitor ---------- */
+  .monitor{margin-top:16px;border:1px solid var(--edge);border-radius:var(--r);padding:12px;background:var(--panel)}
+  .monitor .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--muted);margin:3px 0}
+  .monitor .row b{color:var(--ink)}
+  .monitor .big{font-size:22px;color:var(--amber);font-family:var(--mono)}
+  .monitor .hint{color:var(--faint);font-size:11px;margin-top:6px}
+  .monitor-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .monitor-head h2{margin:0}
+  .monitor-subhead{margin:12px 0 6px;color:var(--faint);font:600 10px var(--mono);text-transform:uppercase}
+  .macro-log{max-height:260px;overflow:auto;border-top:1px solid var(--edge);border-bottom:1px solid var(--edge);scrollbar-width:thin}
+  .log-entry{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:2px 8px;padding:7px 2px;border-bottom:1px solid var(--edge);font:11px var(--mono)}
+  .log-entry:last-child{border-bottom:0}
+  .log-time,.log-context{color:var(--faint)}
+  .log-main{min-width:0;overflow-wrap:anywhere;color:var(--ink)}
+  .log-duration{white-space:nowrap;color:var(--amber)}
+  .log-context{grid-column:2 / -1;overflow-wrap:anywhere;font-size:10px}
+  .log-empty{padding:18px 8px;text-align:center;color:var(--faint);font-size:11px}
+
+  /* ---------- editor ---------- */
+  .ed-head{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+  .ed-head input.name{background:var(--panel);border:1px solid var(--edge);color:var(--ink);padding:9px 12px;border-radius:var(--r);font-size:15px;flex:1;min-width:140px}
+  .macro-setting{display:flex;align-items:center;gap:8px;margin:0 0 14px;color:var(--muted);font-size:12px}
+  .macro-setting input{accent-color:var(--amber);width:15px;height:15px}
+  .seg{display:inline-flex;border:1px solid var(--edge);border-radius:var(--r);overflow:hidden}
+  .seg button{background:var(--panel);border:0;color:var(--muted);padding:9px 13px;font-size:12px;font-family:var(--mono)}
+  .seg button.on{background:var(--amber);color:#1a1300;font-weight:600}
+  .seg.tiny button{padding:5px 11px;font-size:11px}
+  .keyshead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .keyshead h2{margin:0}
+  .grid.run .keycap{cursor:pointer;border-color:var(--amber-dim)}
+  .grid.run .keycap.empty{opacity:.45}
+  .grid.run .keycap:active{border-color:var(--amber);box-shadow:inset 0 0 0 2px var(--amber)}
+  .ed-tools{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+  .loopbal{font-family:var(--mono);font-size:12px;color:var(--muted);align-self:center;margin-left:auto}
+  .loopbal.bad{color:var(--stop)}
+
+  .steps{display:flex;flex-direction:column;gap:7px;margin:4px 0 14px}
+  .step{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);padding:9px 10px;flex-wrap:wrap}
+  .step .num{font-family:var(--mono);font-size:11px;color:var(--faint);width:20px;text-align:right}
+  .step select.type{background:var(--panel2);color:var(--amber);border:1px solid var(--edge);border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:12px}
+  .step .fields{display:flex;align-items:center;gap:7px;flex:1;flex-wrap:wrap;min-width:0}
+  .step label{font-size:11px;color:var(--faint)}
+  .step input[type=text],.step input[type=number],.step select.val{background:var(--panel2);color:var(--ink);border:1px solid var(--edge);border-radius:6px;padding:7px 8px}
+  .step input[type=number]{width:84px}
+  .step input.txt{min-width:140px;flex:1;font-family:var(--mono)}
+  .modchips{display:flex;gap:4px;flex-wrap:wrap}
+  .modchips button{background:var(--panel2);border:1px solid var(--edge);color:var(--faint);border-radius:5px;padding:6px 8px;font-family:var(--mono);font-size:11px}
+  .modchips button.on{background:var(--amber-dim);color:var(--amber);border-color:var(--amber)}
+  .step .rm{margin-left:auto;background:none;border:0;color:var(--faint);font-size:17px;padding:0 4px}
+  .step .rm:hover{color:var(--stop)}
+  .step .mv{background:none;border:0;color:var(--faint);padding:0 2px;font-size:13px}
+  .step.loopstart{border-left:2px solid var(--amber)}
+  .step.loopend{border-left:2px solid var(--amber-dim)}
+  .random-choices{display:flex;gap:6px;flex-wrap:wrap;min-width:100%}
+  .random-choice{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:11px}
+  .random-choice input{accent-color:var(--amber)}
+
+  .add-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+  .add-row button{background:var(--panel2);border:1px dashed var(--edge);color:var(--muted);padding:8px 11px;border-radius:var(--r);font-size:12px}
+  .add-row button:hover{color:var(--ink);border-color:var(--faint)}
+  .empty-state{color:var(--faint);padding:34px 0;text-align:center}
+  .hint{color:var(--faint);font-size:12px;margin-top:4px}
+
+  /* ---------- recorder sheet ---------- */
+  .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:none}
+  .sheet-bg.show{display:block}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--panel);border-top:1px solid var(--edge);border-radius:14px 14px 0 0;transform:translateY(100%);transition:transform .22s ease;max-height:92vh;display:flex;flex-direction:column;padding-bottom:var(--safe-b)}
+  .sheet.show{transform:translateY(0)}
+  @media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+  @media (min-width:900px){.sheet{left:50%;right:auto;transform:translate(-50%,100%);width:860px;border-radius:14px;bottom:16px}.sheet.show{transform:translate(-50%,0)}}
+  .sheet-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--edge)}
+  .sheet-head h3{margin:0;font-size:15px}
+  .sheet-head .close{margin-left:auto;background:none;border:0;color:var(--faint);font-size:22px;line-height:1}
+  .rec-status{display:flex;align-items:center;gap:14px;padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--muted);border-bottom:1px solid var(--edge);flex-wrap:wrap}
+  .rec-status .recdot{width:9px;height:9px;border-radius:50%;background:var(--faint)}
+  .rec-status.live .recdot{background:var(--rec);animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .rec-status b{color:var(--ink)}
+  .kbwrap{overflow:auto;padding:12px 10px;flex:1}
+  .kbrow{display:flex;gap:5px;justify-content:center;margin-bottom:5px;flex-wrap:nowrap}
+  .vk{flex:0 0 auto;min-width:34px;height:42px;padding:0 9px;background:linear-gradient(180deg,#262a33,#1d2027);border:1px solid var(--edge);border-radius:7px;color:var(--ink);font-size:13px;display:flex;align-items:center;justify-content:center;user-select:none;touch-action:none}
+  .vk:active{background:var(--amber);color:#1a1300}
+  .vk.wide{min-width:60px}
+  .vk.xwide{min-width:120px;flex:1;max-width:280px}
+  .vk.mod{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .vk.mod.held{background:var(--amber-dim);color:var(--amber);border-color:var(--amber)}
+  .vk.media{font-family:var(--mono);font-size:11px;color:var(--amber)}
+  .vk.flash{background:var(--live)!important;color:#06231c!important}
+  .vk.holding,.vk.captured{border-color:var(--live);box-shadow:inset 0 0 0 2px var(--live);color:var(--live)}
+  .sheet-foot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--edge);flex-wrap:wrap;align-items:center}
+  .sheet-foot .spacer{flex:1}
+  .seg-label{font-size:11px;color:var(--faint);letter-spacing:.1em;text-transform:uppercase;align-self:center}
+  .livetoggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);user-select:none}
+  .livetoggle input{accent-color:var(--amber);width:15px;height:15px}
+  .capture-controls{display:grid;grid-template-columns:auto minmax(160px,1fr);gap:8px 10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--edge)}
+  .capture-controls input{min-width:0;background:var(--panel2);border:1px solid var(--edge);border-radius:var(--r);color:var(--ink);padding:9px 10px}
+  .capture-controls .hint{grid-column:1/-1;margin:0}
+
+  .toast{position:fixed;left:50%;bottom:calc(16px + var(--safe-b));transform:translateX(-50%);background:var(--panel2);border:1px solid var(--edge);padding:10px 16px;border-radius:var(--r);font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
+  .toast.show{opacity:1}
+  .toast.err{border-color:var(--stop);color:var(--stop)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>■</b> Kabuto<span id="fw"></span></div>
+  <div class="chips">
+    <span class="chip"><span id="dotConn" class="dot"></span><span id="connText">—</span></span>
+    <span class="chip">bonds <b id="bonds">0</b></span>
+  </div>
+  <div class="hdr-actions">
+    <button class="btn danger sm" id="stopBtn">Stop</button>
+    <button class="btn primary sm" id="saveBtn">Save</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel show" id="panelKeys">
+    <h2>Layers</h2>
+    <div class="layerbar" id="layerbar"></div>
+    <div class="keyshead">
+      <h2>Keys</h2>
+      <div class="seg tiny" id="gridMode">
+        <button class="on" data-g="edit">Edit</button>
+        <button data-g="run">Run</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="monitor" id="monitor">
+      <div class="monitor-head">
+        <h2>Macro execution log</h2>
+        <button class="btn sm" id="clearLog">Clear</button>
+      </div>
+      <div class="row"><span>Macro</span><b id="macroRunState">idle</b></div>
+      <div class="macro-log" id="macroLog" aria-label="Recent macro steps">
+        <div class="log-empty">Run or test a macro to see its steps.</div>
+      </div>
+      <div class="hint">Time is relative to macro start. Loop paths use step#iteration, outer to inner.</div>
+      <div class="monitor-subhead">Physical switch diagnostics</div>
+      <div class="row"><span>Last pressed</span><span class="big" id="monLast">—</span></div>
+      <div class="row"><span>Total presses</span><b id="monCount">0</b></div>
+      <div class="row"><span>Down now</span><b id="monDown">none</b></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panelEdit">
+    <div id="editor"><div class="empty-state">Loading device…</div></div>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <button id="tabKeys" class="on" onclick="showTab('keys')">Keys</button>
+  <button id="tabEdit" onclick="showTab('edit')">Edit</button>
+</nav>
+
+<!-- recorder sheet -->
+<div class="sheet-bg" id="sheetBg" onclick="closeRecorder()"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-head">
+    <h3>Record macro</h3>
+    <button class="close" onclick="closeRecorder()">×</button>
+  </div>
+  <div class="rec-status" id="recStatus">
+    <span class="recdot"></span><span id="recState">idle</span>
+    <span>steps <b id="recSteps">0</b></span>
+    <span>elapsed <b id="recTime">0.0s</b></span>
+    <span>held <b id="recHeld">—</b></span>
+    <span class="hint" style="margin:0">Enable Live send to test keys without recording; press Record to capture and forward together.</span>
+  </div>
+  <div class="capture-controls">
+    <button class="btn" id="keyboardCapture">Start keyboard capture</button>
+    <input id="phoneCapture" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Phone keyboard capture input" placeholder="Phone keyboard input" disabled>
+    <span class="hint" id="captureState">Laptop: keep this page focused. Phone: type in the field. Use a different device from the BLE host to avoid feedback.</span>
+  </div>
+  <div class="kbwrap" id="kbwrap"></div>
+  <div class="sheet-foot">
+    <button class="btn" id="recBtn">● Record</button>
+    <button class="btn sm" id="recClear">Clear</button>
+    <label class="livetoggle"><input type="checkbox" id="recLive"> Live send</label>
+    <span class="spacer"></span>
+    <span class="seg-label">on finish</span>
+    <div class="seg" id="recMode">
+      <button class="on" data-m="replace">Replace</button>
+      <button data-m="append">Append</button>
+    </div>
+    <button class="btn primary" id="recUse" disabled>Use steps</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+let meta=null,cfg=null,selLayer=0,selKey=0,status={},savedSnapshot="";
+function updateDirty(){if(!cfg)return;const d=JSON.stringify(cfg)!==savedSnapshot;const b=$("#saveBtn");b.classList.toggle("dirty",d);b.textContent=d?"Save •":"Save";}
+
+const MOD_SET=["ctrl","shift","alt","gui"];
+const STEP_TYPES=[["key","Tap key"],["down","Key down"],["up","Key up"],["text","Type text"],["media","Media key"],["delay","Delay"],["loop","Loop start"],["endloop","Loop end"],["layer","Switch layer"],["random","Random macro"]];
+
+async function api(p,o){return fetch(p,o);}
+function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast",1900);}
+function esc(s){return(s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function blankKey(){return{name:"",trigger:"tap",steps:[]};}
+
+function normalize(){
+  if(typeof cfg.randomizedDelay!=="boolean")cfg.randomizedDelay=true;
+  if(!cfg.layers)cfg.layers=[];
+  if(!cfg.layers.length)cfg.layers.push({name:"Base",keys:[]});
+  for(const L of cfg.layers){
+    if(!L.keys)L.keys=[];
+    while(L.keys.length<meta.keyCount)L.keys.push(blankKey());
+    L.keys.length=meta.keyCount;
+    for(const k of L.keys){if(!k.trigger)k.trigger="tap";if(!k.steps)k.steps=[];if(k.name==null)k.name="";}
+  }
+}
+
+async function loadAll(){
+  meta=await(await api("/api/meta")).json();
+  $("#fw").textContent=" v"+meta.firmware;
+  cfg=await(await api("/api/config")).json();
+  normalize();
+  savedSnapshot=JSON.stringify(cfg);
+  renderLayers();renderGrid();renderEditor();buildVKeyboard();updateDirty();
+  pollStatus();
+  pollMacroLog();
+}
+
+/* tabs (mobile) */
+function showTab(t){
+  $("#panelKeys").classList.toggle("show",t==="keys");
+  $("#panelEdit").classList.toggle("show",t==="edit");
+  $("#tabKeys").classList.toggle("on",t==="keys");
+  $("#tabEdit").classList.toggle("on",t==="edit");
+}
+
+/* layers */
+function renderLayers(){
+  const b=$("#layerbar");b.innerHTML="";
+  cfg.layers.forEach((L,i)=>{
+    const btn=document.createElement("button");
+    btn.className=i===selLayer?"on":"";
+    btn.innerHTML=`<b>${i}</b>${esc(L.name||"Layer")}`;
+    btn.onclick=()=>{selLayer=i;selKey=0;renderLayers();renderGrid();renderEditor();postLayer(i);};
+    btn.ondblclick=()=>{const n=prompt("Layer name",L.name||"");if(n!=null){L.name=n;renderLayers();}};
+    b.appendChild(btn);
+  });
+  if(cfg.layers.length<meta.maxLayers){
+    const add=document.createElement("button");add.className="add";add.textContent="+ layer";
+    add.onclick=()=>{cfg.layers.push({name:"Layer "+cfg.layers.length,keys:[]});normalize();selLayer=cfg.layers.length-1;renderLayers();renderGrid();renderEditor();};
+    b.appendChild(add);
+  }
+}
+
+/* grid */
+let gridMode="edit";
+function renderGrid(){
+  const g=$("#grid");g.style.gridTemplateColumns=`repeat(${meta.cols},1fr)`;
+  g.classList.toggle("run",gridMode==="run");g.innerHTML="";
+  cfg.layers[selLayer].keys.forEach((k,i)=>{
+    const cap=document.createElement("button");
+    const empty=k.steps.length===0;
+    const down=status.keyMask&&(status.keyMask&(1<<i));
+    const running=status.running&&status.runningKey===i&&selLayer===status.activeLayer;
+    cap.className="keycap"+(i===selKey&&gridMode==="edit"?" sel":"")+(empty?" empty":"")+(running?" running":"")+(down?" down":"");
+    cap.innerHTML=`<span class="idx">#${i}</span><span class="kname">${empty?"unassigned":esc(k.name||("key "+i))}</span><span class="trig">${empty?"":k.trigger}</span>`;
+    if(gridMode==="run"){
+      // fire the macro with real trigger semantics (down/up)
+      cap.addEventListener("pointerdown",e=>{e.preventDefault();runPress(i);});
+      cap.addEventListener("pointerup",e=>{e.preventDefault();runRelease(i);});
+      cap.addEventListener("pointercancel",()=>runRelease(i));
+    }else{
+      cap.onclick=()=>{selKey=i;renderGrid();renderEditor();if(window.innerWidth<620)showTab('edit');};
+    }
+    g.appendChild(cap);
+  });
+}
+async function runPress(i){
+  if(!status.connected){toast("Run needs a paired host",true);return;}
+  await api(`/api/press?layer=${selLayer}&key=${i}`,{method:"POST"}).catch(()=>{});
+}
+async function runRelease(i){
+  await api(`/api/release?layer=${selLayer}&key=${i}`,{method:"POST"}).catch(()=>{});
+}
+function setGridMode(m){
+  gridMode=m;
+  $("#gridMode").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.g===m));
+  if(m==="run"&&!status.connected)toast("Run mode sends to the paired host — none connected",true);
+  renderGrid();
+}
+
+/* editor */
+function renderEditor(){
+  const w=$("#editor");const k=cfg.layers[selLayer].keys[selKey];w.innerHTML="";
+  const head=document.createElement("div");head.className="ed-head";
+  const name=document.createElement("input");name.className="name";name.placeholder="Key name";name.value=k.name||"";
+  name.oninput=()=>{k.name=name.value;renderGrid();};
+  head.appendChild(name);
+  const seg=document.createElement("div");seg.className="seg";
+  [["tap","Tap"],["toggle","Toggle"],["hold","Hold"]].forEach(([v,l])=>{
+    const b=document.createElement("button");b.textContent=l;b.className=k.trigger===v?"on":"";
+    b.onclick=()=>{k.trigger=v;renderEditor();renderGrid();};seg.appendChild(b);});
+  head.appendChild(seg);
+  w.appendChild(head);
+
+  const setting=document.createElement("label");setting.className="macro-setting";
+  const randomized=document.createElement("input");randomized.type="checkbox";randomized.checked=cfg.randomizedDelay;
+  randomized.onchange=()=>{cfg.randomizedDelay=randomized.checked;updateDirty();};
+  setting.appendChild(randomized);setting.append("Randomized timing (+/-10 ms short, +/-1000 ms at 2s+)");
+  w.appendChild(setting);
+
+  const tools=document.createElement("div");tools.className="ed-tools";
+  const rec=document.createElement("button");rec.className="btn";rec.textContent="⦿ Record with keyboard";rec.onclick=openRecorder;
+  const test=document.createElement("button");test.className="btn sm";test.textContent="Test ▸";test.onclick=testKey;
+  tools.appendChild(rec);tools.appendChild(test);
+  const bal=document.createElement("span");const d=loopBalance(k.steps);
+  bal.className="loopbal"+(d!==0?" bad":"");bal.textContent=d===0?"loops balanced":("loops off by "+d);
+  tools.appendChild(bal);
+  w.appendChild(tools);
+
+  const steps=document.createElement("div");steps.className="steps";
+  if(!k.steps.length){const e=document.createElement("div");e.className="empty-state";e.textContent="No steps. Record with the keyboard, or add one below.";steps.appendChild(e);}
+  let depth=0;
+  k.steps.forEach((st,i)=>{if(st.type==="endloop")depth=Math.max(0,depth-1);steps.appendChild(renderStep(k,st,i,depth));if(st.type==="loop")depth++;});
+  w.appendChild(steps);
+
+  const add=document.createElement("div");add.className="add-row";
+  STEP_TYPES.forEach(([v,l])=>{const b=document.createElement("button");b.textContent="+ "+l;b.onclick=()=>{k.steps.push(newStep(v));renderEditor();renderGrid();};add.appendChild(b);});
+  w.appendChild(add);
+  const h=document.createElement("p");h.className="hint";
+  h.textContent="Loop count 0 repeats until stopped (pair with Toggle/Hold). When enabled, timings under 2 seconds vary by +/-10 ms; longer timings vary by +/-1000 ms.";
+  w.appendChild(h);
+}
+
+function defaultRandomChoices(){
+  const choices=[];
+  cfg.layers.forEach((layer,layerIndex)=>layer.keys.forEach((macro,keyIndex)=>{
+    if(macro.steps.length&&(layerIndex!==selLayer||keyIndex!==selKey))choices.push({layer:layerIndex,key:keyIndex});
+  }));
+  return choices;
+}
+function newStep(t){return{key:{type:"key",key:"A",mods:[],hold:0},down:{type:"down",key:"A",mods:[]},up:{type:"up",key:"A"},text:{type:"text",text:""},media:{type:"media",media:"PLAY"},delay:{type:"delay",ms:100},loop:{type:"loop",count:1},endloop:{type:"endloop"},layer:{type:"layer",layer:0},random:{type:"random",choices:defaultRandomChoices()}}[t];}
+
+function renderStep(k,st,i,depth){
+  const row=document.createElement("div");
+  row.className="step"+(st.type==="loop"?" loopstart":"")+(st.type==="endloop"?" loopend":"");
+  const num=document.createElement("span");num.className="num";num.textContent=i+1;row.appendChild(num);
+  if(depth>0){const p=document.createElement("span");p.style.width=(depth*14)+"px";row.appendChild(p);}
+  const tsel=document.createElement("select");tsel.className="type";
+  STEP_TYPES.forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;if(v===st.type)o.selected=true;tsel.appendChild(o);});
+  tsel.onchange=()=>{k.steps[i]=newStep(tsel.value);renderEditor();};row.appendChild(tsel);
+  const f=document.createElement("div");f.className="fields";buildFields(f,st);row.appendChild(f);
+  const up=document.createElement("button");up.className="mv";up.textContent="↑";up.onclick=()=>{if(i>0){[k.steps[i-1],k.steps[i]]=[k.steps[i],k.steps[i-1]];renderEditor();}};
+  const dn=document.createElement("button");dn.className="mv";dn.textContent="↓";dn.onclick=()=>{if(i<k.steps.length-1){[k.steps[i+1],k.steps[i]]=[k.steps[i],k.steps[i+1]];renderEditor();}};
+  const rm=document.createElement("button");rm.className="rm";rm.textContent="×";rm.onclick=()=>{k.steps.splice(i,1);renderEditor();renderGrid();};
+  row.appendChild(up);row.appendChild(dn);row.appendChild(rm);return row;
+}
+
+function keySelect(val,on){const s=document.createElement("select");s.className="val";meta.keys.forEach(k=>{const o=document.createElement("option");o.value=k;o.textContent=k;if(k===val)o.selected=true;s.appendChild(o);});s.onchange=()=>on(s.value);return s;}
+function modChips(arr,on){const box=document.createElement("div");box.className="modchips";MOD_SET.forEach(m=>{const b=document.createElement("button");b.textContent=m;if(arr.includes(m))b.classList.add("on");b.onclick=()=>{const x=arr.indexOf(m);if(x>=0)arr.splice(x,1);else arr.push(m);on();b.classList.toggle("on");};box.appendChild(b);});return box;}
+function numField(label,val,on,min){const w=document.createElement("span");w.style.cssText="display:inline-flex;gap:6px;align-items:center";const l=document.createElement("label");l.textContent=label;w.appendChild(l);const n=document.createElement("input");n.type="number";n.value=val;if(min!=null)n.min=min;n.oninput=()=>on(parseInt(n.value||"0",10));w.appendChild(n);return w;}
+
+function buildFields(f,st){
+  if(st.type==="key"||st.type==="down"){if(!st.mods)st.mods=[];f.appendChild(modChips(st.mods,()=>{}));f.appendChild(keySelect(st.key,v=>st.key=v));if(st.type==="key")f.appendChild(numField("hold ms",st.hold||0,v=>st.hold=v,0));}
+  else if(st.type==="up"){f.appendChild(keySelect(st.key,v=>st.key=v));}
+  else if(st.type==="text"){const t=document.createElement("input");t.type="text";t.className="txt";t.placeholder="text to type";t.value=st.text||"";t.oninput=()=>st.text=t.value;f.appendChild(t);}
+  else if(st.type==="media"){const s=document.createElement("select");s.className="val";meta.media.forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;if(m===st.media)o.selected=true;s.appendChild(o);});s.onchange=()=>st.media=s.value;f.appendChild(s);}
+  else if(st.type==="delay"){f.appendChild(numField("ms",st.ms||0,v=>st.ms=v,0));}
+  else if(st.type==="loop"){f.appendChild(numField("count (0=∞)",st.count||0,v=>st.count=v,0));}
+  else if(st.type==="endloop"){const s=document.createElement("span");s.style.color="var(--faint)";s.textContent="end of innermost loop";f.appendChild(s);}
+  else if(st.type==="layer"){const s=document.createElement("select");s.className="val";cfg.layers.forEach((L,i)=>{const o=document.createElement("option");o.value=i;o.textContent=i+": "+(L.name||"Layer");if(i===st.layer)o.selected=true;s.appendChild(o);});s.onchange=()=>st.layer=parseInt(s.value,10);f.appendChild(s);}
+  else if(st.type==="random"){
+    if(!st.choices)st.choices=[];
+    const choices=document.createElement("div");choices.className="random-choices";
+    let count=0;
+    cfg.layers.forEach((layer,layerIndex)=>{
+      const available=layer.keys.map((macro,keyIndex)=>({macro,keyIndex})).filter(({macro,keyIndex})=>macro.steps.length&&(layerIndex!==selLayer||keyIndex!==selKey));
+      if(!available.length)return;
+      const heading=document.createElement("span");heading.style.cssText="width:100%;color:var(--faint);font:11px var(--mono)";heading.textContent=layer.name||("Layer "+layerIndex);choices.appendChild(heading);
+      available.forEach(({macro,keyIndex})=>{
+        count++;
+        const ref={layer:layerIndex,key:keyIndex};
+        const label=document.createElement("label");label.className="random-choice";
+        const checkbox=document.createElement("input");checkbox.type="checkbox";
+        checkbox.checked=st.choices.some(choice=>choice.layer===ref.layer&&choice.key===ref.key);
+        checkbox.onchange=()=>{
+          st.choices=st.choices.filter(choice=>choice.layer!==ref.layer||choice.key!==ref.key);
+          if(checkbox.checked)st.choices.push(ref);
+          updateDirty();
+        };
+        const text=document.createElement("span");text.textContent=macro.name||("Key "+(keyIndex+1));
+        label.append(checkbox,text);choices.appendChild(label);
+      });
+    });
+    if(!count){const empty=document.createElement("span");empty.className="hint";empty.textContent="Assign another macro before adding it to the random choice.";choices.appendChild(empty);}
+    f.appendChild(choices);
+  }
+}
+function loopBalance(steps){let d=0;for(const s of steps){if(s.type==="loop")d++;if(s.type==="endloop")d--;}return d;}
+
+/* ---------------- virtual keyboard recorder ---------------- */
+const VK_ROWS=[
+  ["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"],
+  ["1","2","3","4","5","6","7","8","9","0","-","=","BACKSPACE"],
+  ["TAB","Q","W","E","R","T","Y","U","I","O","P"],
+  ["CAPS","A","S","D","F","G","H","J","K","L","ENTER"],
+  ["SHIFT","Z","X","C","V","B","N","M",",",".","/"],
+  ["CTRL","ALT","GUI","SPACE","LEFT","DOWN","UP","RIGHT"],
+  ["PLAY","PREV","NEXT","VOLDOWN","VOLUP","MUTE","DELAY"],
+];
+const WIDE={"BACKSPACE":"wide","TAB":"wide","CAPS":"wide","ENTER":"wide","SHIFT":"wide","CTRL":"mod","ALT":"mod","GUI":"mod","DELAY":"wide"};
+const MODNAME={"CTRL":"ctrl","SHIFT":"shift","ALT":"alt","GUI":"gui"};
+const MEDIA={"PLAY":1,"PREV":1,"NEXT":1,"VOLUP":1,"VOLDOWN":1,"MUTE":1,"STOP":1};
+
+let rec={on:false,t0:0,events:[],held:new Set(),steps:[],timer:null,ledTimer:null};
+
+function buildVKeyboard(){
+  const w=$("#kbwrap");w.innerHTML="";
+  VK_ROWS.forEach(row=>{
+    const r=document.createElement("div");r.className="kbrow";
+    row.forEach(name=>{
+      const b=document.createElement("div");
+      let cls="vk";
+      if(WIDE[name]==="wide")cls+=" wide";
+      if(name==="SPACE")cls+=" xwide";
+      if(MODNAME[name])cls+=" mod";
+      if(MEDIA[name])cls+=" media";
+      b.className=cls;b.textContent=keyLabel(name);b.dataset.k=name;
+      if(MODNAME[name]){b.onclick=()=>toggleMod(name,b);}
+      else{
+        // Pointer capture keeps the hold alive even if the finger drifts off
+        // the key, so press-and-hold records the real hold duration.
+        b.addEventListener("pointerdown",e=>{e.preventDefault();try{b.setPointerCapture(e.pointerId);}catch(_){}vkDown(name,b);});
+        b.addEventListener("pointerup",e=>{e.preventDefault();vkUp(name,b);});
+        b.addEventListener("pointercancel",e=>{vkUp(name,b);});
+      }
+      r.appendChild(b);
+    });
+    w.appendChild(r);
+  });
+}
+function keyLabel(n){return{"BACKSPACE":"⌫","ENTER":"⏎","TAB":"⇥","CAPS":"Caps","SPACE":"Space","LEFT":"←","RIGHT":"→","UP":"↑","DOWN":"↓","VOLUP":"Vol+","VOLDOWN":"Vol−","PLAY":"Play","PREV":"Prev","NEXT":"Next","MUTE":"Mute","DELAY":"+Delay"}[n]||n;}
+
+function now(){return performance.now();}
+function ensureRec(){if(!rec.on&&!liveOn)startRec();}
+function flash(b){b.classList.add("flash");setTimeout(()=>b.classList.remove("flash"),110);}
+
+// Live passthrough: fire-and-forget the key to the host as it's tapped.
+let liveOn=false;
+let liveBatch=[];
+let liveFlushTimer=null;
+let liveSendChain=Promise.resolve();
+let liveErrorShown=false;
+function liveSend(ev,params){
+  if(!liveOn||!status.connected)return;
+  liveBatch.push(Object.assign({ev},params||{}));
+  if(liveBatch.length>=24)flushLiveBatch();
+  else if(!liveFlushTimer)liveFlushTimer=setTimeout(flushLiveBatch,12);
+}
+function flushLiveBatch(){
+  clearTimeout(liveFlushTimer);liveFlushTimer=null;
+  if(!liveBatch.length)return;
+  const events=liveBatch.splice(0);
+  liveSendChain=liveSendChain.then(async()=>{
+    const response=await fetch("/api/live/batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(events)});
+    if(!response.ok)throw new Error("Live send rejected");
+    liveErrorShown=false;
+  }).catch(()=>{
+    if(!liveErrorShown){toast("Live send failed; check the BLE connection",true);liveErrorShown=true;}
+  });
+}
+
+let captureOn=false,captureLiveBefore=false,phoneCaptureValue="";
+const capturedKeys=new Map(),capturedMods=new Map();
+const CAPTURE_MODS={ControlLeft:"ctrl",ControlRight:"rctrl",ShiftLeft:"shift",ShiftRight:"rshift",AltLeft:"alt",AltRight:"altgr",MetaLeft:"gui",MetaRight:"rgui",OSLeft:"gui",OSRight:"rgui"};
+const MOD_FLAGS=[["ctrlKey","ControlLeft","ControlRight"],["shiftKey","ShiftLeft","ShiftRight"],["altKey","AltLeft","AltRight"],["metaKey","MetaLeft","MetaRight"]];
+const MOD_VK={ctrl:"CTRL",rctrl:"CTRL",shift:"SHIFT",rshift:"SHIFT",alt:"ALT",altgr:"ALT",gui:"GUI",rgui:"GUI"};
+const CAPTURE_KEYS={Enter:"ENTER",NumpadEnter:"ENTER",Escape:"ESC",Backspace:"BACKSPACE",Tab:"TAB",Space:"SPACE",CapsLock:"CAPS",Insert:"INSERT",Delete:"DELETE",Home:"HOME",End:"END",PageUp:"PAGEUP",PageDown:"PAGEDOWN",ArrowUp:"UP",ArrowDown:"DOWN",ArrowLeft:"LEFT",ArrowRight:"RIGHT",PrintScreen:"PRINTSCREEN",Minus:"-",Equal:"=",BracketLeft:"[",BracketRight:"]",Backslash:"\\",Semicolon:";",Quote:"'",Backquote:"`",Comma:",",Period:".",Slash:"/",NumpadDecimal:".",NumpadAdd:"+",NumpadSubtract:"-",NumpadMultiply:"*",NumpadDivide:"/"};
+function captureKeyName(code){
+  if(/^Key[A-Z]$/.test(code))return code.slice(3);
+  if(/^Digit[0-9]$/.test(code))return code.slice(5);
+  if(/^Numpad[0-9]$/.test(code))return code.slice(6);
+  if(/^F([1-9]|1[0-2])$/.test(code))return code;
+  return CAPTURE_KEYS[code]||"";
+}
+// Browsers never deliver these to the page, so don't send a half chord.
+function captureReserved(e){
+  return ((e.ctrlKey||e.metaKey)&&["KeyW","KeyT","KeyN","KeyQ"].includes(e.code))||(e.metaKey&&e.code==="Tab");
+}
+function captureModDown(code){
+  if(capturedMods.has(code))return;
+  const mod=CAPTURE_MODS[code];capturedMods.set(code,mod);
+  if(rec.on)rec.events.push([now(),"down","mod",mod]);liveSend("moddown",{mod});
+}
+function captureModUp(code){
+  const mod=capturedMods.get(code);if(!mod)return;capturedMods.delete(code);
+  if(rec.on)rec.events.push([now(),"up","mod",mod]);liveSend("modup",{mod});
+}
+function captureKeyRelease(code){
+  const key=capturedKeys.get(code);if(!key)return;capturedKeys.delete(code);
+  if(rec.on)rec.events.push([now(),"up","key",key]);liveSend("up",{key});
+}
+// Modifier keydown/keyup can be swallowed by the OS; trust the event's flags instead.
+function syncCaptureMods(e,skipCode){
+  for(const [flag,left,right] of MOD_FLAGS){
+    if(left===skipCode||right===skipCode)continue;
+    const held=capturedMods.has(left)||capturedMods.has(right);
+    if(e[flag]&&!held)captureModDown(left);
+    else if(!e[flag]&&held){captureModUp(left);captureModUp(right);}
+  }
+}
+function captureKeyDown(e){
+  if(!captureOn)return;
+  if(e.target===$("#phoneCapture")){
+    if(e.code==="Enter"){e.preventDefault();sendCapturedTap("ENTER");}
+    return;
+  }
+  if(captureReserved(e))return;
+  if(CAPTURE_MODS[e.code]){
+    e.preventDefault();syncCaptureMods(e,e.code);captureModDown(e.code);refreshRec();return;
+  }
+  const key=captureKeyName(e.code);if(!key)return;
+  e.preventDefault();syncCaptureMods(e);
+  if(e.repeat||capturedKeys.has(e.code)){refreshRec();return;}
+  capturedKeys.set(e.code,key);if(rec.on)rec.events.push([now(),"down","key",key]);liveSend("down",{key});refreshRec();
+}
+function captureKeyUp(e){
+  if(!captureOn)return;
+  if(CAPTURE_MODS[e.code]){
+    e.preventDefault();captureModUp(e.code);
+    // macOS drops keyup for keys released while Cmd is held.
+    if(e.code.startsWith("Meta")||e.code.startsWith("OS"))for(const code of [...capturedKeys.keys()])captureKeyRelease(code);
+    syncCaptureMods(e,e.code);refreshRec();return;
+  }
+  if(capturedKeys.has(e.code)){
+    e.preventDefault();captureKeyRelease(e.code);refreshRec();
+  }
+}
+function releaseCapturedKeys(){
+  const t=now();
+  for(const [code,key] of capturedKeys){if(rec.on)rec.events.push([t,"up","key",key]);liveSend("up",{key});}
+  for(const [code,mod] of capturedMods){if(rec.on)rec.events.push([t,"up","mod",mod]);liveSend("modup",{mod});}
+  capturedKeys.clear();capturedMods.clear();liveSend("releaseall");refreshRec();
+}
+function startKeyboardCapture(){
+  if(captureOn)return;
+  captureOn=true;captureLiveBefore=liveOn;liveOn=true;
+  $("#recLive").checked=true;$("#recLive").disabled=true;
+  $("#keyboardCapture").textContent="Stop keyboard capture";$("#keyboardCapture").classList.add("danger");
+  $("#captureState").textContent=status.connected?(rec.on?"Capturing, recording, and forwarding.":"Forwarding only; press Record to also record."):"Capturing only; connect a BLE host to forward keys.";
+  const input=$("#phoneCapture");input.disabled=false;input.value="";phoneCaptureValue="";
+  window.addEventListener("keydown",captureKeyDown,true);window.addEventListener("keyup",captureKeyUp,true);
+  window.addEventListener("blur",releaseCapturedKeys);
+  document.addEventListener("visibilitychange",handleCaptureVisibility);
+}
+function stopKeyboardCapture(){
+  if(!captureOn)return;
+  releaseCapturedKeys();captureOn=false;
+  window.removeEventListener("keydown",captureKeyDown,true);window.removeEventListener("keyup",captureKeyUp,true);
+  window.removeEventListener("blur",releaseCapturedKeys);
+  document.removeEventListener("visibilitychange",handleCaptureVisibility);
+  liveOn=captureLiveBefore;$("#recLive").checked=liveOn;$("#recLive").disabled=false;
+  $("#keyboardCapture").textContent="Start keyboard capture";$("#keyboardCapture").classList.remove("danger");
+  $("#captureState").textContent="Capture stopped.";
+  const input=$("#phoneCapture");input.value="";input.disabled=true;input.blur();phoneCaptureValue="";
+  flushLiveBatch();
+}
+function handleCaptureVisibility(){if(document.hidden)releaseCapturedKeys();}
+function sendCapturedTap(key){
+  const t=now();if(rec.on)rec.events.push([t,"down","key",key],[now(),"up","key",key]);
+  liveSend("down",{key});liveSend("up",{key});
+}
+function handlePhoneCaptureInput(e){
+  if(!captureOn||e.isComposing)return;
+  const input=e.target,current=input.value,previous=phoneCaptureValue;
+  let prefix=0;while(prefix<previous.length&&prefix<current.length&&previous[prefix]===current[prefix])prefix++;
+  let suffix=0;while(suffix<previous.length-prefix&&suffix<current.length-prefix&&previous[previous.length-1-suffix]===current[current.length-1-suffix])suffix++;
+  const removed=previous.length-prefix-suffix,inserted=current.slice(prefix,current.length-suffix);
+  for(let count=0;count<removed;count++)sendCapturedTap("BACKSPACE");
+  if(inserted){
+    for(let offset=0;offset<inserted.length;offset+=40){
+      const text=inserted.slice(offset,offset+40);if(rec.on)rec.events.push([now(),"text","text",text]);liveSend("text",{text});
+    }
+  }
+  phoneCaptureValue=current;
+  if(current.length>120){input.value=current.slice(-60);phoneCaptureValue=input.value;}
+  if(removed||inserted)refreshRec();
+}
+
+function toggleMod(name,b){
+  ensureRec();
+  const mod=MODNAME[name];
+  if(rec.held.has(mod)){rec.held.delete(mod);b.classList.remove("held");if(rec.on)rec.events.push([now(),"up","mod",mod]);liveSend("modup",{mod});}
+  else{rec.held.add(mod);b.classList.add("held");if(rec.on)rec.events.push([now(),"down","mod",mod]);liveSend("moddown",{mod});}
+  refreshRec();
+}
+function vkDown(name,b){
+  if(b._dn)return;                                      // ignore repeats while held
+  ensureRec();b._dn=true;flash(b);
+  if(name==="DELAY"){if(rec.on)rec.events.push([now(),"delaymark",null,null]);b._dn=false;refreshRec();return;}
+  if(MEDIA[name]){if(rec.on)rec.events.push([now(),"media",null,name]);b._dn=false;refreshRec();liveSend("media",{media:name});return;}
+  b.classList.add("holding");                          // show it's held down
+  if(rec.on)rec.events.push([now(),"down","key",name]);refreshRec();liveSend("down",{key:name});
+}
+function vkUp(name,b){
+  if(!b._dn)return;b._dn=false;
+  b.classList.remove("holding");
+  if(name==="DELAY"||MEDIA[name])return;
+  if(rec.on)rec.events.push([now(),"up","key",name]);refreshRec();liveSend("up",{key:name});  // records the hold length
+}
+
+function startRec(){
+  rec.on=true;rec.t0=now();rec.events=[];rec.held.clear();
+  document.querySelectorAll(".vk.held").forEach(e=>e.classList.remove("held"));
+  $("#recStatus").classList.add("live");$("#recState").textContent="recording";
+  $("#recBtn").textContent="■ Stop";$("#recBtn").classList.add("danger");
+  rec.timer=setInterval(()=>{$("#recTime").textContent=((now()-rec.t0)/1000).toFixed(1)+"s";},100);
+  notifyRecordingLed(true);
+  rec.ledTimer=setInterval(()=>notifyRecordingLed(true),1000);
+}
+function stopRec(){
+  if(captureOn)stopKeyboardCapture();
+  rec.on=false;clearInterval(rec.timer);clearInterval(rec.ledTimer);notifyRecordingLed(false);
+  const t=now();
+  rec.held.forEach(mod=>rec.events.push([t,"up","mod",mod]));rec.held.clear();
+  document.querySelectorAll(".vk.held").forEach(e=>e.classList.remove("held"));
+  // release any regular key still physically held when recording stopped
+  document.querySelectorAll(".vk.holding").forEach(el=>{el.classList.remove("holding");if(el._dn){el._dn=false;rec.events.push([t,"up","key",el.dataset.k]);}});
+  liveSend("releaseall");   // clear anything held on the host
+  $("#recStatus").classList.remove("live");$("#recState").textContent="stopped";
+  $("#recBtn").textContent="● Record";$("#recBtn").classList.remove("danger");
+  rec.steps=eventsToSteps(rec.events);
+  $("#recUse").disabled=rec.steps.length===0;
+}
+function notifyRecordingLed(active){
+  fetch("/api/recording?active="+(active?"1":"0"),{method:"POST",keepalive:true}).catch(()=>{});
+}
+function refreshRec(){rec.steps=eventsToSteps(rec.events);$("#recSteps").textContent=rec.steps.length;$("#recUse").disabled=!(rec.on?false:rec.steps.length);renderCaptureHeld();}
+function renderCaptureHeld(){
+  const names=new Set([...capturedMods.values()].map(mod=>MOD_VK[mod]));
+  const keys=[...capturedKeys.values()];
+  keys.forEach(key=>names.add(key));
+  document.querySelectorAll(".vk").forEach(el=>el.classList.toggle("captured",names.has(el.dataset.k)));
+  const order=["CTRL","ALT","SHIFT","GUI"].filter(name=>names.has(name)).concat(keys);
+  $("#recHeld").textContent=order.length?order.map(keyLabel).join(" + "):"—";
+}
+
+// events -> macro steps (mirrors tools/recorder.py events_to_steps)
+function eventsToSteps(events,minDelay=1){
+  const steps=[];if(!events.length)return steps;
+  let last=events[0][0];
+  for(const [t,edge,kind,name] of events){
+    const gap=Math.round(t-last);
+    if(gap>=minDelay)steps.push({type:"delay",ms:gap});
+    last=t;
+    if(edge==="delaymark")continue; // the gap already captured the pause
+    if(edge==="media"){steps.push({type:"media",media:name});continue;}
+    if(edge==="text"){steps.push({type:"text",text:name});continue;}
+    if(edge==="down")steps.push(kind==="key"?{type:"down",key:name}:{type:"down",mods:[name]});
+    else if(edge==="up")steps.push(kind==="key"?{type:"up",key:name}:{type:"up",mods:[name]});
+  }
+  // merge adjacent delay steps so the list stays tidy
+  const out=[];
+  for(const s of steps){
+    if(s.type==="delay"&&out.length&&out[out.length-1].type==="delay")out[out.length-1].ms+=s.ms;
+    else out.push(s);
+  }
+  return out;
+}
+
+function openRecorder(){
+  if(captureOn)stopKeyboardCapture();
+  rec.on=false;rec.events=[];rec.steps=[];rec.held.clear();
+  $("#recSteps").textContent="0";$("#recTime").textContent="0.0s";$("#recState").textContent="idle";
+  $("#recUse").disabled=true;$("#recBtn").textContent="● Record";$("#recBtn").classList.remove("danger");
+  $("#recStatus").classList.remove("live");
+  $("#sheetBg").classList.add("show");$("#sheet").classList.add("show");
+}
+function closeRecorder(){if(captureOn)stopKeyboardCapture();if(rec.on)stopRec();liveSend("releaseall");flushLiveBatch();$("#sheetBg").classList.remove("show");$("#sheet").classList.remove("show");}
+function useSteps(){
+  if(rec.on)stopRec();
+  const k=cfg.layers[selLayer].keys[selKey];
+  const mode=$("#recMode").querySelector(".on").dataset.m;
+  if(mode==="replace")k.steps=rec.steps.slice();
+  else k.steps=k.steps.concat(rec.steps);
+  renderEditor();renderGrid();closeRecorder();
+  toast(rec.steps.length+" steps added — review, then Save");
+}
+
+/* actions */
+async function save(){
+  const body=JSON.stringify(cfg);
+  const r=await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body});
+  if(r.ok){savedSnapshot=body;updateDirty();toast("Saved to device");}
+  else{const e=await r.json().catch(()=>({}));toast(e.error||"Save failed",true);}
+}
+async function testKey(){
+  const r=await api(`/api/test?layer=${selLayer}&key=${selKey}`,{method:"POST"});
+  if(r.ok)toast("Sent to host");else{const e=await r.json().catch(()=>({}));toast(e.error||"Test failed",true);}
+}
+async function stopMacro(){await api("/api/stop",{method:"POST"});toast("Stopped");}
+async function postLayer(n){await api("/api/layer?n="+n,{method:"POST"});}
+
+/* status + live monitor */
+const LOG_MODIFIERS=[[1,"CTRL"],[2,"SHIFT"],[4,"ALT"],[8,"GUI"],[16,"RCTRL"],[32,"RSHIFT"],[64,"ALTGR"],[128,"RGUI"]];
+function macroEventLabel(e){
+  const mods=LOG_MODIFIERS.filter(([mask])=>e.mods&mask).map(([,name])=>name);
+  const target=mods.concat(e.key?[e.key]:[]).join("+")||"key";
+  switch(e.type){
+    case "key":return "TAP "+target;
+    case "down":return "PRESS "+target;
+    case "up":return "RELEASE "+target;
+    case "text":return "TYPE "+(e.text||"text");
+    case "media":return "MEDIA "+(e.media||"key");
+    case "delay":return "WAIT "+e.value+" ms";
+    case "loop-start":return "LOOP START "+(e.value?"x"+e.value:"∞");
+    case "loop-end":return "LOOP END";
+    case "layer":return "SWITCH LAYER "+e.value;
+    case "random":return "RANDOM "+(e.text||"macro");
+    default:return e.type;
+  }
+}
+function renderMacroLog(data){
+  const list=$("#macroLog");
+  const atBottom=list.scrollHeight-list.scrollTop-list.clientHeight<24;
+  $("#macroRunState").textContent=data.running?"running · key #"+data.runningKey:"idle";
+  list.innerHTML="";
+  if(!data.events||!data.events.length){
+    const empty=document.createElement("div");empty.className="log-empty";empty.textContent="Run or test a macro to see its steps.";list.appendChild(empty);return;
+  }
+  for(const event of data.events){
+    const row=document.createElement("div");row.className="log-entry";
+    const time=document.createElement("span");time.className="log-time";time.textContent=(event.elapsedMs/1000).toFixed(3)+"s";
+    const main=document.createElement("span");main.className="log-main";
+    main.textContent="R"+event.run+"/P"+event.pass+" · S"+event.step+" · "+macroEventLabel(event);
+    const duration=document.createElement("span");duration.className="log-duration";
+    const liveMs=event.complete?event.durationMs:Math.max(event.durationMs,data.elapsedMs-event.elapsedMs);
+    duration.textContent=event.complete?liveMs+" ms":"… "+liveMs+" ms";
+    row.append(time,main,duration);
+    if(event.loop){const context=document.createElement("span");context.className="log-context";context.textContent="loop "+event.loop;row.appendChild(context);}
+    list.appendChild(row);
+  }
+  if(atBottom)list.scrollTop=list.scrollHeight;
+}
+async function pollMacroLog(){
+  try{renderMacroLog(await(await api("/api/log")).json());}catch(e){}
+  setTimeout(pollMacroLog,800);
+}
+async function pollStatus(){
+  try{
+    status=await(await api("/api/status")).json();
+    $("#bonds").textContent=status.bonds;
+    $("#dotConn").className="dot "+(status.connected?"on":"off");
+    $("#connText").textContent=status.connected?"host":"no host";
+    $("#monLast").textContent=(status.lastKeyDown>=0?"#"+status.lastKeyDown:"—");
+    $("#monCount").textContent=status.keyDownCount||0;
+    const down=[];for(let i=0;i<meta.keyCount;i++)if(status.keyMask&(1<<i))down.push("#"+i);
+    $("#monDown").textContent=down.length?down.join(" "):"none";
+    renderGrid();updateDirty();
+  }catch(e){}
+  setTimeout(pollStatus,700);
+}
+
+$("#saveBtn").onclick=save;
+$("#stopBtn").onclick=stopMacro;
+$("#clearLog").onclick=async()=>{await api("/api/log/clear",{method:"POST"});renderMacroLog({events:[],running:false});};
+$("#recBtn").onclick=()=>{if(rec.on)stopRec();else startRec();};
+$("#keyboardCapture").onclick=()=>captureOn?stopKeyboardCapture():startKeyboardCapture();
+$("#phoneCapture").addEventListener("input",handlePhoneCaptureInput);
+$("#phoneCapture").addEventListener("compositionend",handlePhoneCaptureInput);
+window.addEventListener("blur",()=>{if(captureOn)stopKeyboardCapture();});
+window.addEventListener("pagehide",()=>{if(captureOn)stopKeyboardCapture();if(rec.on)stopRec();flushLiveBatch();});
+$("#recClear").onclick=()=>{if(captureOn)stopKeyboardCapture();rec.events=[];rec.steps=[];rec.held.clear();document.querySelectorAll(".vk.held").forEach(e=>e.classList.remove("held"));$("#recSteps").textContent="0";$("#recUse").disabled=true;};
+$("#recUse").onclick=useSteps;
+$("#recLive").onchange=e=>{liveOn=e.target.checked;if(liveOn&&!status.connected)toast("Live send needs a paired host",true);};
+$("#gridMode").querySelectorAll("button").forEach(b=>b.onclick=()=>setGridMode(b.dataset.g));
+$("#recMode").querySelectorAll("button").forEach(b=>b.onclick=()=>{$("#recMode").querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");});
+loadAll().catch(()=>{$("#editor").innerHTML='<div class="empty-state">Could not reach device API.</div>';});
+</script>
+</body>
+</html>

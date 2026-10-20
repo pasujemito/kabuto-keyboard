@@ -1,0 +1,265 @@
+# Kabuto — ESP32-S3 BLE macro keyboard
+
+A programmable Bluetooth HID keyboard built on an ESP32-S3. It pairs with any
+host (Windows, macOS, Linux, iOS, Android) as a standard Bluetooth keyboard and
+runs macros you assign to each physical key, edited from a browser — no
+reflashing to change a macro.
+
+## Features
+
+- **Standard BLE HID keyboard** — bonds with multiple hosts; appears as an
+  ordinary wireless keyboard.
+- **Macro engine** with step types: tap key (with modifiers + hold time),
+  key down / key up (for chords held across other steps), type text, media
+  keys, fixed delay, **loops** (fixed repeat count or "until stopped"), layer
+  switch, and random selection from existing macros.
+- **Trigger modes per key**: Tap (run once), Toggle (press to start / press to
+  stop), Hold (run while held).
+- **Layers** — up to 8, each with its own key assignments.
+- **Web config UI** served over a Wi-Fi access point; edits are saved to flash
+  and reloaded live.
+- **Config button**: hold the BOOT button 3 s to clear BLE pairings.
+
+- **Keyboard recorder** (in the web UI) — tap keys on the virtual keyboard,
+  capture physical laptop key events, or type into the phone capture field.
+  Captured input is recorded with timing and can be forwarded through Kabuto to
+  its paired BLE host. Key presses are recorded as down/up transitions;
+  modifiers and held keys are preserved. Focus loss releases held keys. Phone
+  text input is stored as text steps. Browser and OS-reserved shortcuts cannot
+  be captured.
+- **Live key monitor** (in the web UI) — shows the last physical key pressed,
+  a running press count, and which keys are down right now, so you can diagnose
+  wiring at a glance.
+- **Macro execution log** — shows recent steps, measured key hold durations,
+  macro passes, and nested loop iterations.
+- **RGB status LED** — steady green when idle, slow blue breathing while a
+  macro runs, slow yellow breathing while recording, and a triple red flash for
+  warnings such as a disconnected BLE host or startup errors. Distinct rhythms
+  make the states easier to tell apart without relying on color alone.
+
+Randomized timing is enabled by default: timings under 2 seconds vary by +/-10
+ms, while timings of 2 seconds or more vary by +/-1000 ms. Disable it in the
+editor to replay configured timings exactly.
+
+## Hardware
+
+- An ESP32-S3 dev board (e.g. ESP32-S3-DevKitC-1). ~£10–18.
+- Momentary switches wired as a matrix (defaults to 2 rows × 3 cols = 6 keys).
+- Optional diodes (1N4148) per key if you want full N-key rollover; for a small
+  pad without diodes, avoid pressing 3+ keys that share a row and column.
+
+### Default wiring (`src/config.h`)
+
+| Signal      | GPIO        |
+|-------------|-------------|
+| Rows (out)  | 4, 5        |
+| Cols (in)   | 6, 7, 15    |
+| BOOT button | 0           |
+| RGB LED     | 48          |
+
+Rows are driven LOW one at a time; columns use internal pull-ups, so each switch
+connects one row pin to one column pin. Change the pins, `MATRIX_ROWS`,
+`MATRIX_COLS` and the arrays in `config.h` to match your build.
+
+**If keys are flaky or dead:** open the web UI and watch the **Live key
+monitor** while pressing each switch. If the press count never moves, it's
+wiring (or the matrix doesn't match your pins). If presses register but are
+intermittent, raise `MATRIX_SETTLE_US` in `config.h` (try 60–80) — ESP32
+internal pull-ups are weak, so column lines need time to settle between rows.
+The monitor also shows which key *index* a switch maps to, so you can confirm
+your wiring matches `(row * MATRIX_COLS + col)`.
+
+## Build & flash (PlatformIO)
+
+```bash
+# install PlatformIO Core (once)
+pip install platformio
+
+# from the project root:
+pio run                       # compile firmware
+pio run -t upload             # flash firmware over USB
+pio run -t uploadfs           # upload the web UI (data/) to the device
+pio device monitor            # view the serial log (115200)
+```
+
+The first `uploadfs` installs the config UI and the example `macros.json`.
+
+## Configuring macros
+
+1. After flashing, the device creates a Wi-Fi network:
+  **SSID `Kabuto-Setup`**, password `macropad123` (change these in
+   `config.h`).
+2. Join it and open **http://192.168.4.1**.
+3. Pick a layer, click a key in the grid, and build its macro from steps.
+4. Set the key's trigger mode (Tap / Toggle / Hold) and press **Save to
+   device**. Changes apply immediately.
+5. **Test ▸** sends a key's macro to the paired host so you can check it without
+   touching the hardware (requires a host to be connected).
+
+### Pairing with a host
+
+Put the host into "add Bluetooth device" mode; select **Kabuto**. Bonds are
+stored, so it reconnects automatically. To pair a different host, connect from
+that host, or hold BOOT for 3 s to clear all pairings and start fresh.
+
+## Record & replay
+
+Two ways to record, because the pad is a Bluetooth *output* device and can't see
+your PC's keyboard directly:
+
+1. **On-screen keyboard (in the web UI)** — click **Record with keyboard** on
+   any key, tap out the sequence on the virtual keyboard, and hit **Use steps**.
+   Timing is captured as you tap; modifiers latch for chords. Best for building
+   or tweaking macros by hand on desktop or phone.
+2. **PC recorder (`tools/recorder.py`)** — captures your *actual* key presses as
+   you play, with their real timing. Best for recording live input.
+
+### PC recorder
+
+It runs on your PC, captures your own key presses with their real timing, and
+writes a `macros.json` the pad replays.
+
+```bash
+pip install pynput
+python tools/recorder.py --out macros.json --loop 0 --trigger toggle
+# play; press F10 to stop.
+```
+
+Then load the file via the web UI (**Save to device**) or `pio run -t uploadfs`.
+Bound to a key as **Toggle** with `--loop 0`, one press starts the replay and a
+second press stops it.
+
+- Captured timing is replayed exactly as you played it — nothing is randomised
+  or adjusted.
+- Held modifiers (Shift/Ctrl/Alt/Win) and overlapping key holds are preserved.
+- **Keyboard only** — mouse movement and clicks are not captured or replayed
+  (the firmware's HID is keyboard + media). Say the word if you want mouse
+  support added; it needs a mouse HID report and new step types.
+
+Attach a recording to one key without disturbing the others:
+
+```bash
+python tools/recorder.py --into macros.json --key 4 --name "Combo"
+```
+
+`python tools/recorder.py --selftest` runs the conversion tests with no
+hardware or dependencies.
+
+## Config file format
+
+Macros live in `/macros.json` on the device (mirrored by `data/macros.json`).
+The web UI reads and writes this file; you can also edit it directly:
+
+```json
+{
+  "version": 1,
+  "layers": [
+    { "name": "Base",
+      "keys": [
+        { "name": "Save", "trigger": "tap",
+          "steps": [ { "type": "key", "key": "S", "mods": ["ctrl"] } ] }
+      ]
+    }
+  ]
+}
+```
+
+Step types: `key` (`key`, `mods[]`, `hold` ms), `down`, `up`, `text` (`text`),
+`media` (`media`: PLAY/NEXT/PREV/STOP/MUTE/VOLUP/VOLDOWN), `delay` (`ms`),
+`loop` (`count`, 0 = until stopped), `endloop`, `layer` (`layer`), and `random`
+(`choices`: an array of `{ "layer": n, "key": n }` macro references). A random
+step runs one selected non-empty macro once; nested random selection is limited
+to eight levels.
+
+## Project layout
+
+```
+platformio.ini        build config + pinned library versions
+src/
+  config.h            pins, matrix size, AP credentials
+  main.cpp            matrix scan + wiring
+  hid_keyboard.*      BLE HID keyboard (keys + media), bonding
+  keymap.*            keycode tables + name<->code resolution
+  macro_engine.*      step model, loop execution, trigger modes
+  storage.*           LittleFS + JSON load/save
+  web_server.*        SoftAP + REST API + static UI host
+data/
+  index.html          config UI (uploaded with uploadfs)
+  macros.json         example macros
+tools/
+  recorder.py         PC-side keyboard recorder -> macros.json
+```
+
+## What changed in 1.4
+
+- **Edit / Run modes on the Keys grid.** A toggle on the Keys panel switches
+  what a tap on a keycap does:
+  - **Edit** (default): tap selects the key for editing (as before).
+  - **Run**: tap *fires* that key's macro to the paired host, with its real
+    trigger behaviour — tap runs once, toggle starts/stops, hold runs while you
+    hold the cap. Use Stop to halt a running macro. Needs a connected host.
+
+  This is the UI equivalent of pressing the physical key, so you can exercise a
+  macro without touching the hardware. (The **Test ▸** button in the editor
+  still runs a single one-shot preview.)
+
+## What changed in 1.10
+
+- **Status LED states:** steady green for idle, slow blue breathing for macro
+  execution, slow yellow breathing during browser recording, and a triple red
+  flash for warnings.
+- **Forward-only Live Send:** virtual keyboard input can be sent to the paired
+  BLE host without starting a recording. Press Record to capture and forward
+  input together.
+
+## What changed in 1.9
+
+- **Browser keyboard capture:** the recorder can capture laptop key-down/up
+  events or phone text input, record them into a macro, and forward them to the
+  paired BLE host. The browser page must remain active; system/browser shortcuts
+  may not be captured. When the interface is open on the same computer that is
+  paired as the BLE host, use a different input device to avoid typing the
+  forwarded keys back into the capture page.
+- **Ordered live events:** captured key and modifier transitions are sent
+  sequentially so press/release events reach the paired host in order.
+
+## What changed in 1.3
+
+- **Live send while recording:** in the recorder, tick **Live send** and each key
+  you tap on the on-screen keyboard is also sent to the paired host in real time
+  (via the ordered live-event endpoint), so you can see how the macro behaves in the target app as
+  you build it. It still records normally at the same time. Needs a connected
+  host; anything held is released when you stop or close the recorder.
+- **Faithful hold capture:** press-and-hold on the virtual keyboard records the
+  real hold duration (key-down → delay → key-up), with pointer capture so a hold
+  isn't cut if your finger drifts, and auto-release of anything still held on
+  stop.
+
+## What changed in 1.2
+
+- **Fixed a cross-task race:** web actions (save/reload, test, stop, layer
+  switch) used to call the engine directly from the web-server task while the
+  key scanner called it from the main task. They now go through a FreeRTOS
+  queue and are applied on one task — no more concurrent mutation of the macro
+  state.
+- **Fixed macro starvation / watchdog risk:** a loop with no delay in it (e.g.
+  `loop 0 { tap }`) could spin without ever yielding, starving key scanning so
+  the key meant to stop it was never read. Loops now yield each iteration.
+- **Test runs a single pass**, even for Toggle/Hold keys, so previewing a
+  looping macro doesn't start it running forever (use Stop to end it).
+- **Per-macro step cap** (`MAX_MACRO_STEPS`) is enforced on load.
+- **Unsaved-changes indicator:** the Save button shows "Save •" when the config
+  in the browser differs from what's on the device.
+
+## Notes on verification
+
+- The firmware **compiles cleanly** for `esp32-s3-devkitc-1` with PlatformIO
+  (ESP32 Arduino core 6.9.x): RAM 15%, flash 31%.
+- Loop/nesting/infinite-loop semantics of the macro engine are covered by a
+  standalone logic test; the on-screen recorder's event→steps logic has its own.
+- The example config validates against the parser's schema, and the web UI was
+  rendered and exercised at phone-portrait, phone-landscape and desktop sizes.
+- Not yet run against physical hardware — flash it and watch the serial log /
+  Live key monitor as described above.
+```
+# kabuto-keyboard

@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "layers": [
+    {
+      "name": "Base",
+      "keys": [
+        {
+          "name": "Sign-off",
+          "trigger": "tap",
+          "steps": [
+            { "type": "text", "text": "Best regards,\nDamian" }
+          ]
+        },
+        {
+          "name": "Save all",
+          "trigger": "tap",
+          "steps": [
+            { "type": "key", "key": "S", "mods": ["ctrl"] }
+          ]
+        },
+        {
+          "name": "Volume +3",
+          "trigger": "tap",
+          "steps": [
+            { "type": "loop", "count": 3 },
+            { "type": "media", "media": "VOLUP" },
+            { "type": "delay", "ms": 80 },
+            { "type": "endloop" }
+          ]
+        },
+        {
+          "name": "Build",
+          "trigger": "tap",
+          "steps": [
+            { "type": "key", "key": "B", "mods": ["ctrl", "shift"] }
+          ]
+        },
+        {
+          "name": "Keep-awake",
+          "trigger": "toggle",
+          "steps": [
+            { "type": "loop", "count": 0 },
+            { "type": "key", "key": "DOWN" },
+            { "type": "delay", "ms": 500 },
+            { "type": "key", "key": "UP" },
+            { "type": "delay", "ms": 500 },
+            { "type": "endloop" }
+          ]
+        },
+        {
+          "name": "",
+          "trigger": "tap",
+          "steps": []
+        }
+      ]
+    }
+  ]
+}

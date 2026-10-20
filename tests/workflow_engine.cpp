@@ -176,5 +176,17 @@ int main() {
     engine.config().workflows[0].cooldownMs=200;testClock=50;
     run(engine,{utilities});assert(taps.empty());testClock=100;
     run(engine,{utilities});assert(taps.size()==1);
+    // One visible recording can span internal parts without releasing Ctrl.
+    // Captured fixed timings override old global jitter settings.
+    Step ctrlUp;ctrlUp.type=StepType::KEY_UP;ctrlUp.modifiers=1;
+    Step capturedDelay;capturedDelay.type=StepType::DELAY;capturedDelay.value=100;
+    Workflow part1=workflow("rec-part1",{attackDown,capturedDelay});part1.recordingPartOf="recording";
+    Workflow part2=workflow("rec-part2",{tap(11),ctrlUp});part2.recordingPartOf="recording";
+    Workflow recording=workflow("recording",{call("rec-part1"),call("rec-part2")});recording.recording=true;
+    engine.config().workflows={recording,part1,part2};engine.config().randomizedDelay=true;
+    ctrlDurations.clear();tapModifiers.clear();run(engine,{call("recording")});
+    assert(tapModifiers.back()==1);
+    assert(ctrlDurations.size()==1&&ctrlDurations[0]==101); // 100ms + one scheduler yield
+    assert(!heldMods&&held.empty());
     std::cout << "workflow engine tests passed\n";
 }

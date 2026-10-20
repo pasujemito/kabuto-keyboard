@@ -76,6 +76,8 @@ enum class TriggerMode : uint8_t { TAP, TOGGLE, HOLD };
 struct KeyBinding {
     TriggerMode       trigger = TriggerMode::TAP;
     std::string       name;      // label shown in the UI
+    std::string       playbackMode; // simple UI: single / sequence / random
+    bool              recording = false; // replay captured fixed timings exactly
     std::vector<Step> steps;
     bool              empty() const { return steps.empty(); }
 };
@@ -87,7 +89,8 @@ struct Layer {
 
 struct Workflow : KeyBinding {
     std::string id;
-    std::string kind = "nano";
+    std::string kind = "nano"; // retained for compatibility, hidden by the UI
+    std::string recordingPartOf;
     bool utilityEnabled = false;
     uint32_t cooldownMs = 0;
     uint16_t chancePermille = 100;
@@ -164,7 +167,7 @@ private:
     static void taskTrampoline(void* arg);
     void runMacro(const KeyBinding& kb);
     void executeSteps(const std::vector<Step>& steps, volatile bool& stopFlag,
-                      ExecutionState& state, uint8_t depth = 0);
+                      ExecutionState& state, uint8_t depth = 0, bool exactTiming = false);
     void startMacroTask(int keyIndex, bool oneShot = false);
     uint32_t appendLog(const MacroLogEntry& entry);
     void updateLogDuration(uint32_t id, uint32_t durationMs, bool complete);

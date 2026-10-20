@@ -18,11 +18,22 @@ python3 tools/recorder.py --selftest
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It
-checks creation, composition, selection weights, saving, deletion protection,
-recorder targeting and compatibility with legacy random choices. It also checks
-JSON previews, complete configuration backups, exact recording exports, copy
-fallback, downloaded file contents and export without configuration changes. It does not
-verify browser layout or live device responses.
+checks recording imports, single/sequence/random assignments, reordering,
+removal, reusable references, long recordings and hidden storage parts,
+re-recording, legacy button preservation, deletion protection, JSON export,
+clipboard fallback, and failure without losing previous data.
+
+For a real Chromium desktop/mobile smoke test (without a physical keyboard):
+
+```sh
+npm install --prefix /tmp/kabuto-ui-test --cache /tmp/kabuto-npm-cache --no-audit --no-fund playwright-core
+NODE_PATH=/tmp/kabuto-ui-test/node_modules node tests/recordings_browser.cjs
+```
+
+This test uses `/usr/bin/chromium` by default (override with `CHROMIUM_PATH`). It
+intercepts device requests, exercises assignments, verifies mobile tabs and
+checks the layout fits a phone viewport. Screenshots go to `/tmp`. It does not
+verify live device responses or BLE playback.
 
 Also build the firmware and filesystem image with PlatformIO (`pio run -j 4`
 and `pio run -t buildfs -j 4`). Upload and BLE behaviour require hardware.
@@ -35,3 +46,8 @@ Storage tests load and round-trip the shipped preset through the actual parser,
 and reject invalid ranges and unassigned enabled utilities without replacing
 the previous file. Hardware scheduling, game position and BLE timing still
 require device tests.
+
+Recording persistence tests round-trip the shipped library, hidden storage-part
+metadata and button playback preferences. Interpreter tests ensure Ctrl holds
+continue across internal parts and captured fixed delays bypass legacy global
+jitter, while existing custom macros remain supported.

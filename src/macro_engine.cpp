@@ -234,7 +234,7 @@ void MacroEngine::setLayer(int n) {
 
 // --- step execution --------------------------------------------------------
 void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& stop,
-                               ExecutionState& state, uint8_t depth) {
+                               ExecutionState& state, uint8_t depth, bool exactTiming) {
     // Bound recursion and reject cycles, including legacy layer/key references.
     if (depth > 8 || std::find(callStack_.begin(), callStack_.end(), &steps) != callStack_.end()) return;
     callStack_.push_back(&steps);
@@ -311,7 +311,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         }
         switch (s.type) {
             case StepType::KEY: {
-                uint32_t holdMs = stepDuration(s, cfg_.randomizedDelay);
+                uint32_t holdMs = stepDuration(s, cfg_.randomizedDelay && !exactTiming);
                 uint32_t id = logStep(s, pc, stepStartedAt, holdMs, false);
                 // Long taps and combat taps must remain interruptible. Retain
                 // modifiers that were already held by the parent workflow.
@@ -394,7 +394,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 break;
             }
             case StepType::DELAY: {
-                uint32_t duration = stepDuration(s, cfg_.randomizedDelay);
+                uint32_t duration = stepDuration(s, cfg_.randomizedDelay && !exactTiming);
                 uint32_t id = logStep(s, pc, stepStartedAt, duration, false);
                 wait(duration);
                 updateLogDuration(id, millis() - stepStartedAt, true);
@@ -441,7 +441,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if (std::find(callStack_.begin(),callStack_.end(),&w.steps)!=callStack_.end()) break;
                     Step entry=s;entry.text=w.name;
                     uint32_t id=logStep(entry,pc,stepStartedAt,0,false);
-                    executeSteps(w.steps,stop,state,depth+1);
+                    executeSteps(w.steps,stop,state,depth+1,exactTiming || w.recording);
                     releaseTracked();
                     utilityLastRun_[w.id]=millis();
                     updateLogDuration(id,millis()-stepStartedAt,true);
@@ -504,7 +504,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     entryStep.text = canCall ? (selected->name.empty() ? "unnamed workflow" : selected->name) : skipReason;
                     uint32_t id = logStep(entryStep, pc, choiceStartedAt, 0, !canCall);
                     if (canCall) {
-                        executeSteps(selected->steps, stop, state, depth + 1);
+                        executeSteps(selected->steps, stop, state, depth + 1, exactTiming || selected->recording);
                         updateLogDuration(id, millis() - choiceStartedAt, true);
                     }
                     if (!stop && !combatExpired()) yieldTick();
@@ -566,7 +566,7 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
     if (oneShot_) {                       // Test / single pass
         macroPass_ = 1;
         ExecutionState state{};
-        executeSteps(kb.steps, stopFlag_, state);
+        executeSteps(kb.steps, stopFlag_, state, 0, kb.recording);
         return;
     }
     switch (kb.trigger) {
@@ -574,7 +574,7 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
             macroPass_ = 1;
             {
                 ExecutionState state{};
-                executeSteps(kb.steps, stopFlag_, state);
+                executeSteps(kb.steps, stopFlag_, state, 0, kb.recording);
             }
             break;
         case TriggerMode::HOLD:
@@ -583,7 +583,7 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
             while (!stopFlag_) {
                 macroPass_++;
                 ExecutionState state{};
-                executeSteps(kb.steps, stopFlag_, state);
+                executeSteps(kb.steps, stopFlag_, state, 0, kb.recording);
                 if (kb.steps.empty()) break;
                 yieldTick();              // don't spin if the macro has no delays
             }

@@ -3,27 +3,168 @@
   "randomizedDelay": false,
   "workflows": [
     {
-      "id": "combat-move",
-      "name": "Short balanced movement",
+      "id": "sample-recording",
+      "name": "Sample gameplay",
       "kind": "nano",
+      "recording": true,
       "steps": [
         {
-          "type": "move",
-          "ms": 120,
-          "maxMs": 524
+          "type": "call",
+          "workflow": "sample-recording-part-1"
         },
         {
-          "type": "delay",
-          "ms": 75,
-          "maxMs": 226
+          "type": "call",
+          "workflow": "sample-recording-part-2"
+        },
+        {
+          "type": "call",
+          "workflow": "sample-recording-part-3"
+        },
+        {
+          "type": "call",
+          "workflow": "sample-recording-part-4"
+        },
+        {
+          "type": "call",
+          "workflow": "sample-recording-part-5"
         }
       ]
     },
     {
-      "id": "combat-jump",
-      "name": "Recorded jump timing",
+      "id": "sample-recording-part-1",
+      "name": "Sample recording",
       "kind": "nano",
+      "recordingPartOf": "sample-recording",
       "steps": [
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "delay",
+          "ms": 376
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 226
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 447
+        },
+        {
+          "type": "delay",
+          "ms": 166
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 362
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 239
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 736
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "delay",
+          "ms": 255
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 209
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 618
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 117
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 271
+        },
         {
           "type": "down",
           "mods": [
@@ -32,8 +173,7 @@
         },
         {
           "type": "delay",
-          "ms": 120,
-          "maxMs": 194
+          "ms": 135
         },
         {
           "type": "up",
@@ -43,24 +183,3476 @@
         },
         {
           "type": "delay",
-          "ms": 270,
-          "maxMs": 570
+          "ms": 570
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 436
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 524
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 29
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 180
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 451
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 194
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 391
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 165
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 150
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 119
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 469
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 493
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 119
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 120
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 696
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 100
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 61
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 644
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 135
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 61
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 630
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 630
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 135
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 122
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 524
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 752
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 119
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 32
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 14
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 451
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 167
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 14
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 3462
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 601
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 120
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 661
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 134
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 79
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 356
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 227
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 77
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 72
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 648
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 614
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 103
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 601
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 586
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 92
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 102
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 541
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 570
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 571
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 586
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 17
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 42
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 78
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 29
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 719
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 44
         }
       ]
     },
     {
-      "id": "combat-pick",
-      "name": "Pickup pulse",
+      "id": "sample-recording-part-2",
+      "name": "Sample recording",
       "kind": "nano",
+      "recordingPartOf": "sample-recording",
       "steps": [
         {
-          "type": "down",
-          "key": "Z"
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
         },
         {
           "type": "delay",
-          "ms": 72,
-          "maxMs": 130
+          "ms": 630
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 93
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 59
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 616
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 61
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 509
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 107
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 542
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 59
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 555
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 137
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 496
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 494
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 122
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 29
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 586
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 61
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 584
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 59
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 576
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 113
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 31
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 29
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 34
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 613
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 571
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 62
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 553
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 151
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 29
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 466
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 539
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 122
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 18
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 656
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 122
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 556
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 61
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 570
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 63
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 509
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 47
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 118
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 43
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 510
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 135
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 588
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 72
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 48
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 613
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 93
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 58
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 585
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 107
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 600
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 77
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 86
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 498
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 117
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 600
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 107
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 59
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 254
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 316
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 135
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 108
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 570
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 177
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 17
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 149
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 471
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 69
+        }
+      ]
+    },
+    {
+      "id": "sample-recording-part-3",
+      "name": "Sample recording",
+      "kind": "nano",
+      "recordingPartOf": "sample-recording",
+      "steps": [
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 63
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 493
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 61
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 615
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 6435
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 285
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 574
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 87
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 585
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 47
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 421
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 163
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 435
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 92
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 87
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 871
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 646
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 132
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 467
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 133
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 17
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 632
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 556
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 613
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 135
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 496
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 126
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 41
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 524
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 120
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 107
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 58
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 481
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 127
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 54
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 419
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 496
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 524
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 571
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 32
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 540
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 16
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 225
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 330
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 108
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 87
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 45
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 690
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 120
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 561
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 86
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 62
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 585
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 58
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 559
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 102
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 43
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 511
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 107
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 496
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 483
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 118
+        },
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 60
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 481
+        },
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 119
+        }
+      ]
+    },
+    {
+      "id": "sample-recording-part-4",
+      "name": "Sample recording",
+      "kind": "nano",
+      "recordingPartOf": "sample-recording",
+      "steps": [
+        {
+          "type": "down",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 114
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 38
+        },
+        {
+          "type": "up",
+          "mods": [
+            "ctrl"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 1574
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 255
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 74
         },
         {
           "type": "up",
@@ -68,24 +3660,16 @@
         },
         {
           "type": "delay",
-          "ms": 80,
-          "maxMs": 180
-        }
-      ]
-    },
-    {
-      "id": "combat-moving-pick",
-      "name": "Pickup during movement",
-      "kind": "nano",
-      "steps": [
-        {
-          "type": "down",
-          "key": "Z"
+          "ms": 109
         },
         {
-          "type": "move",
-          "ms": 163,
-          "maxMs": 322
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 72
         },
         {
           "type": "up",
@@ -93,454 +3677,1137 @@
         },
         {
           "type": "delay",
-          "ms": 106,
-          "maxMs": 226
-        }
-      ]
-    },
-    {
-      "id": "combat-pause",
-      "name": "Variable recovery pause",
-      "kind": "nano",
-      "steps": [
+          "ms": 105
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
         {
           "type": "delay",
-          "ms": 300,
-          "maxMs": 736
+          "ms": 89
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 135
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 92
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 451
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 721
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 555
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 630
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 148
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 29
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 107
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 15
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 94
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 87
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 79
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 70
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 16
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 92
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 15
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 77
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 102
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 31
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 93
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 58
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 44
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 110
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 70
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 119
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 94
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 102
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 104
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 119
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 73
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 119
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 77
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 120
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 15
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 75
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 121
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 46
+        },
+        {
+          "type": "down",
+          "key": "LEFT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 59
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 88
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 96
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 84
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 92
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 87
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 76
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 105
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 89
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 63
+        },
+        {
+          "type": "up",
+          "key": "LEFT"
+        },
+        {
+          "type": "delay",
+          "ms": 14
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 21
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 67
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
         }
       ]
     },
     {
-      "id": "combat-approach",
-      "name": "Move, jump, pick",
-      "kind": "micro",
-      "steps": [
-        {
-          "type": "call",
-          "workflow": "combat-move"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-jump"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-pick"
-        }
-      ]
-    },
-    {
-      "id": "combat-loot-first",
-      "name": "Pick, move, jump",
-      "kind": "micro",
-      "steps": [
-        {
-          "type": "call",
-          "workflow": "combat-pick"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-move"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-jump"
-        }
-      ]
-    },
-    {
-      "id": "combat-double-jump",
-      "name": "Jump, move, jump",
-      "kind": "micro",
-      "steps": [
-        {
-          "type": "call",
-          "workflow": "combat-jump"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-move"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-jump"
-        }
-      ]
-    },
-    {
-      "id": "combat-loot-pass",
-      "name": "Move while collecting",
-      "kind": "micro",
-      "steps": [
-        {
-          "type": "call",
-          "workflow": "combat-moving-pick"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-jump"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-pause"
-        }
-      ]
-    },
-    {
-      "id": "combat-reposition",
-      "name": "Move, pause, jump, collect",
-      "kind": "micro",
-      "steps": [
-        {
-          "type": "call",
-          "workflow": "combat-move"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-pause"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-jump"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-moving-pick"
-        }
-      ]
-    },
-    {
-      "id": "combat-stationary",
-      "name": "Jump, pick, pause",
-      "kind": "micro",
-      "steps": [
-        {
-          "type": "call",
-          "workflow": "combat-jump"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-pick"
-        },
-        {
-          "type": "call",
-          "workflow": "combat-pause"
-        }
-      ]
-    },
-    {
-      "id": "pet-food",
-      "name": "Pet food \u2014 assign button",
+      "id": "sample-recording-part-5",
+      "name": "Sample recording",
       "kind": "nano",
-      "steps": [],
-      "utilityEnabled": false,
-      "cooldownMs": 1800000,
-      "chancePermille": 50
-    },
-    {
-      "id": "heal",
-      "name": "Heal \u2014 assign button",
-      "kind": "nano",
-      "steps": [],
-      "utilityEnabled": false,
-      "cooldownMs": 300000,
-      "chancePermille": 150
-    },
-    {
-      "id": "passive-skill",
-      "name": "Passive skill \u2014 assign button",
-      "kind": "nano",
-      "steps": [],
-      "utilityEnabled": false,
-      "cooldownMs": 360000,
-      "chancePermille": 100
+      "recordingPartOf": "sample-recording",
+      "steps": [
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 31
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 103
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 64
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 116
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 74
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 48
+        },
+        {
+          "type": "down",
+          "key": "RIGHT",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 58
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 91
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 72
+        },
+        {
+          "type": "up",
+          "key": "RIGHT"
+        },
+        {
+          "type": "delay",
+          "ms": 32
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 106
+        },
+        {
+          "type": "down",
+          "key": "Z",
+          "mods": []
+        },
+        {
+          "type": "delay",
+          "ms": 90
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        }
+      ]
     }
   ],
   "layers": [
     {
-      "name": "1 \u00b7 Combat baseline",
+      "name": "Recordings",
       "keys": [
         {
-          "name": "Combat on/off",
-          "trigger": "toggle",
-          "steps": [
-            {
-              "type": "combat",
-              "ms": 25000,
-              "maxMs": 85000,
-              "avoidRecent": 1,
-              "choices": [
-                {
-                  "workflow": "combat-approach",
-                  "weight": 3
-                },
-                {
-                  "workflow": "combat-loot-first",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-double-jump",
-                  "weight": 3
-                },
-                {
-                  "workflow": "combat-loot-pass",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-reposition",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-stationary",
-                  "weight": 1
-                }
-              ]
-            },
-            {
-              "type": "delay",
-              "ms": 350,
-              "maxMs": 1100
-            },
-            {
-              "type": "utilities"
-            },
-            {
-              "type": "delay",
-              "ms": 200,
-              "maxMs": 600
-            }
-          ]
-        },
-        {
-          "name": "One combat block",
+          "name": "Sample gameplay",
           "trigger": "tap",
-          "steps": [
-            {
-              "type": "combat",
-              "ms": 25000,
-              "maxMs": 85000,
-              "avoidRecent": 1,
-              "choices": [
-                {
-                  "workflow": "combat-approach",
-                  "weight": 3
-                },
-                {
-                  "workflow": "combat-loot-first",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-double-jump",
-                  "weight": 3
-                },
-                {
-                  "workflow": "combat-loot-pass",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-reposition",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-stationary",
-                  "weight": 1
-                }
-              ]
-            },
-            {
-              "type": "delay",
-              "ms": 350,
-              "maxMs": 1100
-            },
-            {
-              "type": "utilities"
-            },
-            {
-              "type": "delay",
-              "ms": 200,
-              "maxMs": 600
-            }
-          ]
-        },
-        {
-          "name": "Combat while held",
-          "trigger": "hold",
-          "steps": [
-            {
-              "type": "combat",
-              "ms": 25000,
-              "maxMs": 85000,
-              "avoidRecent": 1,
-              "choices": [
-                {
-                  "workflow": "combat-approach",
-                  "weight": 3
-                },
-                {
-                  "workflow": "combat-loot-first",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-double-jump",
-                  "weight": 3
-                },
-                {
-                  "workflow": "combat-loot-pass",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-reposition",
-                  "weight": 2
-                },
-                {
-                  "workflow": "combat-stationary",
-                  "weight": 1
-                }
-              ]
-            },
-            {
-              "type": "delay",
-              "ms": 350,
-              "maxMs": 1100
-            },
-            {
-              "type": "utilities"
-            },
-            {
-              "type": "delay",
-              "ms": 200,
-              "maxMs": 600
-            }
-          ]
-        },
-        {
-          "name": "Move pulse",
-          "trigger": "tap",
+          "playbackMode": "single",
           "steps": [
             {
               "type": "call",
-              "workflow": "combat-move"
-            }
-          ]
-        },
-        {
-          "name": "Jump + pickup",
-          "trigger": "tap",
-          "steps": [
-            {
-              "type": "call",
-              "workflow": "combat-jump"
-            },
-            {
-              "type": "call",
-              "workflow": "combat-pick"
-            }
-          ]
-        },
-        {
-          "name": "Check utilities",
-          "trigger": "tap",
-          "steps": [
-            {
-              "type": "utilities"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Base",
-      "keys": [
-        {
-          "name": "Sign-off",
-          "trigger": "tap",
-          "steps": [
-            {
-              "type": "text",
-              "text": "Best regards,\nDamian"
-            }
-          ]
-        },
-        {
-          "name": "Save all",
-          "trigger": "tap",
-          "steps": [
-            {
-              "type": "key",
-              "key": "S",
-              "mods": [
-                "ctrl"
-              ]
-            }
-          ]
-        },
-        {
-          "name": "Volume +3",
-          "trigger": "tap",
-          "steps": [
-            {
-              "type": "loop",
-              "count": 3
-            },
-            {
-              "type": "media",
-              "media": "VOLUP"
-            },
-            {
-              "type": "delay",
-              "ms": 80
-            },
-            {
-              "type": "endloop"
-            }
-          ]
-        },
-        {
-          "name": "Build",
-          "trigger": "tap",
-          "steps": [
-            {
-              "type": "key",
-              "key": "B",
-              "mods": [
-                "ctrl",
-                "shift"
-              ]
-            }
-          ]
-        },
-        {
-          "name": "Keep-awake",
-          "trigger": "toggle",
-          "steps": [
-            {
-              "type": "loop",
-              "count": 0
-            },
-            {
-              "type": "key",
-              "key": "DOWN"
-            },
-            {
-              "type": "delay",
-              "ms": 500
-            },
-            {
-              "type": "key",
-              "key": "UP"
-            },
-            {
-              "type": "delay",
-              "ms": 500
-            },
-            {
-              "type": "endloop"
+              "workflow": "sample-recording"
             }
           ]
         },
         {
           "name": "",
           "trigger": "tap",
+          "playbackMode": "single",
+          "steps": []
+        },
+        {
+          "name": "",
+          "trigger": "tap",
+          "playbackMode": "single",
+          "steps": []
+        },
+        {
+          "name": "",
+          "trigger": "tap",
+          "playbackMode": "single",
+          "steps": []
+        },
+        {
+          "name": "",
+          "trigger": "tap",
+          "playbackMode": "single",
+          "steps": []
+        },
+        {
+          "name": "",
+          "trigger": "tap",
+          "playbackMode": "single",
           "steps": []
         }
       ]

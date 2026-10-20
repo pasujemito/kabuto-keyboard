@@ -212,6 +212,8 @@ bool loadConfig(Config& cfg) {
         workflow.id = (const char*)(wo["id"] | "");
         workflow.name = (const char*)(wo["name"] | "");
         workflow.kind = (const char*)(wo["kind"] | "nano");
+        workflow.recording = wo["recording"] | false;
+        workflow.recordingPartOf = (const char*)(wo["recordingPartOf"] | "");
         workflow.utilityEnabled = wo["utilityEnabled"] | false;
         workflow.cooldownMs = wo["cooldownMs"] | 0U;
         workflow.chancePermille = wo["chancePermille"] | 100;
@@ -233,6 +235,8 @@ bool loadConfig(Config& cfg) {
             KeyBinding& kb = layer.keys[idx++];
             kb.name = (const char*)(ko["name"] | "");
             kb.trigger = parseTrigger(ko["trigger"]);
+            kb.playbackMode = (const char*)(ko["playbackMode"] | "");
+            kb.recording = ko["recording"] | false;
             for (JsonObjectConst so : ko["steps"].as<JsonArrayConst>()) {
                 if ((int)kb.steps.size() >= MAX_MACRO_STEPS) break;  // cap per macro
                 Step step;
@@ -345,6 +349,8 @@ static void buildDoc(const Config& cfg, JsonDocument& doc) {
         wo["id"] = workflow.id;
         wo["name"] = workflow.name;
         wo["kind"] = workflow.kind;
+        if (workflow.recording) wo["recording"] = true;
+        if (!workflow.recordingPartOf.empty()) wo["recordingPartOf"] = workflow.recordingPartOf;
         wo["utilityEnabled"] = workflow.utilityEnabled;
         wo["cooldownMs"] = workflow.cooldownMs;
         wo["chancePermille"] = workflow.chancePermille;
@@ -361,6 +367,8 @@ static void buildDoc(const Config& cfg, JsonDocument& doc) {
             JsonObject ko = keys.add<JsonObject>();
             ko["name"] = kb.name;
             ko["trigger"] = triggerName(kb.trigger);
+            if (!kb.playbackMode.empty()) ko["playbackMode"] = kb.playbackMode;
+            if (kb.recording) ko["recording"] = true;
             JsonArray steps = ko["steps"].to<JsonArray>();
             for (const auto& s : kb.steps) stepToJson(s, steps.add<JsonObject>());
         }

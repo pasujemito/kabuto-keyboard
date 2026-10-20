@@ -55,12 +55,12 @@
   .tabbar button{flex:1;background:none;border:0;color:var(--muted);padding:11px 0;font-size:12px;font-family:var(--mono);letter-spacing:.03em}
   .tabbar button.on{color:var(--amber);box-shadow:inset 0 2px 0 var(--amber)}
 
-  /* ---------- wide: two columns side by side ---------- */
-  @media (min-width:620px){
-    main{grid-template-columns:minmax(240px,320px) 1fr}
+  /* ---------- wide: buttons, recordings and assignments ---------- */
+  @media (min-width:1000px){
+    main{grid-template-columns:minmax(190px,240px) minmax(240px,1fr) minmax(260px,1fr)}
     .panel{display:block!important}
   }
-  @media (max-width:619px){
+  @media (max-width:999px){
     main{grid-template-rows:1fr;height:calc(100% - 53px - 48px)}
     .panel{grid-column:1;grid-row:1;display:none}
     .panel.show{display:block}
@@ -193,6 +193,24 @@
   .json-dialog h3{margin:0;flex:1}
   .json-dialog textarea{display:block;box-sizing:border-box;width:100%;height:50vh;resize:vertical;background:var(--bg);color:var(--ink);font:12px/1.5 var(--mono);border:1px solid var(--edge);padding:12px;tab-size:2}
   .json-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  #panelRecordings{border-right:1px solid var(--edge)}
+  .recording-card{border:1px solid var(--edge);border-radius:var(--r);padding:12px;margin:12px 0}
+  .recording-card.selected{border-color:var(--amber)}
+  .keycap{min-width:0;aspect-ratio:auto;height:78px}
+  select{padding:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--edge);border-radius:var(--r)}
+  .recording-card input,.name{box-sizing:border-box;max-width:100%;padding:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--edge);border-radius:var(--r)}
+  .recording-card input{width:100%}
+  .recording-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .assignment-list{padding-left:24px}
+  .assignment-list li{padding:8px 0}
+  .assignment-list li span{margin-right:8px}
+  #editor>label,#editor>select,#editor>.seg{display:block;margin:14px 0}
+  #editor select{max-width:100%}
+  body{display:flex;flex-direction:column;overflow:hidden}
+  body>header,body>.tabbar{flex-shrink:0}
+  main{flex:1;min-height:0;height:auto!important}
+  .hdr-actions{flex-wrap:wrap}
+  header{flex-wrap:wrap}
   .toast{position:fixed;left:50%;bottom:calc(16px + var(--safe-b));transform:translateX(-50%);background:var(--panel2);border:1px solid var(--edge);padding:10px 16px;border-radius:var(--r);font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
   .toast.show{opacity:1}
   .toast.err{border-color:var(--stop);color:var(--stop)}
@@ -224,7 +242,7 @@
       </div>
     </div>
     <div class="grid" id="grid"></div>
-    <div class="monitor" id="monitor">
+    <details class="monitor"><summary>Device activity</summary><div id="monitor">
       <div class="monitor-head">
         <h2>Macro execution log</h2>
         <button class="btn sm" id="exportLog" disabled>Export log JSON</button>
@@ -239,17 +257,24 @@
       <div class="row"><span>Last pressed</span><span class="big" id="monLast">—</span></div>
       <div class="row"><span>Total presses</span><b id="monCount">0</b></div>
       <div class="row"><span>Down now</span><b id="monDown">none</b></div>
-    </div>
+    </div></details>
   </section>
 
+  <section class="panel" id="panelRecordings">
+    <h2>Recordings</h2>
+    <div class="recording-actions"><button class="btn primary" id="newRecording">New recording</button><button class="btn" id="importRecording">Import JSON</button></div>
+    <input type="file" id="recordingFile" accept=".json,application/json" hidden>
+    <div id="recordings"></div>
+  </section>
   <section class="panel" id="panelEdit">
     <div id="editor"><div class="empty-state">Loading device…</div></div>
   </section>
 </main>
 
 <nav class="tabbar">
-  <button id="tabKeys" class="on" onclick="showTab('keys')">Keys</button>
-  <button id="tabEdit" onclick="showTab('edit')">Edit</button>
+  <button id="tabKeys" class="on" onclick="showTab('keys')">Buttons</button>
+  <button id="tabRecordings" onclick="showTab('recordings')">Recordings</button>
+  <button id="tabEdit" onclick="showTab('edit')">Assignment</button>
 </nav>
 
 <!-- recorder sheet -->
@@ -301,34 +326,12 @@ const $=s=>document.querySelector(s);
 let meta=null,cfg=null,selLayer=0,selKey=0,status={},savedSnapshot="",selectedWorkflow=null;
 function updateDirty(){if(!cfg)return;const d=JSON.stringify(cfg)!==savedSnapshot;const b=$("#saveBtn");b.classList.toggle("dirty",d);b.textContent=d?"Save •":"Save";}
 
-const MOD_SET=["ctrl","shift","alt","gui"];
-const STEP_TYPES=[["key","Tap key"],["down","Key down"],["up","Key up"],["text","Type text"],["media","Media key"],["delay","Delay"],["loop","Loop start"],["endloop","Loop end"],["layer","Switch layer"],["move","Balanced movement"],["combat","Held attack block"],["utilities","Occasional utilities"],["call","Call workflow"],["random","Random workflow"]];
-
 async function api(p,o){return fetch(p,o);}
 function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast",1900);}
 function esc(s){return(s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function blankKey(){return{name:"",trigger:"tap",steps:[]};}
 
 function currentBinding(){return selectedWorkflow===null?cfg.layers[selLayer].keys[selKey]:cfg.workflows.find(w=>w.id===selectedWorkflow);}
-function renderWorkflowPicker(w){
-  const bar=document.createElement("div");bar.className="ed-tools";
-  const select=document.createElement("select");select.setAttribute("aria-label","Edit key or workflow");
-  const option=document.createElement("option");option.value="";option.textContent="Key "+(selKey+1)+" · "+(cfg.layers[selLayer].name||"Layer");select.appendChild(option);
-  cfg.workflows.forEach(workflow=>{const o=document.createElement("option");o.value=workflow.id;o.textContent=workflow.kind+" · "+(workflow.name||workflow.id);select.appendChild(o);});
-  select.value=selectedWorkflow||"";select.onchange=()=>{selectedWorkflow=select.value||null;renderEditor();};bar.appendChild(select);
-  ["nano","micro"].forEach(kind=>{const b=document.createElement("button");b.className="btn sm";b.textContent="+ "+kind;
-    b.onclick=()=>{if(cfg.workflows.length>=64){toast("Maximum 64 workflows",true);return;}
-      const name=prompt("Workflow name",kind==="nano"?"Walk forward":"Approach and attack");if(name===null)return;
-      const id="wf-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10);
-      cfg.workflows.push({id,name,kind,steps:[]});cfg.version=2;selectedWorkflow=id;renderEditor();updateDirty();};bar.appendChild(b);});
-  if(selectedWorkflow!==null){const remove=document.createElement("button");remove.className="btn sm";remove.textContent="Delete workflow";
-    remove.onclick=()=>{const bindings=cfg.workflows.concat(cfg.layers.flatMap(l=>l.keys));
-      const used=bindings.some(b=>b.steps.some(s=>(s.type==="call"&&s.workflow===selectedWorkflow)||(s.choices||[]).some(c=>c.workflow===selectedWorkflow)));
-      if(used){toast("Remove calls and random choices referring to this workflow first",true);return;}
-      if(!confirm("Delete this workflow?"))return;
-      cfg.workflows=cfg.workflows.filter(w=>w.id!==selectedWorkflow);selectedWorkflow=null;renderEditor();updateDirty();};bar.appendChild(remove);}
-  w.appendChild(bar);
-}
 function normalize(){
   if(!Array.isArray(cfg.workflows))cfg.workflows=[];
   for(const workflow of cfg.workflows){if(!workflow.steps)workflow.steps=[];if(!workflow.kind)workflow.kind="nano";}
@@ -351,6 +354,7 @@ async function loadAll(){
   normalize();
   savedSnapshot=JSON.stringify(cfg);
   renderLayers();renderGrid();renderEditor();buildVKeyboard();updateDirty();
+  renderRecordings();
   pollStatus();
   pollMacroLog();
 }
@@ -358,6 +362,8 @@ async function loadAll(){
 /* tabs (mobile) */
 function showTab(t){
   $("#panelKeys").classList.toggle("show",t==="keys");
+  $("#panelRecordings").classList.toggle("show",t==="recordings");
+  $("#tabRecordings").classList.toggle("on",t==="recordings");
   $("#panelEdit").classList.toggle("show",t==="edit");
   $("#tabKeys").classList.toggle("on",t==="keys");
   $("#tabEdit").classList.toggle("on",t==="edit");
@@ -384,7 +390,7 @@ function renderLayers(){
 /* grid */
 let gridMode="edit";
 function renderGrid(){
-  const g=$("#grid");g.style.gridTemplateColumns=`repeat(${meta.cols},1fr)`;
+  const g=$("#grid");g.style.gridTemplateColumns=`repeat(${meta.cols||3},minmax(0,1fr))`;
   g.classList.toggle("run",gridMode==="run");g.innerHTML="";
   cfg.layers[selLayer].keys.forEach((k,i)=>{
     const cap=document.createElement("button");
@@ -392,14 +398,14 @@ function renderGrid(){
     const down=status.keyMask&&(status.keyMask&(1<<i));
     const running=status.running&&status.runningKey===i&&selLayer===status.activeLayer;
     cap.className="keycap"+(i===selKey&&gridMode==="edit"?" sel":"")+(empty?" empty":"")+(running?" running":"")+(down?" down":"");
-    cap.innerHTML=`<span class="idx">#${i}</span><span class="kname">${empty?"unassigned":esc(k.name||("key "+i))}</span><span class="trig">${empty?"":k.trigger}</span>`;
+    cap.innerHTML=`<span class="idx">#${i+1}</span><span class="kname">${empty?"unassigned":esc(k.name||("button "+(i+1)))}</span><span class="trig">${empty?"":k.trigger}</span>`;
     if(gridMode==="run"){
       // fire the macro with real trigger semantics (down/up)
       cap.addEventListener("pointerdown",e=>{e.preventDefault();runPress(i);});
       cap.addEventListener("pointerup",e=>{e.preventDefault();runRelease(i);});
       cap.addEventListener("pointercancel",()=>runRelease(i));
     }else{
-      cap.onclick=()=>{selKey=i;selectedWorkflow=null;renderGrid();renderEditor();if(window.innerWidth<620)showTab('edit');};
+      cap.onclick=()=>{selKey=i;selectedWorkflow=null;renderGrid();renderEditor();if(window.innerWidth<1000)showTab('edit');};
     }
     g.appendChild(cap);
   });
@@ -418,153 +424,149 @@ function setGridMode(m){
   renderGrid();
 }
 
-/* editor */
-function renderEditor(){
-  const w=$("#editor");const k=currentBinding();w.innerHTML="";renderWorkflowPicker(w);
-  const head=document.createElement("div");head.className="ed-head";
-  const name=document.createElement("input");name.className="name";name.placeholder=selectedWorkflow===null?"Key name":"Workflow name";name.value=k.name||"";
-  name.oninput=()=>{k.name=name.value;renderGrid();updateDirty();};
-  head.appendChild(name);
-  const seg=document.createElement("div");seg.className="seg";
-  [["tap","Tap"],["toggle","Toggle"],["hold","Hold"]].forEach(([v,l])=>{
-    const b=document.createElement("button");b.textContent=l;b.className=k.trigger===v?"on":"";
-    b.onclick=()=>{k.trigger=v;renderEditor();renderGrid();};seg.appendChild(b);});
-  if(selectedWorkflow===null)head.appendChild(seg);
-  w.appendChild(head);
-  if(selectedWorkflow!==null){
-    const utility=document.createElement("div");utility.className="ed-tools";
-    const label=document.createElement("label"),enabled=document.createElement("input");enabled.type="checkbox";enabled.checked=!!k.utilityEnabled;
-    enabled.onchange=()=>{k.utilityEnabled=enabled.checked;updateDirty();};label.append(enabled," Occasional utility (assign steps before enabling)");utility.appendChild(label);
-    utility.appendChild(numField("cooldown minutes",(k.cooldownMs||0)/60000,v=>{k.cooldownMs=Math.max(0,Math.min(1440,v))*60000;updateDirty();},0));
-    utility.appendChild(numField("chance ‰ / check",k.chancePermille??100,v=>{k.chancePermille=Math.max(0,Math.min(1000,v));updateDirty();},0));
-    w.appendChild(utility);
-  }
-
-  const setting=document.createElement("label");setting.className="macro-setting";
-  const randomized=document.createElement("input");randomized.type="checkbox";randomized.checked=cfg.randomizedDelay;
-  randomized.onchange=()=>{cfg.randomizedDelay=randomized.checked;updateDirty();};
-  setting.appendChild(randomized);setting.append("Randomized timing (+/-10 ms short, +/-1000 ms at 2s+)");
-  w.appendChild(setting);
-
-  const tools=document.createElement("div");tools.className="ed-tools";
-  const rec=document.createElement("button");rec.className="btn";rec.textContent="⦿ Record with keyboard";rec.onclick=openRecorder;
-  const test=document.createElement("button");test.className="btn sm";test.textContent="Test ▸";test.onclick=testKey;
-  tools.appendChild(rec);if(selectedWorkflow===null)tools.appendChild(test);
-  const json=document.createElement("button");json.className="btn sm";json.textContent="JSON / Export";json.onclick=()=>openJsonPreview("selected");tools.appendChild(json);
-  const bal=document.createElement("span");const d=loopBalance(k.steps);
-  bal.className="loopbal"+(d!==0?" bad":"");bal.textContent=d===0?"loops balanced":("loops off by "+d);
-  tools.appendChild(bal);
-  w.appendChild(tools);
-
-  const steps=document.createElement("div");steps.className="steps";
-  if(!k.steps.length){const e=document.createElement("div");e.className="empty-state";e.textContent="No steps. Record with the keyboard, or add one below.";steps.appendChild(e);}
-  let depth=0;
-  k.steps.forEach((st,i)=>{if(st.type==="endloop")depth=Math.max(0,depth-1);steps.appendChild(renderStep(k,st,i,depth));if(st.type==="loop")depth++;});
-  w.appendChild(steps);
-
-  const add=document.createElement("div");add.className="add-row";
-  STEP_TYPES.forEach(([v,l])=>{const b=document.createElement("button");b.textContent="+ "+l;b.onclick=()=>{if(k.steps.length>=256){toast("Maximum 256 steps",true);return;}k.steps.push(newStep(v));renderEditor();renderGrid();};add.appendChild(b);});
-  w.appendChild(add);
-  const h=document.createElement("p");h.className="hint";
-  h.textContent="Loop count 0 repeats until stopped (pair with Toggle/Hold). When enabled, timings under 2 seconds vary by +/-10 ms; longer timings vary by +/-1000 ms.";
-  h.append(" Explicit timing ranges override global jitter. Balanced movement uses 1–600 ms pulses. Attack blocks hold Ctrl and release all inputs before utility checks; never put utility checks inside a combat block. Named workflows run once per call. Random history resets when a key is started; excluded choices cause a skip if none remain. Nano and micro are organizational labels; either can call the other. Test named workflows by calling them from a key.");
-  w.appendChild(h);updateDirty();
-}
-
-function defaultRandomChoices(){
-  const choices=[];
-  cfg.layers.forEach((layer,layerIndex)=>layer.keys.forEach((macro,keyIndex)=>{
-    if(macro.steps.length&&macro!==currentBinding())choices.push({layer:layerIndex,key:keyIndex});
-  }));
-  cfg.workflows.filter(w=>w.id!==selectedWorkflow&&w.steps.length).forEach(w=>choices.push({workflow:w.id,weight:1}));
-  return choices;
-}
-function newStep(t){return{key:{type:"key",key:"A",mods:[],hold:0},down:{type:"down",key:"A",mods:[]},up:{type:"up",key:"A"},text:{type:"text",text:""},media:{type:"media",media:"PLAY"},delay:{type:"delay",ms:100},loop:{type:"loop",count:1},endloop:{type:"endloop"},layer:{type:"layer",layer:0},move:{type:"move",ms:120,maxMs:524},combat:{type:"combat",ms:25000,maxMs:85000,avoidRecent:1,choices:defaultRandomChoices()},utilities:{type:"utilities"},call:{type:"call",workflow:""},random:{type:"random",avoidRecent:1,choices:defaultRandomChoices()}}[t];}
-
-function renderStep(k,st,i,depth){
-  const row=document.createElement("div");
-  row.className="step"+(st.type==="loop"?" loopstart":"")+(st.type==="endloop"?" loopend":"");
-  const num=document.createElement("span");num.className="num";num.textContent=i+1;row.appendChild(num);
-  if(depth>0){const p=document.createElement("span");p.style.width=(depth*14)+"px";row.appendChild(p);}
-  const tsel=document.createElement("select");tsel.className="type";
-  STEP_TYPES.forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;if(v===st.type)o.selected=true;tsel.appendChild(o);});
-  tsel.onchange=()=>{k.steps[i]=newStep(tsel.value);renderEditor();};row.appendChild(tsel);
-  const f=document.createElement("div");f.className="fields";buildFields(f,st);row.appendChild(f);
-  const up=document.createElement("button");up.className="mv";up.textContent="↑";up.onclick=()=>{if(i>0){[k.steps[i-1],k.steps[i]]=[k.steps[i],k.steps[i-1]];renderEditor();}};
-  const dn=document.createElement("button");dn.className="mv";dn.textContent="↓";dn.onclick=()=>{if(i<k.steps.length-1){[k.steps[i+1],k.steps[i]]=[k.steps[i],k.steps[i+1]];renderEditor();}};
-  const rm=document.createElement("button");rm.className="rm";rm.textContent="×";rm.onclick=()=>{k.steps.splice(i,1);renderEditor();renderGrid();};
-  row.appendChild(up);row.appendChild(dn);row.appendChild(rm);return row;
-}
-
-function keySelect(val,on){const s=document.createElement("select");s.className="val";const blank=document.createElement("option");blank.value="";blank.textContent="Modifier only";blank.selected=!val;s.appendChild(blank);meta.keys.forEach(k=>{const o=document.createElement("option");o.value=k;o.textContent=k;if(k===val)o.selected=true;s.appendChild(o);});s.onchange=()=>on(s.value);return s;}
-function modChips(arr,on){const box=document.createElement("div");box.className="modchips";MOD_SET.forEach(m=>{const b=document.createElement("button");b.textContent=m;if(arr.includes(m))b.classList.add("on");b.onclick=()=>{const x=arr.indexOf(m);if(x>=0)arr.splice(x,1);else arr.push(m);on();b.classList.toggle("on");};box.appendChild(b);});return box;}
-function numField(label,val,on,min){const w=document.createElement("span");w.style.cssText="display:inline-flex;gap:6px;align-items:center";const l=document.createElement("label");l.textContent=label;w.appendChild(l);const n=document.createElement("input");n.type="number";n.value=val;if(min!=null)n.min=min;n.oninput=()=>on(parseInt(n.value||"0",10));w.appendChild(n);return w;}
-
-function buildFields(f,st){
-  if(st.type==="key"||st.type==="down"){if(!st.mods)st.mods=[];f.appendChild(modChips(st.mods,()=>{}));f.appendChild(keySelect(st.key,v=>st.key=v));if(st.type==="key"){f.appendChild(numField("hold ms",st.hold||0,v=>st.hold=v,0));f.appendChild(numField("max hold (0=fixed)",st.maxHold||0,v=>st.maxHold=v,0));}}
-  else if(st.type==="up"){if(!st.mods)st.mods=[];f.appendChild(modChips(st.mods,updateDirty));f.appendChild(keySelect(st.key,v=>st.key=v));}
-  else if(st.type==="text"){const t=document.createElement("input");t.type="text";t.className="txt";t.placeholder="text to type";t.value=st.text||"";t.oninput=()=>st.text=t.value;f.appendChild(t);}
-  else if(st.type==="media"){const s=document.createElement("select");s.className="val";meta.media.forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;if(m===st.media)o.selected=true;s.appendChild(o);});s.onchange=()=>st.media=s.value;f.appendChild(s);}
-  else if(st.type==="delay"||st.type==="move"){f.appendChild(numField("min ms",st.ms||0,v=>st.ms=v,0));f.appendChild(numField("max ms (0=fixed)",st.maxMs||0,v=>st.maxMs=v,0));}
-  else if(st.type==="loop"){f.appendChild(numField("count (0=∞)",st.count||0,v=>st.count=v,0));}
-  else if(st.type==="endloop"){const s=document.createElement("span");s.style.color="var(--faint)";s.textContent="end of innermost loop";f.appendChild(s);}
-  else if(st.type==="layer"){const s=document.createElement("select");s.className="val";cfg.layers.forEach((L,i)=>{const o=document.createElement("option");o.value=i;o.textContent=i+": "+(L.name||"Layer");if(i===st.layer)o.selected=true;s.appendChild(o);});s.onchange=()=>st.layer=parseInt(s.value,10);f.appendChild(s);}
-  else if(st.type==="call"){
-    const select=document.createElement("select");select.setAttribute("aria-label","Workflow to call");
-    const blank=document.createElement("option");blank.value="";blank.textContent="Choose workflow";select.appendChild(blank);
-    cfg.workflows.filter(w=>w.id!==selectedWorkflow).forEach(w=>{const o=document.createElement("option");o.value=w.id;o.textContent=w.kind+" · "+(w.name||w.id);select.appendChild(o);});
-    select.value=st.workflow||"";select.onchange=()=>{st.workflow=select.value;updateDirty();};f.appendChild(select);
-  }
-  else if(st.type==="utilities"){const hint=document.createElement("span");hint.className="hint";hint.textContent="At a neutral boundary, check enabled workflows whose cooldown has elapsed. First use waits a full cooldown; timers persist across Stop/Start, but reset on reload/reboot.";f.appendChild(hint);}
-  else if(st.type==="random"||st.type==="combat"){
-    if(st.type==="combat"){
-      f.appendChild(numField("attack min ms",st.ms||25000,v=>st.ms=v,1));
-      f.appendChild(numField("attack max ms (≤90000)",st.maxMs||0,v=>st.maxMs=v,0));
+function recordingList(){return cfg.workflows.filter(w=>!w.recordingPartOf);}
+function freshId(){return 'rec-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);}
+function recordingSteps(recording,seen=new Set()){
+  if(seen.has(recording.id))throw new Error('This recording contains recursive references.');
+  const path=new Set(seen);path.add(recording.id);
+  return recording.steps.flatMap(s=>{
+    if(s.type==='call'){
+      const part=cfg.workflows.find(w=>w.id===s.workflow&&w.recordingPartOf===recording.id);
+      if(part)return recordingSteps(part,path);
     }
-    f.appendChild(numField("exclude last (0–16)",st.avoidRecent||0,v=>{st.avoidRecent=Math.max(0,Math.min(16,v));updateDirty();},0));
-    if(!st.choices)st.choices=[];
-    const choices=document.createElement("div");choices.className="random-choices";
-    let count=0;
-    cfg.layers.forEach((layer,layerIndex)=>{
-      const available=layer.keys.map((macro,keyIndex)=>({macro,keyIndex})).filter(({macro,keyIndex})=>macro.steps.length&&macro!==currentBinding());
-      if(!available.length)return;
-      const heading=document.createElement("span");heading.style.cssText="width:100%;color:var(--faint);font:11px var(--mono)";heading.textContent=layer.name||("Layer "+layerIndex);choices.appendChild(heading);
-      available.forEach(({macro,keyIndex})=>{
-        count++;
-        const ref={layer:layerIndex,key:keyIndex};
-        const label=document.createElement("label");label.className="random-choice";
-        const checkbox=document.createElement("input");checkbox.type="checkbox";
-        checkbox.checked=st.choices.some(choice=>choice.layer===ref.layer&&choice.key===ref.key);
-        checkbox.onchange=()=>{
-          st.choices=st.choices.filter(choice=>choice.layer!==ref.layer||choice.key!==ref.key);
-          if(checkbox.checked)st.choices.push(ref);
-          renderEditor();
-        };
-        const text=document.createElement("span");text.textContent=macro.name||("Key "+(keyIndex+1));
-        label.append(checkbox,text);choices.appendChild(label);
-        const choice=st.choices.find(c=>!c.workflow&&c.layer===ref.layer&&c.key===ref.key);
-        if(choice)choices.appendChild(numField("weight",choice.weight||1,v=>{choice.weight=Math.max(1,Math.min(1000,v));updateDirty();},1));
-      });
-    });
-    cfg.workflows.filter(w=>w.id!==selectedWorkflow).forEach(workflow=>{
-      count++;
-      const label=document.createElement("label");label.className="random-choice";
-      const checkbox=document.createElement("input");checkbox.type="checkbox";
-      checkbox.checked=st.choices.some(c=>c.workflow===workflow.id);
-      checkbox.onchange=()=>{st.choices=st.choices.filter(c=>c.workflow!==workflow.id);if(checkbox.checked)st.choices.push({workflow:workflow.id,weight:1});renderEditor();};
-      const text=document.createElement("span");text.textContent=workflow.kind+" · "+(workflow.name||workflow.id);
-      label.append(checkbox,text);choices.appendChild(label);
-      const choice=st.choices.find(c=>c.workflow===workflow.id);
-      if(choice)choices.appendChild(numField("weight",choice.weight||1,v=>{choice.weight=Math.max(1,Math.min(1000,v));updateDirty();},1));
-    });
-    if(!count){const empty=document.createElement("span");empty.className="hint";empty.textContent="Assign another macro before adding it to the random choice.";choices.appendChild(empty);}
-    f.appendChild(choices);
-    const hint=document.createElement("span");hint.className="hint";
-    hint.textContent="Use at least three choices for variety when excluding the last one. If the exclusion window covers every choice, this step skips until the next key activation.";
-    f.appendChild(hint);
-  }
+    return [s];
+  });
 }
-function loopBalance(steps){let d=0;for(const s of steps){if(s.type==="loop")d++;if(s.type==="endloop")d--;}return d;}
+function recordingSummary(recording){
+  const steps=recordingSteps(recording),ms=steps.reduce((n,s)=>n+(s.type==='delay'?s.ms||0:s.type==='key'?s.hold||0:0),0);
+  return steps.length+' steps · '+(ms/1000).toFixed(1)+' s';
+}
+function storeRecording(recording,steps){
+  const previousParts=cfg.workflows.filter(w=>w.recordingPartOf===recording.id);
+  const chunks=[];for(let i=0;i<steps.length;i+=240)chunks.push(steps.slice(i,i+240));
+  const needed=chunks.length>1?chunks.length:0;
+  if(cfg.workflows.length-previousParts.length+needed>64)throw new Error('Recording storage is full. Delete unused recordings first.');
+  // Build the replacement before mutating the config, retaining the old data on failure.
+  const parts=needed?chunks.map((chunk,i)=>({id:recording.id+'-part-'+(i+1),name:recording.name,kind:'nano',recordingPartOf:recording.id,steps:chunk})):[];
+  const ids=new Set(cfg.workflows.filter(w=>w!==recording&&!previousParts.includes(w)).map(w=>w.id));
+  if(parts.some(p=>ids.has(p.id)))throw new Error('Recording part ID conflict. Export a backup before replacing this recording.');
+  cfg.workflows=cfg.workflows.filter(w=>!previousParts.includes(w));
+  cfg.workflows.push(...parts);
+  recording.steps=needed?parts.map(p=>({type:'call',workflow:p.id})):steps;
+  recording.recording=true;cfg.version=2;
+}
+function newRecording(){
+  if(cfg.workflows.length>=64){toast('Recording storage is full',true);return;}
+  const recording={id:freshId(),name:'Recording '+(recordingList().length+1),kind:'nano',recording:true,steps:[]};
+  cfg.workflows.push(recording);cfg.version=2;selectedWorkflow=recording.id;renderRecordings();updateDirty();openRecorder(recording.id);
+}
+function deleteRecording(id){
+  const recording=cfg.workflows.find(w=>w.id===id);if(!recording)return;
+  const family=new Set([id,...cfg.workflows.filter(w=>w.recordingPartOf===id).map(w=>w.id)]);
+  const bindings=cfg.layers.flatMap(l=>l.keys).concat(cfg.workflows.filter(w=>!family.has(w.id)));
+  if(bindings.some(b=>b.steps.some(s=>family.has(s.workflow)||(s.choices||[]).some(c=>family.has(c.workflow))))){toast('Remove this recording from its buttons before deleting it',true);return;}
+  if(!confirm('Delete '+(recording.name||'this recording')+'?'))return;
+  cfg.workflows=cfg.workflows.filter(w=>!family.has(w.id));if(selectedWorkflow===id)selectedWorkflow=null;
+  renderRecordings();renderEditor();updateDirty();
+}
+function renderRecordings(){
+  const list=$('#recordings');list.replaceChildren();
+  if(!recordingList().length){const p=document.createElement('p');p.className='hint';p.textContent='Record a workflow, give it a name, then add it to a button.';list.appendChild(p);}
+  recordingList().forEach(recording=>{
+    const card=document.createElement('div');card.className='recording-card'+(selectedWorkflow===recording.id?' selected':'');
+    const name=document.createElement('input');name.value=recording.name||'';name.placeholder='Recording name';name.setAttribute('aria-label','Recording name');
+    name.oninput=()=>{recording.name=name.value;updateDirty();renderEditor();};card.appendChild(name);
+    const summary=document.createElement('p');summary.className='hint';try{summary.textContent=recordingSummary(recording);}catch(e){summary.textContent='Existing custom workflow';}card.appendChild(summary);
+    const actions=document.createElement('div');actions.className='recording-actions';
+    [['Record again',()=>{selectedWorkflow=recording.id;openRecorder(recording.id);}],['Add to button',()=>addRecordingToButton(recording.id)],['JSON',()=>{selectedWorkflow=recording.id;openJsonPreview('selected');}],['Delete',()=>deleteRecording(recording.id)]].forEach(([label,action])=>{const b=document.createElement('button');b.className='btn sm';b.textContent=label;b.onclick=action;actions.appendChild(b);});
+    card.appendChild(actions);list.appendChild(card);
+  });
+}
+function assignmentFor(key){
+  if(!key.steps.length)return {mode:key.playbackMode||'single',ids:[],recognized:true};
+  if(key.steps.every(s=>s.type==='call'&&typeof s.workflow==='string'))return {mode:key.playbackMode==='sequence'||key.steps.length>1?'sequence':'single',ids:key.steps.map(s=>s.workflow),recognized:true};
+  if(key.steps.length===1&&key.steps[0].type==='random'&&(key.steps[0].choices||[]).every(c=>typeof c.workflow==='string'))return {mode:'random',ids:key.steps[0].choices.map(c=>c.workflow),recognized:true};
+  return {mode:'single',ids:[],recognized:false};
+}
+function setAssignment(key,mode,ids,avoidRepeat=false){
+  if(mode==='random')ids=[...new Set(ids)];
+  key.playbackMode=mode;
+  key.steps=mode==='random'&&ids.length?[{type:'random',avoidRecent:avoidRepeat?1:0,choices:ids.map(id=>({workflow:id,weight:1}))}]:ids.map(id=>({type:'call',workflow:id}));
+}
+function preserveDirectMacro(key){
+  const a=assignmentFor(key);if(a.recognized)return a;
+  if(cfg.workflows.length>=64)throw new Error('Recording storage is full');
+  const recording={id:freshId(),name:key.name||'Previous button recording',kind:'nano',recording:true,steps:JSON.parse(JSON.stringify(key.steps))};
+  cfg.workflows.push(recording);setAssignment(key,'single',[recording.id]);
+  return assignmentFor(key);
+}
+function addRecordingToButton(id){
+  const key=cfg.layers[selLayer].keys[selKey];
+  try{
+    const a=preserveDirectMacro(key);
+    if(a.ids.length>=256)throw new Error('This button already has 256 recordings');
+    const ids=a.mode==='random'?[...new Set([...a.ids,id])]:[...a.ids,id];
+    setAssignment(key,a.mode==='single'&&ids.length>1?'sequence':a.mode,ids,key.steps[0]?.avoidRecent>0);
+    renderEditor();renderGrid();renderRecordings();updateDirty();toast('Added to button '+(selKey+1));
+  }catch(e){toast(e.message,true);}
+}
+function importRecordingObject(payload){
+  let recording=payload;
+  if(!Array.isArray(recording?.steps)){
+    const keys=(payload?.layers||[]).flatMap(l=>l.keys||[]).filter(k=>k.steps?.length);
+    if(keys.length!==1)throw new Error('Choose a single recorded macro JSON, not a multi-button configuration.');
+    recording=keys[0];
+  }
+  const steps=recording.steps;
+  const allowed=new Set(['key','down','up','delay','text','media']);
+  if(!steps.length||steps.length>12000||steps.some(s=>!s||!allowed.has(s.type)))throw new Error('Import captured actions and delays (up to 12000 steps), without workflow references.');
+  for(const s of steps){
+    for(const field of ['ms','hold','maxMs','maxHold'])if(s[field]!==undefined&&(!Number.isInteger(s[field])||s[field]<0||s[field]>90000))throw new Error('Timings must be integer milliseconds from 0 to 90000.');
+    if(s.type==='delay'&&!Number.isInteger(s.ms))throw new Error('A delay needs an ms value.');
+    if(s.maxMs&&s.maxMs<s.ms||s.maxHold&&s.maxHold<(s.hold||0))throw new Error('The maximum timing must not be below the minimum.');
+    if(s.mods!==undefined&&(!Array.isArray(s.mods)||s.mods.some(m=>!['ctrl','rctrl','shift','rshift','alt','altgr','gui','rgui'].includes(m))))throw new Error('Unknown modifier in recording.');
+    if(['key','down'].includes(s.type)&&!s.key&&!s.mods?.length)throw new Error('A captured press needs a key or modifier.');
+    if(s.key&&meta.keys&&!meta.keys.includes(s.key))throw new Error('Unknown captured key: '+s.key);
+  }
+  if(cfg.workflows.length>=64)throw new Error('Recording storage is full');
+  const result={id:freshId(),name:String(recording.name||'Imported recording'),kind:'nano',recording:true,steps:[]};
+  cfg.workflows.push(result);
+  try{storeRecording(result,JSON.parse(JSON.stringify(steps)));}catch(e){cfg.workflows=cfg.workflows.filter(w=>w!==result);throw e;}
+  selectedWorkflow=result.id;renderRecordings();renderEditor();updateDirty();return result;
+}
+
+function renderEditor(){
+  const w=$('#editor'),key=cfg.layers[selLayer].keys[selKey];w.replaceChildren();
+  const title=document.createElement('h2');title.textContent='Button '+(selKey+1);w.appendChild(title);
+  const name=document.createElement('input');name.className='name';name.value=key.name||'';name.placeholder='Button name';name.setAttribute('aria-label','Button name');name.oninput=()=>{key.name=name.value;renderGrid();updateDirty();};w.appendChild(name);
+  const triggers=document.createElement('div');triggers.className='seg';
+  [['tap','Play once'],['toggle','Toggle'],['hold','While held']].forEach(([value,label])=>{const b=document.createElement('button');b.textContent=label;b.className=key.trigger===value?'on':'';b.onclick=()=>{key.trigger=value;renderEditor();renderGrid();updateDirty();};triggers.appendChild(b);});w.appendChild(triggers);
+  const a=assignmentFor(key);
+  if(!a.recognized){
+    const p=document.createElement('p');p.className='hint';p.textContent='This button has an existing custom macro. It will keep playing as before. Move it to Recordings to reuse it.';w.appendChild(p);
+    const keep=document.createElement('button');keep.className='btn';keep.textContent='Move to Recordings';keep.onclick=()=>{try{preserveDirectMacro(key);renderEditor();renderRecordings();updateDirty();}catch(e){toast(e.message,true);}};w.appendChild(keep);
+  }else{
+    const label=document.createElement('label');label.textContent='Playback ';const mode=document.createElement('select');mode.setAttribute('aria-label','Playback mode');
+    [['single','One recording'],['sequence','In sequence'],['random','Random choice']].forEach(([value,text])=>{const o=document.createElement('option');o.value=value;o.textContent=text;mode.appendChild(o);});mode.value=a.mode;
+    mode.onchange=()=>{if(mode.value==='single'&&a.ids.length>1&&!confirm('Keep only the first recording on this button?')){mode.value=a.mode;return;}setAssignment(key,mode.value,mode.value==='single'?a.ids.slice(0,1):a.ids);renderEditor();renderGrid();updateDirty();};label.appendChild(mode);w.appendChild(label);
+    const help=document.createElement('p');help.className='hint';help.textContent=a.mode==='random'?'Choose one recording each time the button plays. Toggle chooses again after each recording finishes.':a.mode==='sequence'?'Play every recording in the listed order.':'Play the selected recording. Add another to make a sequence.';w.appendChild(help);
+    const list=document.createElement('ol');list.className='assignment-list';
+    a.ids.forEach((id,index)=>{
+      const row=document.createElement('li'),recording=cfg.workflows.find(r=>r.id===id),text=document.createElement('span');text.textContent=recording?.name||'Missing recording';row.appendChild(text);
+      if(a.mode==='sequence')for(const [label,delta]of [['↑',-1],['↓',1]]){const b=document.createElement('button');b.className='btn sm';b.textContent=label;b.setAttribute('aria-label',label==='↑'?'Move recording up':'Move recording down');b.disabled=index+delta<0||index+delta>=a.ids.length;b.onclick=()=>{const ids=[...a.ids];[ids[index],ids[index+delta]]=[ids[index+delta],ids[index]];setAssignment(key,a.mode,ids);renderEditor();updateDirty();};row.appendChild(b);}
+      const remove=document.createElement('button');remove.className='btn sm';remove.textContent='Remove';remove.onclick=()=>{setAssignment(key,a.mode,a.ids.filter((_,i)=>i!==index),key.steps[0]?.avoidRecent>0);renderEditor();renderGrid();updateDirty();};row.appendChild(remove);list.appendChild(row);
+    });w.appendChild(list);
+    if(!a.ids.length){const p=document.createElement('p');p.className='hint';p.textContent='No recordings assigned yet.';w.appendChild(p);}
+    if(a.mode==='random'&&a.ids.length>1){const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=key.steps[0]?.avoidRecent>0;check.onchange=()=>{setAssignment(key,'random',a.ids,check.checked);updateDirty();};label.append(check,' Avoid the same recording twice in a row');w.appendChild(label);}
+    const choices=document.createElement('select');choices.setAttribute('aria-label','Recording to add');
+    recordingList().forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name||'Unnamed recording';choices.appendChild(o);});
+    const add=document.createElement('button');add.className='btn';add.textContent=a.mode==='single'?'Use recording':'Add recording';add.disabled=!choices.options.length;add.onclick=()=>{if(a.mode==='single'){setAssignment(key,'single',[choices.value]);renderEditor();renderGrid();updateDirty();}else addRecordingToButton(choices.value);};const addRow=document.createElement('div');addRow.className='recording-actions';addRow.append(choices,add);w.appendChild(addRow);
+  }
+  const tools=document.createElement('div');tools.className='ed-tools';
+  const test=document.createElement('button');test.className='btn';test.textContent='Test button';test.disabled=!key.steps.length;test.onclick=testKey;tools.appendChild(test);
+  const json=document.createElement('button');json.className='btn sm';json.textContent='Button JSON';json.onclick=()=>{selectedWorkflow=null;openJsonPreview('selected');};tools.appendChild(json);w.appendChild(tools);updateDirty();
+}
+
 
 /* ---------------- virtual keyboard recorder ---------------- */
 const VK_ROWS=[
@@ -838,7 +840,10 @@ function eventsToSteps(events,minDelay=1){
   return out;
 }
 
-function openRecorder(){
+let recorderTarget=null;
+function openRecorder(target){
+  recorderTarget=target||selectedWorkflow;
+  $("#recUse").textContent="Save recording";
   if(captureOn)stopKeyboardCapture();
   rec.on=false;rec.events=[];rec.steps=[];rec.held.clear();
   $("#recSteps").textContent="0";$("#recTime").textContent="0.0s";$("#recState").textContent="idle";
@@ -850,12 +855,16 @@ function openRecorder(){
 function closeRecorder(){if(captureOn)stopKeyboardCapture();if(rec.on)stopRec();liveSend("releaseall");flushLiveBatch();$("#sheetBg").classList.remove("show");$("#sheet").classList.remove("show");}
 function useSteps(){
   if(rec.on)stopRec();
-  const k=currentBinding();
-  const mode=$("#recMode").querySelector(".on").dataset.m;
-  if(mode==="replace")k.steps=rec.steps.slice();
-  else k.steps=k.steps.concat(rec.steps);
-  renderEditor();renderGrid();closeRecorder();
-  toast(rec.steps.length+" steps added — review, then Save");
+  const recording=cfg.workflows.find(w=>w.id===recorderTarget);
+  if(!recording){toast("Choose a recording first",true);return;}
+  if(!rec.steps.length){toast("Record some actions first",true);return;}
+  try{
+    const mode=$("#recMode").querySelector(".on").dataset.m;
+    const steps=mode==="append"?recordingSteps(recording).concat(rec.steps):rec.steps.slice();
+    storeRecording(recording,steps);
+    renderRecordings();renderEditor();renderGrid();closeRecorder();updateDirty();
+    toast("Recording updated — press Save to store it on the device");
+  }catch(e){toast(e.message,true);}
 }
 
 /* JSON preview/export: snapshots only; never save to the device. */
@@ -864,7 +873,7 @@ function openJsonPreview(scope){
   if(scope==="recording"&&(rec.on||!rec.steps.length)){toast("Stop a recording before exporting it",true);return;}
   jsonReturnFocus=document.activeElement;
   const select=$("#jsonScope");select.replaceChildren();
-  const scopes=[["selected","Selected key / workflow"],["config","Full configuration"]];
+  const scopes=[["selected","Selected button / recording"],["config","Full configuration"]];
   if(latestMacroLog)scopes.push(["log","Recent execution log"]);
   if(!rec.on&&rec.steps.length)scopes.push(["recording","Recorded macro"]);
   scopes.forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;select.appendChild(option);});
@@ -885,8 +894,10 @@ function refreshJsonPreview(){
     payload=cfg;name="kabuto-config";
     hint="Full configuration, including unsaved edits, all keys, workflows, references, weights and timing settings. This is a backup, not a trace of randomly chosen actions.";
   }else{
-    payload=currentBinding();name=payload.name||payload.id||("key-"+(selKey+1));
-    hint="Selected macro definition, including unsaved edits. Calls and random choices remain references; export Full configuration to include their targets. Timing variation is "+(cfg.randomizedDelay?"enabled":"disabled")+" in the configuration. This fragment is for inspection, not a complete macros.json file.";
+    payload=currentBinding();
+    if(selectedWorkflow!==null&&payload.recording)payload={name:payload.name,trigger:"tap",steps:recordingSteps(payload)};
+    name=payload.name||payload.id||("key-"+(selKey+1));
+    hint=selectedWorkflow!==null&&currentBinding().recording?"Complete captured recording with its original fixed timings. Download it to import into Recordings later.":"Button or existing custom macro definition, including unsaved edits. Export Full configuration to include referenced recordings.";
   }
   $("#jsonText").value=JSON.stringify(payload,null,2)+"\n";
   $("#jsonHint").textContent=hint;
@@ -986,6 +997,12 @@ async function pollStatus(){
   setTimeout(pollStatus,700);
 }
 
+$("#newRecording").onclick=newRecording;
+$("#importRecording").onclick=()=>$("#recordingFile").click();
+$("#recordingFile").onchange=async event=>{
+  const file=event.target.files[0];if(!file)return;
+  try{if(file.size>2000000)throw new Error("Recording JSON is too large");importRecordingObject(JSON.parse(await file.text()));toast("Recording imported — press Save to keep it");}catch(e){toast(e.message,true);}finally{event.target.value="";}
+};
 $("#exportLog").onclick=()=>openJsonPreview("log");
 $("#configJson").onclick=()=>openJsonPreview("config");
 $("#recJson").onclick=()=>openJsonPreview("recording");

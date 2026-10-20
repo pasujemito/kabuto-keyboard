@@ -8,7 +8,7 @@
 TestLittleFS LittleFS;
 void Config::ensureLayer(size_t n){while(layers.size()<=n)layers.push_back(Layer{});}
 int main(){
-    std::ifstream file("data/macros.json");assert(file);
+    std::ifstream file("examples/combat-layer-one.json");assert(file);
     String json(std::string((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>()));
     String err;assert(saveRawJson(json,err));Config cfg;assert(loadConfig(cfg));
     assert(cfg.layers.size()==2&&cfg.layers[0].keys[0].steps[0].type==StepType::COMBAT);
@@ -34,5 +34,21 @@ int main(){
     // Long taps retain 32-bit values rather than wrapping at 65.535 seconds.
     assert(saveRawJson(String(R"({"layers":[{"keys":[{"steps":[{"type":"key","key":"A","hold":90000}]}]}]})"),err));
     assert(loadConfig(cfg));assert(cfg.layers[0].keys[0].steps[0].value==90000);
+    // The simplified shipped recording survives save/load, including hidden
+    // storage parts and an empty sequence/random preference on a button.
+    std::ifstream preset("data/macros.json");assert(preset);
+    String simple(std::string((std::istreambuf_iterator<char>(preset)),std::istreambuf_iterator<char>()));
+    assert(saveRawJson(simple,err));assert(loadConfig(cfg));
+    assert(cfg.workflows[0].recording&&cfg.workflows[0].id=="sample-recording");
+    assert(cfg.workflows[1].recordingPartOf=="sample-recording");
+    assert(cfg.layers[0].keys[0].playbackMode=="single");
+    cfg.layers[0].keys[1].playbackMode="random";
+    assert(saveConfig(cfg));assert(loadConfig(roundtrip));
+    assert(roundtrip.workflows[0].recording);
+    assert(roundtrip.workflows[1].recordingPartOf=="sample-recording");
+    assert(roundtrip.layers[0].keys[1].playbackMode=="random");
+    size_t recordedSteps=0;
+    for(const auto& part:roundtrip.workflows)if(part.recordingPartOf=="sample-recording")recordedSteps+=part.steps.size();
+    assert(recordedSteps==989);
     std::cout<<"workflow storage tests passed\n";
 }

@@ -84,159 +84,86 @@ pio device monitor            # view the serial log (115200)
 
 The first `uploadfs` installs the config UI and the example `macros.json`.
 
-## Reusable nano and micro workflows
+## Recordings and button assignments
 
-The editor's **+ nano** and **+ micro** buttons create named workflows without
-using physical key slots. Select a workflow in the editor dropdown, name it,
-and add steps. Nano workflows typically represent one action (walk, attack,
-heal); micro workflows compose these actions with **Call workflow** steps.
-These labels organize the library; both support the same steps and can call
-other workflows. Calls execute once, independent of the entry key's trigger.
+The interface has three areas: **Buttons**, **Recordings**, and the selected
+button's assignment. On a phone, switch between them with the bottom tabs.
 
-Select a physical key to build a controller with **Random workflow**. Select
-its candidate workflows, set their relative weights, and choose how many
-recent selections to exclude (0–16). A Toggle key repeats the controller until
-pressed again; Hold runs until released. Save before testing. Named workflows
-can be tested by calling them from a physical key; Stop releases held keys.
+1. In **Recordings**, choose **New recording** and capture your keys with the
+   existing on-screen or physical keyboard recorder.
+2. Stop, then choose **Save recording**. Give the recording a useful name.
+3. Select a button. Choose **One recording**, **In sequence**, or **Random
+   choice**, then select the recordings to use.
+4. Press the header **Save** to store your edits on the device.
 
-Random selection excludes recent choices **per random step**, across nested
-calls and repeated Toggle/Hold passes within one key activation. Starting a
-key again resets the history. Weights apply only to remaining candidates.
-If no candidate remains, the step skips and logs the reason; it does not
-relax the exclusion rule. Keep the exclusion window smaller than the number
-of distinct non-empty candidates. Two choices excluding the previous one
-will alternate, so use at least three choices for variety. Finite workflows
-can still repeat longer patterns; randomness does not guarantee uniqueness.
+**One recording** plays the selected recording. **In sequence** plays the list
+in order; use the arrows to reorder it, and Remove to remove an entry. Repeated
+entries are allowed in sequences. **Random choice** picks one distinct recording
+each time the button plays. It has an optional **Avoid the same recording twice
+in a row** setting; with two recordings that setting causes alternation.
 
-A complete example is in [`examples/workflows.json`](examples/workflows.json):
-three nano actions, three composed micro workflows, and a weighted Toggle
-controller. Its bindings (`W`, `A`, `H`) are illustrative. To use it, back up
-`data/macros.json`, copy the example there, then upload the filesystem. This
-replaces the device configuration; normal editor saves retain existing keys.
+Buttons can **Play once**, **Toggle** playback on/off, or play **While held**.
+Toggle and Hold repeat the chosen sequence or make a fresh random selection
+after each pass. **Test button** runs one pass. The header **Stop** releases all
+inputs. Random playback changes recording selection; it does not rearrange the
+captured presses inside a recording.
 
-The firmware sends keyboard input without observing game state. The example
-heals when randomly selected, not when health is low. Health/enemy conditions are not implemented. The combat preset below adds
-explicit timing ranges and cooldown-based utility checks; the existing global
-timing variation remains available for fixed-duration steps.
+The **Add to button** action on a recording appends it to the selected button,
+turning a single assignment into a sequence when necessary. In the button
+editor, **Use recording** replaces the current single assignment. Recordings
+are reusable across buttons. Re-recording updates all buttons using that
+recording. A recording cannot be deleted while another button or stored macro
+references it.
 
-The library supports up to 64 workflows, 256 steps each, and eight nested
-calls. Missing references are rejected on save. Runtime cycles/depth overflow
-skip with a log entry. Existing configs and layer/key random choices remain
-supported. Workflow IDs stay stable when names change; remove references
-before deleting a workflow in the editor. Config version 2 adds:
+Captured fixed timings are replayed without the old global timing jitter.
+Overlapping modifier/key holds remain intact. Long recordings are presented as
+one item and split into internal storage parts automatically; key holds continue
+across those parts. The library can run out of storage, in which case an edit
+fails without discarding the previous recording.
 
-```json
-{"type":"call", "workflow":"walk"}
-```
+The shipped first layer contains **Sample gameplay**, based on the uploaded
+97.927-second recording, assigned to button 1 with Play once. GUI and Escape
+presses are excluded as requested; original recorded delays remain. The other
+five buttons are unassigned. This replaces the generated combat preset in the
+shipped defaults. The older combat example remains in
+`examples/combat-layer-one.json` for reference.
 
-```json
-{"type":"random", "avoidRecent":1, "choices":[
-  {"workflow":"approach", "weight":3},
-  {"workflow":"burst", "weight":2},
-  {"workflow":"recover", "weight":1}
-]}
-```
+Flash the updated firmware and upload the filesystem to install the shipped
+preset. Back up device macros first: uploading the filesystem replaces the
+saved configuration. Flashing firmware alone does not replace existing macros.
+Existing configurations remain readable. Custom macros keep their behaviour;
+**Move to Recordings** makes an existing button macro reusable without dropping
+its steps. The editor no longer exposes nano/micro types, combat block controls,
+cooldown settings, or a low-level step builder.
 
-See [`tests/README.md`](tests/README.md) for host tests and firmware checks.
+## JSON import and export
 
-## Default first layer: combat baseline
+**Import JSON** in Recordings accepts a recorded macro fragment with a `steps`
+array, or a recording export with exactly one populated key. Captured key,
+modifier, text, media and delay steps are supported. Full multi-button backups
+and fragments containing workflow references are not recording imports.
 
-The shipped `data/macros.json` now starts with **1 · Combat baseline** (firmware
-layer index 0). The previous demonstration layer is retained as the second
-layer. A copy is in `examples/combat-layer-one.json`. Build and flash the new
-firmware before uploading the new filesystem; back up device macros first,
-because `uploadfs` replaces the saved configuration. Existing device configs
-are not migrated by flashing firmware alone.
+Each recording's **JSON** action previews and exports its complete captured
+steps, including long recordings. It can be imported back into Recordings.
+The recorder also supports standalone JSON export after stopping. The header
+**Export JSON** backs up the whole configuration, including all button
+assignments. Copy falls back to selecting the text when clipboard permission
+is unavailable on the device's HTTP page. Preview/export does not save changes
+to the keyboard.
 
-| Physical key | Behaviour |
-| --- | --- |
-| 1 | Toggle combat on/off |
-| 2 | Run one combat block |
-| 3 | Combat while held |
-| 4 | One short movement pulse, without Ctrl |
-| 5 | Jump and pickup, without Ctrl |
-| 6 | Check configured utility cooldowns |
+**Device activity** is collapsed by default. Its **Export log JSON** action
+exports the latest 96-event firmware buffer, not a complete session trace.
+Definitions and execution logs serve different purposes: a recording export
+preserves captured actions; the activity log shows measured playback.
 
-Combat holds Ctrl for a randomly selected 25–85 seconds and chooses among six
-weighted micro combinations, excluding the immediately preceding choice. They
-vary movement/jump/pickup order, including movement while Z is held. These are
-adaptations guided by the recording, not exact replays. Arrow pulses last
-120–524 ms (163–322 ms during pickup), jump holds 120–194 ms, and pickup taps
-72–130 ms. Pauses have independent explicit ranges. Ctrl stays held across
-these actions; each arrow is released after its pulse. The engine caps combat
-blocks at 90 seconds, interrupts nested waits at the block deadline, and
-releases all inputs on completion or Stop. The cap is enforced cooperatively
-by the firmware scheduler, not by a hardware timer.
-
-Movement selection uses cumulative left/right pulse duration, favouring the
-opposite side when necessary to keep the difference approximately within
-600 ms. This is not position feedback or enemy detection, and does not
-promise equal attack time facing each side. Collision, acceleration and game
-mechanics can still cause drift. The balance resets when a new key activation
-starts, but continues across repeated Toggle/Hold passes.
-
-Explicit timing ranges override global jitter. The default disables global
-jitter to avoid the old +/-1-second adjustment distorting longer waits. A
-`delay` or `move` uses `ms` and optional `maxMs`; a `key` uses `hold` and optional
-`maxHold`. Times are inclusive integer milliseconds. Delays/taps support up to
-90000 ms; balanced movement supports 1–600 ms. Keep raw held direction keys out
-of combat micros; use the bounded movement step instead. Text/media steps are
-skipped inside combat blocks so they cannot introduce an uninterruptible
-operation. Eight-level recursion/cycle protection still applies.
-
-Pet food, healing and passive skill exist as **disabled, empty utility nanos**.
-Assign their actual key steps in the editor, then enable **Occasional utility**.
-Their initial minimum gaps are 30, 5 and 6 minutes respectively. The probability
-settings are 50, 150 and 100 per thousand checks. Each enabled, non-empty action
-gets an independent chance roll after its cooldown; at most one successful
-candidate is selected at a check. These are minimum gaps, not deadlines.
-The default checks only between attack blocks, after inputs are released.
-The full cooldown must elapse from the first macro activation before first use,
-and then from the previous utility's completion. Timers survive Stop/Start;
-configuration reload or reboot resets them. They are volatile, not persisted
-across power loss. This is timer-driven healing, not health-aware healing.
-
-The execution log has **Export log JSON** for the latest observed actions,
-selected combinations and measured timings. It is a snapshot of the firmware's
-96-event ring buffer, not a complete session trace. Macro JSON exports contain
-definitions, not simulated executions. Neither random selection nor finite
-history exclusions guarantees absence of longer repeated patterns.
-
-## Preview and export JSON
-
-- **JSON / Export** in the editor previews the selected key or workflow,
-  including unsaved changes. Call/random references remain references in this
-  fragment; choose **Full configuration** to include all their targets.
-- **Export JSON** in the header opens a full configuration backup, including
-  workflows, relative weights, recent-choice exclusions and timing settings.
-- After stopping a browser recording, **JSON / Export** in the recorder exports
-  it without applying it to a key. This is a standalone `macros.json` with
-  `randomizedDelay: false`, preserving captured key transitions and delays.
-  Loading this recording configuration replaces existing macros; back them up
-  first. Use **Use steps** instead to apply the recording within the editor.
-
-Every preview is formatted, read-only JSON with **Copy JSON** and **Download
-JSON**. If clipboard access is unavailable on the device's HTTP page, Copy
-selects the text for the browser/device's Copy command. Export does not save
-changes to the keyboard.
-
-Use these definitions to inspect action order, repeated sequences, delays,
-loops and selection weights. They are not expanded execution traces: random
-choices and timing jitter are resolved during execution, and exports cannot
-guarantee that a sequence will never repeat. The execution log remains the
-place to inspect actions actually chosen and their measured timings.
+See `tests/README.md` for host, storage, editor and browser checks.
 
 ## Configuring macros
 
-1. After flashing, the device creates a Wi-Fi network:
-  **SSID `Kabuto-Setup`**, password `macropad123` (change these in
-   `config.h`).
-2. Join it and open **http://192.168.4.1**.
-3. Pick a layer, click a key in the grid, and build its macro from steps.
-4. Set the key's trigger mode (Tap / Toggle / Hold) and press **Save to
-   device**. Changes apply immediately.
-5. **Test ▸** sends a key's macro to the paired host so you can check it without
-   touching the hardware (requires a host to be connected).
+After flashing, join the device's **Kabuto-Setup** Wi-Fi network (default
+password `macropad123`, configurable in `src/config.h`) and open
+**http://192.168.4.1**. Create or import recordings, assign them to buttons, and
+press **Save**. Test/Run requires a paired Bluetooth host.
 
 ### Pairing with a host
 

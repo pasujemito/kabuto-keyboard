@@ -1,0 +1,38 @@
+// Optional Chromium layout/interaction smoke test; no real device required.
+const {chromium}=require('playwright-core');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+ try{
+  const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  const html=fs.readFileSync(path.join(__dirname,'../data/index.html'),'utf8');
+  const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
+  await page.route('**/*',async route=>{
+   const url=new URL(route.request().url());
+   if(url.hostname!=='kabuto.test')return route.abort();
+   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
+   const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','W','H','LEFT','RIGHT','Z'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
+   return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
+  });
+  await page.goto('http://kabuto.test');await page.locator('.recording-card').waitFor();
+  assert.equal(await page.locator('.recording-card').count(),1);
+  assert(await page.locator('#panelRecordings').isVisible());assert(await page.locator('#panelEdit').isVisible());
+  await page.getByRole('button',{name:'Add to button',exact:true}).click();
+  assert.equal(await page.getByLabel('Playback mode').inputValue(),'sequence');
+  await page.getByLabel('Playback mode').selectOption('random');
+  // Repeated sequence entries become one unique random candidate.
+  assert.equal(await page.locator('.assignment-list li').count(),1);
+  await page.screenshot({path:'/tmp/kabuto-recordings-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#tabRecordings').click();assert(await page.locator('#panelRecordings').isVisible());assert(!(await page.locator('#panelEdit').isVisible()));
+  await page.screenshot({path:'/tmp/kabuto-recordings-mobile.png'});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.getByRole('button',{name:'New recording',exact:true}).click();await page.locator('#sheet.show').waitFor();
+  assert.equal(await page.locator('#recUse').textContent(),'Save recording');
+  await page.locator('.sheet-head .close').click();
+  await page.locator('#tabEdit').click();assert(await page.getByLabel('Playback mode').isVisible());
+  const bounds=await page.locator('.tabbar').boundingBox();assert(bounds.y+bounds.height<=845);
+  assert.deepEqual(errors,[]);console.log('desktop/mobile recordings browser tests passed');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

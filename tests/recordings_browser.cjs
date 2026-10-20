@@ -28,6 +28,28 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   const storage=await page.locator('#storage').textContent();
   assert.match(storage,/Recording slots6 of 64/);assert.match(storage,/Flash176 KB of 1\.4 MB/);assert.match(storage,/Device memory120 KB free/);
   assert.equal(await page.locator('.recording-card').count(),1);
+  // The editor shows the whole recording across its hidden storage parts.
+  const rows=page.locator('#stepList .step-row');
+  await page.locator('#recordings').getByRole('button',{name:'Edit',exact:true}).click();await page.locator('#editDialog[open]').waitFor();
+  assert.equal(await rows.count(),989);
+  assert.match(await page.locator('#editSummary').textContent(),/^989 steps · 97\.9 s$/);
+  assert.equal(await rows.nth(1).locator('.what').textContent(),'Press LEFT');
+  await rows.first().click();
+  await page.getByLabel('ms',{exact:true}).fill('1045');await page.getByLabel('ms',{exact:true}).press('Tab');
+  assert.match(await page.locator('#editSummary').textContent(),/98\.9 s · unapplied changes/);
+  assert.equal(await rows.nth(1).locator('.at').textContent(),'1.05s');
+  await page.getByRole('button',{name:'+ Delay after',exact:true}).click();assert.equal(await rows.count(),990);
+  assert(await rows.nth(1).evaluate(e=>e.classList.contains('sel')));
+  await page.getByRole('button',{name:'Delete',exact:true}).last().click();assert.equal(await rows.count(),989);
+  // Escape with unapplied changes asks first; dismissing keeps the editor open.
+  await page.keyboard.press('Escape');assert(await page.locator('#editDialog[open]').isVisible());
+  await page.getByRole('button',{name:'Apply changes',exact:true}).click();
+  assert(!(await page.locator('#editDialog[open]').count()));
+  assert.match(await page.locator('.recording-card .hint').textContent(),/989 steps · 98\.9 s/);
+  assert.match(await page.locator('#storage').textContent(),/Recording slots6 of 64/);
+  await page.locator('#recordings').getByRole('button',{name:'Edit',exact:true}).click();
+  assert.equal(await rows.first().locator('.what').textContent(),'Wait 1045 ms');
+  await page.locator('#editClose').click();assert(!(await page.locator('#editDialog[open]').count()));
   assert(await page.locator('#panelRecordings').isVisible());assert(await page.locator('#panelEdit').isVisible());
   await page.getByRole('button',{name:'Add to button',exact:true}).click();
   assert.equal(await page.getByLabel('Playback mode').inputValue(),'sequence');
@@ -39,6 +61,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('#tabRecordings').click();assert(await page.locator('#panelRecordings').isVisible());assert(!(await page.locator('#panelEdit').isVisible()));
   await page.screenshot({path:'/tmp/kabuto-recordings-mobile.png'});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.locator('#recordings').getByRole('button',{name:'Edit',exact:true}).click();await page.locator('#editDialog[open]').waitFor();
+  const dialog=await page.locator('#editDialog').boundingBox();assert(dialog.x>=0&&dialog.x+dialog.width<=390);
+  await page.screenshot({path:'/tmp/kabuto-editor-mobile.png'});
+  await page.locator('#editClose').click();
   await page.getByRole('button',{name:'New recording',exact:true}).click();await page.locator('#sheet.show').waitFor();
   assert.equal(await page.locator('#recUse').textContent(),'Save recording');
   await page.locator('.sheet-head .close').click();

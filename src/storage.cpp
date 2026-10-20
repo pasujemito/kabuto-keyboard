@@ -60,7 +60,7 @@ static bool parseStep(JsonObjectConst o, Step& step) {
     }
     if (type == "text") {
         step.type = StepType::TEXT;
-        step.text = (const char*)(o["text"] | "");
+        step.setText((const char*)(o["text"] | ""));
         return true;
     }
     if (type == "media") {
@@ -97,17 +97,17 @@ static bool parseStep(JsonObjectConst o, Step& step) {
     }
     if (type == "call") {
         step.type = StepType::CALL;
-        step.text = (const char*)(o["workflow"] | "");
-        return !step.text.empty();
+        step.setText((const char*)(o["workflow"] | ""));
+        return !step.text().empty();
     }
     if (type == "random" || type == "combat") {
         step.type = type == "combat" ? StepType::COMBAT : StepType::RANDOM;
         int recent = o["avoidRecent"] | 0;
         if (recent < 0 || recent > 16) return false;
         step.avoidRecent = recent;
-        JsonArrayConst choices = o["choices"].as<JsonArrayConst>();
-        for (JsonObjectConst choice : choices) {
-            if (step.choices.size() >= MAX_LAYERS * KEY_COUNT + 64) return false;
+        std::vector<MacroRef> refs;
+        for (JsonObjectConst choice : o["choices"].as<JsonArrayConst>()) {
+            if (refs.size() >= MAX_LAYERS * KEY_COUNT + 64) return false;
             MacroRef ref;
             ref.workflow = (const char*)(choice["workflow"] | "");
             int weight = choice["weight"] | 1;
@@ -116,9 +116,11 @@ static bool parseStep(JsonObjectConst o, Step& step) {
             ref.layer = choice["layer"] | MAX_LAYERS;
             ref.key = choice["key"] | KEY_COUNT;
             if (ref.workflow.empty() && (ref.layer >= MAX_LAYERS || ref.key >= KEY_COUNT)) return false;
-            step.choices.push_back(ref);
+            refs.push_back(ref);
         }
-        return !step.choices.empty();
+        if (refs.empty()) return false;
+        step.setChoices(std::move(refs));
+        return true;
     }
     return false;
 }
@@ -161,10 +163,10 @@ static bool validateWorkflows(JsonDocument& doc, String& err) {
             if (strict || type == "call" || type == "random" || type == "combat" || type == "move" || type == "utilities" || type == "delay" || type == "key") {
                 Step step;
                 if (!parseStep(so, step)) { err = "invalid workflow step or random choice"; return false; }
-                if (step.type == StepType::CALL && !ids.count(step.text)) {
+                if (step.type == StepType::CALL && !ids.count(step.text())) {
                     err = "call references a missing workflow"; return false;
                 }
-                for (const auto& ref : step.choices) {
+                for (const auto& ref : step.choices()) {
                     if (!ref.workflow.empty() && !ids.count(ref.workflow)) {
                         err = "random choice references a missing workflow"; return false;
                     }
@@ -282,7 +284,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             break;
         case StepType::TEXT:
             o["type"] = "text";
-            o["text"] = s.text;
+            o["text"] = s.text();
             break;
         case StepType::CONSUMER:
             o["type"]  = "media";
@@ -310,7 +312,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             break;
         case StepType::CALL:
             o["type"] = "call";
-            o["workflow"] = s.text;
+            o["workflow"] = s.text();
             break;
         case StepType::RANDOM:
         case StepType::COMBAT: {
@@ -321,7 +323,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             }
             o["avoidRecent"] = s.avoidRecent;
             JsonArray choices = o["choices"].to<JsonArray>();
-            for (const MacroRef& ref : s.choices) {
+            for (const MacroRef& ref : s.choices()) {
                 JsonObject choice = choices.add<JsonObject>();
                 if (!ref.workflow.empty()) choice["workflow"] = ref.workflow;
                 else { choice["layer"] = ref.layer; choice["key"] = ref.key; }
@@ -413,28 +415,11 @@ bool commitConfigFile(const char* path, String& err) {
     return ok;
 }
 
-bool saveRawJson(const String& json, String& err) {
-    File f = LittleFS.open(MACRO_TMP_FILE, "w");
-    if (!f) { err = "cannot open file for writing"; return false; }
-    bool ok = f.write((const uint8_t*)json.c_str(), json.length()) == json.length();
-    f.close();
-    if (!ok) { LittleFS.remove(MACRO_TMP_FILE); err = "write failed"; return false; }
-    return commitConfigFile(MACRO_TMP_FILE, err);
-}
-
 StorageInfo storageInfo() {
     StorageInfo info{LittleFS.totalBytes(), LittleFS.usedBytes(), 0};
     File f = LittleFS.open(MACRO_FILE, "r");
     if (f) { info.configBytes = f.size(); f.close(); }
     return info;
-}
-
-String readRawJson() {
-    File f = LittleFS.open(MACRO_FILE, "r");
-    if (!f) return "";
-    String s = f.readString();
-    f.close();
-    return s;
 }
 
 void ensureDefaultConfig() {

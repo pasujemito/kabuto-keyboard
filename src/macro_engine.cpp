@@ -229,8 +229,6 @@ bool MacroEngine::load() {
     return ok;
 }
 
-bool MacroEngine::save() { return saveConfig(cfg_); }
-
 void MacroEngine::setLayer(int n) {
     if (n >= 0 && n < (int)cfg_.layers.size()) layer_ = n;
 }
@@ -244,8 +242,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
     struct Frame { int startIdx; int endIdx; uint32_t remaining; bool infinite; uint32_t iteration; };
     std::vector<Frame> loops;
 
+    // 'label' overrides the step's own text in the log (workflow names, skips).
     auto logStep = [&](const Step& step, int stepIndex, uint32_t startedAt,
-                       uint32_t durationMs, bool complete) -> uint32_t {
+                       uint32_t durationMs, bool complete,
+                       const char* label = nullptr) -> uint32_t {
         MacroLogEntry entry{};
         entry.elapsedMs = startedAt - macroStartedAt_;
         entry.durationMs = durationMs;
@@ -257,8 +257,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         entry.modifiers = step.modifiers;
         entry.value = step.value;
         entry.complete = complete;
-        if (!step.text.empty())
-            std::strncpy(entry.text, step.text.c_str(), sizeof(entry.text) - 1);
+        const char* text = label ? label : step.text().c_str();
+        std::strncpy(entry.text, text, sizeof(entry.text) - 1);
         size_t pathLength = 0;
         for (const Frame& frame : loops) {
             int written = std::snprintf(entry.loopPath + pathLength,
@@ -315,7 +315,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         const Step& s = *current;
         uint32_t stepStartedAt = millis();
         if (state.combat && (s.type == StepType::TEXT || s.type == StepType::CONSUMER)) {
-            Step entry=s;entry.text="skipped: unsupported in combat";logStep(entry,pc,stepStartedAt,0,true);++pc;continue;
+            logStep(s,pc,stepStartedAt,0,true,"skipped: unsupported in combat");++pc;continue;
         }
         switch (s.type) {
             case StepType::KEY: {
@@ -389,7 +389,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
             }
             case StepType::TEXT: {
                 uint32_t id = logStep(s, pc, stepStartedAt, 0, false);
-                Keyboard.typeString(String(s.text.c_str()));
+                Keyboard.typeString(String(s.text().c_str()));
                 updateLogDuration(id, millis() - stepStartedAt, true);
                 break;
             }
@@ -436,7 +436,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 bool neutral = !state.combat;
                 for (bool held : state.heldKey) if (held) neutral = false;
                 for (bool held : state.heldMod) if (held) neutral = false;
-                if (!neutral) { Step entry=s;entry.text="skipped: keys held";logStep(entry,pc,stepStartedAt,0,true);break; }
+                if (!neutral) { logStep(s,pc,stepStartedAt,0,true,"skipped: keys held");break; }
                 std::vector<const Workflow*> eligible;
                 for (const auto& w : cfg_.workflows) {
                     auto last = utilityLastRun_.find(w.id);
@@ -447,20 +447,19 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 if (!eligible.empty() && depth < 8) {
                     const Workflow& w=*eligible[random((long)eligible.size())];
                     if (std::find(callStack_.begin(),callStack_.end(),&w.steps)!=callStack_.end()) break;
-                    Step entry=s;entry.text=w.name;
-                    uint32_t id=logStep(entry,pc,stepStartedAt,0,false);
+                    uint32_t id=logStep(s,pc,stepStartedAt,0,false,w.name.c_str());
                     executeSteps(w.steps,stop,state,depth+1);
                     releaseTracked();
                     utilityLastRun_[w.id]=millis();
                     updateLogDuration(id,millis()-stepStartedAt,true);
-                } else { Step entry=s;entry.text="no utility due/selected";logStep(entry,pc,stepStartedAt,0,true); }
+                } else { logStep(s,pc,stepStartedAt,0,true,"no utility due/selected"); }
                 break;
             }
             case StepType::CALL:
             case StepType::RANDOM:
             case StepType::COMBAT: {
                 bool combat = s.type == StepType::COMBAT;
-                if (combat && state.combat) { Step entry=s;entry.text="skipped: nested combat";logStep(entry,pc,stepStartedAt,0,true);break; }
+                if (combat && state.combat) { logStep(s,pc,stepStartedAt,0,true,"skipped: nested combat");break; }
                 uint32_t combatLog = 0;
                 if (combat) {
                     releaseTracked();
@@ -476,11 +475,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     uint32_t choiceStartedAt = millis();
                     const KeyBinding* selected = nullptr;
                     if (s.type == StepType::CALL) {
-                        selected = cfg_.findWorkflow(s.text);
+                        selected = cfg_.findWorkflow(s.text());
                     } else {
                         std::vector<const KeyBinding*> candidates;
                         std::vector<uint16_t> weights;
-                        for (const MacroRef& ref : s.choices) {
+                        for (const MacroRef& ref : s.choices()) {
                             const KeyBinding* candidate = nullptr;
                             if (!ref.workflow.empty()) candidate = cfg_.findWorkflow(ref.workflow);
                             else if (ref.layer < cfg_.layers.size() && ref.key < KEY_COUNT)
@@ -502,15 +501,14 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                             rememberWorkflow(selected, history, s.avoidRecent);
                         }
                     }
-                    Step entryStep = s;
                     const char* skipReason = nullptr;
                     if (!selected) skipReason = s.type == StepType::CALL ? "skipped: missing workflow" : "skipped: no eligible choices";
                     else if (depth >= 8) skipReason = "skipped: nesting limit";
                     else if (std::find(callStack_.begin(), callStack_.end(), &selected->steps) != callStack_.end())
                         skipReason = "skipped: recursive call";
                     const bool canCall = !skipReason;
-                    entryStep.text = canCall ? (selected->name.empty() ? "unnamed workflow" : selected->name) : skipReason;
-                    uint32_t id = logStep(entryStep, pc, choiceStartedAt, 0, !canCall);
+                    const char* label = canCall ? (selected->name.empty() ? "unnamed workflow" : selected->name.c_str()) : skipReason;
+                    uint32_t id = logStep(s, pc, choiceStartedAt, 0, !canCall, label);
                     if (canCall) {
                         executeSteps(selected->steps, stop, state, depth + 1);
                         updateLogDuration(id, millis() - choiceStartedAt, true);

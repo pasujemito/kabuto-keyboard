@@ -13,8 +13,6 @@ static bool     keyState[KEY_COUNT];     // debounced state (true = pressed)
 static bool     rawPrev[KEY_COUNT];      // last raw sample
 static uint32_t lastChange[KEY_COUNT];   // ms of last raw change
 
-// Live debounced key state, readable by the web server's key tester.
-volatile bool     g_keyLive[KEY_COUNT];
 // Diagnostics for the web UI live monitor.
 volatile uint32_t g_keyMask      = 0;   // bit i set = key i currently down
 volatile int      g_lastKeyDown  = -1;  // last key index that went down
@@ -67,7 +65,7 @@ static void statusLedUpdate() {
 static void matrixInit() {
     for (int r = 0; r < MATRIX_ROWS; r++) { pinMode(ROW_PINS[r], OUTPUT); digitalWrite(ROW_PINS[r], HIGH); }
     for (int c = 0; c < MATRIX_COLS; c++) pinMode(COL_PINS[c], INPUT_PULLUP);
-    for (int i = 0; i < KEY_COUNT; i++) { keyState[i] = rawPrev[i] = false; lastChange[i] = 0; g_keyLive[i] = false; }
+    for (int i = 0; i < KEY_COUNT; i++) { keyState[i] = rawPrev[i] = false; lastChange[i] = 0; }
 }
 
 static void matrixScan() {
@@ -84,7 +82,6 @@ static void matrixScan() {
             if (raw != rawPrev[idx]) { rawPrev[idx] = raw; lastChange[idx] = now; }
             if ((now - lastChange[idx]) >= DEBOUNCE_MS && raw != keyState[idx]) {
                 keyState[idx] = raw;
-                g_keyLive[idx] = raw;
                 if (raw) {
                     g_keyMask |= (1UL << idx);
                     g_lastKeyDown = idx;

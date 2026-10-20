@@ -10,7 +10,6 @@
 #include <ArduinoJson.h>
 
 static AsyncWebServer server(80);
-static bool active_ = false;
 static volatile bool recorderActive_ = false;
 static volatile uint32_t recorderHeartbeatMs_ = 0;
 
@@ -18,8 +17,7 @@ bool webServerRecorderActive() {
     return recorderActive_ && (uint32_t)(millis() - recorderHeartbeatMs_) < 2500;
 }
 
-// Live debounced physical key state + diagnostics, defined in main.cpp.
-extern volatile bool     g_keyLive[];
+// Physical key diagnostics, defined in main.cpp.
 extern volatile uint32_t g_keyMask;
 extern volatile int      g_lastKeyDown;
 extern volatile uint32_t g_keyDownCount;
@@ -186,17 +184,6 @@ void webServerBegin() {
     });
     server.on("/api/config", HTTP_GET, handleGetConfig);
 
-    // Live physical key state for the key tester: {"keys":[false,true,...]}
-    server.on("/api/keys", HTTP_GET, [](AsyncWebServerRequest* req) {
-        String out = "{\"keys\":[";
-        for (int i = 0; i < KEY_COUNT; i++) {
-            if (i) out += ",";
-            out += g_keyLive[i] ? "true" : "false";
-        }
-        out += "]}";
-        sendJson(req, 200, out);
-    });
-
     // Save full config JSON (body = JSON). The body is streamed to a temp file
     // instead of RAM, then validated and swapped in; the engine reloads after.
     server.on("/api/config", HTTP_POST,
@@ -271,7 +258,7 @@ void webServerBegin() {
         sendJson(req, 200, "{\"ok\":true}");
     });
 
-    // Must be registered before /api/live, which also matches /api/live/* paths.
+    // Live passthrough while recording: forwards captured keys to the host.
     server.on("/api/live/batch", HTTP_POST,
         [](AsyncWebServerRequest* req) {},
         nullptr,
@@ -301,31 +288,6 @@ void webServerBegin() {
             body = "";
         });
 
-    // Live passthrough while recording: /api/live?ev=down&key=W etc.
-    // Sends the key to the paired host in real time so you can see behaviour.
-    server.on("/api/live", HTTP_POST, [](AsyncWebServerRequest* req) {
-        if (!Keyboard.isConnected()) { sendJson(req, 409, "{\"ok\":false,\"error\":\"not connected to a host\"}"); return; }
-        String ev  = req->hasParam("ev")    ? req->getParam("ev")->value()    : "";
-        String key = req->hasParam("key")   ? req->getParam("key")->value()   : "";
-        String mod = req->hasParam("mod")   ? req->getParam("mod")->value()   : "";
-        String med = req->hasParam("media") ? req->getParam("media")->value() : "";
-        String text = req->hasParam("text") ? req->getParam("text")->value() : "";
-        if (ev == "down")           Macros.post(EngineCmd::LIVE_DOWN,  keycodeFromName(key), 0);
-        else if (ev == "up")        Macros.post(EngineCmd::LIVE_UP,    keycodeFromName(key), 0);
-        else if (ev == "moddown")   Macros.post(EngineCmd::LIVE_MODDOWN, 0, modifierFromName(mod));
-        else if (ev == "modup")     Macros.post(EngineCmd::LIVE_MODUP,   0, modifierFromName(mod));
-        else if (ev == "media")     Macros.post(EngineCmd::LIVE_MEDIA, consumerFromName(med), 0);
-        else if (ev == "releaseall")Macros.post(EngineCmd::LIVE_RELEASEALL, 0, 0);
-        else if (ev == "text")      Macros.postText(text.c_str());
-        else { sendJson(req, 400, "{\"ok\":false,\"error\":\"bad ev\"}"); return; }
-        sendJson(req, 200, "{\"ok\":true}");
-    });
-
-    server.on("/api/bonds/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
-        Keyboard.clearBonds();
-        sendJson(req, 200, "{\"ok\":true}");
-    });
-
     server.onNotFound([](AsyncWebServerRequest* req) {
         // SPA fallback
         if (LittleFS.exists("/index.html"))
@@ -335,7 +297,4 @@ void webServerBegin() {
     });
 
     server.begin();
-    active_ = true;
 }
-
-bool webServerActive() { return active_; }

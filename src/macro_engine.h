@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <memory>
 #include "config.h"
 
 // ---------------------------------------------------------------------------
@@ -44,16 +45,32 @@ struct MacroRef {
     uint8_t key = 0;
 };
 
+// Payload that only TEXT, CALL, RANDOM and COMBAT steps carry. Kept out of
+// Step so the common key/delay steps of long recordings stay small.
+struct StepExtra {
+    std::string           text;    // TEXT: string to type, CALL: workflow id
+    std::vector<MacroRef> choices; // RANDOM / COMBAT
+};
+
 struct Step {
     StepType    type   = StepType::DELAY;
     uint8_t     keycode   = 0;
     uint8_t     modifiers = 0;
+    uint8_t     avoidRecent = 0; // exclude up to 16 recent choices; skip if exhausted
     uint32_t    value   = 0;      // ms / repeat / usage / layer, per type
-    uint32_t maxValue = 0;       // inclusive upper timing bound, 0 = fixed
-    std::string text;            // TEXT / CALL
-    std::vector<MacroRef> choices;
-    uint8_t avoidRecent = 0; // exclude up to 16 recent choices; skip if exhausted
-    int         matchIndex = -1; // LOOP_START<->LOOP_END pairing (precomputed)
+    uint32_t    maxValue = 0;     // inclusive upper timing bound, 0 = fixed
+    int16_t     matchIndex = -1;  // LOOP_START<->LOOP_END pairing (precomputed)
+    std::shared_ptr<const StepExtra> extra; // shared: copies stay cheap
+
+    const std::string& text() const { static const std::string none; return extra ? extra->text : none; }
+    const std::vector<MacroRef>& choices() const { static const std::vector<MacroRef> none; return extra ? extra->choices : none; }
+    void setText(std::string value) { auto e = mutableExtra(); e->text = std::move(value); extra = std::move(e); }
+    void setChoices(std::vector<MacroRef> value) { auto e = mutableExtra(); e->choices = std::move(value); extra = std::move(e); }
+
+private:
+    std::shared_ptr<StepExtra> mutableExtra() const {
+        return extra ? std::make_shared<StepExtra>(*extra) : std::make_shared<StepExtra>();
+    }
 };
 
 struct MacroLogEntry {
@@ -69,7 +86,7 @@ struct MacroLogEntry {
     uint32_t value = 0;
     bool complete = true;
     char text[40] = {};
-    char loopPath[64] = {};
+    char loopPath[32] = {};
 };
 
 enum class TriggerMode : uint8_t { TAP, TOGGLE, HOLD };
@@ -142,7 +159,6 @@ public:
     Config& config() { return cfg_; }
     void    commit();           // re-validate loop pairing after edits
     bool    load();             // from flash
-    bool    save();             // to flash
 
     // Stop whatever macro is running.
     void stopAll();

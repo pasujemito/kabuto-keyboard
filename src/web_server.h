@@ -5,8 +5,5 @@
 // REST API used to edit macros without reflashing. Call once from setup().
 void webServerBegin();
 
-// Whether the config portal is currently up.
-bool webServerActive();
-
 // Whether the browser recorder has recently reported an active recording.
 bool webServerRecorderActive();

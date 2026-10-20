@@ -6,7 +6,7 @@
 // physical keys plus one "config mode" button.
 
 #define DEVICE_NAME        "Kabuto"
-#define FIRMWARE_VERSION   "1.10.1"
+#define FIRMWARE_VERSION   "1.11.0"
 
 // --- Key matrix -----------------------------------------------------------
 // A matrix of ROWS x COLS mechanical keys. Each intersection is one

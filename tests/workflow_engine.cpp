@@ -48,7 +48,7 @@ bool loadConfig(Config&) { return false; }
 bool saveConfig(const Config&) { return false; }
 
 Step tap(uint8_t code) { Step s; s.type=StepType::KEY; s.keycode=code; return s; }
-Step call(const char* id) { Step s; s.type=StepType::CALL; s.text=id; return s; }
+Step call(const char* id) { Step s; s.type=StepType::CALL; s.setText(id); return s; }
 Workflow workflow(const char* id, std::vector<Step> steps) {
     Workflow w; w.id=id; w.name=id; w.steps=steps; return w;
 }
@@ -72,7 +72,7 @@ int main() {
     assert(releases>0);
     Step choose; choose.type=StepType::RANDOM;choose.avoidRecent=1;
     MacroRef a; a.workflow="walk"; MacroRef b; b.workflow="attack";b.weight=5;
-    choose.choices={a,b};
+    choose.setChoices({a,b});
     Step loop; loop.type=StepType::LOOP_START;loop.value=4;loop.matchIndex=2;
     Step end;end.type=StepType::LOOP_END;end.matchIndex=0;
     run(engine,{loop,choose,end});
@@ -106,7 +106,7 @@ int main() {
     assert(taps.size()==8 && taps.front()==8 && taps.back()==1);
     // Legacy layer/key random references still run.
     engine.config().ensureLayer(0);engine.config().layers[0].keys[1].steps={tap(10)};
-    choose.choices.clear();MacroRef legacy;legacy.layer=0;legacy.key=1;choose.choices.push_back(legacy);
+    MacroRef legacy;legacy.layer=0;legacy.key=1;choose.setChoices({legacy});
     choose.avoidRecent=0;run(engine,{choose});assert((taps==std::vector<uint8_t>{10}));
     // Stop during a nested held-key workflow releases all keys at the root.
     Step down;down.type=StepType::KEY_DOWN;down.keycode=26;
@@ -123,7 +123,7 @@ int main() {
     Step shortDelay;shortDelay.type=StepType::DELAY;shortDelay.value=121;shortDelay.maxValue=194;
     engine.config().workflows.push_back(workflow("combat-micro",{move,jumpDown,shortDelay,jumpUp}));
     MacroRef cr;cr.workflow="combat-micro";
-    Step combat;combat.type=StepType::COMBAT;combat.value=90000;combat.maxValue=90000;combat.choices={cr};
+    Step combat;combat.type=StepType::COMBAT;combat.value=90000;combat.maxValue=90000;combat.setChoices({cr});
     hidEvents.clear();ctrlDurations.clear();
     run(engine,{combat});
     assert(ctrlDurations.size()==1 && ctrlDurations[0]==90000);

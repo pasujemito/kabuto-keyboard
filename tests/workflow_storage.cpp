@@ -7,13 +7,19 @@
 #include <iostream>
 TestLittleFS LittleFS;
 void Config::ensureLayer(size_t n){while(layers.size()<=n)layers.push_back(Layer{});}
+// Test helpers: write a JSON string the way an upload does, and read it back.
+static bool saveRawJson(const String& json,String& err){
+    {File f=LittleFS.open(MACRO_TMP_FILE,"w");f.write((const uint8_t*)json.c_str(),json.length());}
+    return commitConfigFile(MACRO_TMP_FILE,err);
+}
+static String readRawJson(){File f=LittleFS.open(MACRO_FILE,"r");return f?f.readString():String();}
 int main(){
     std::ifstream file("examples/combat-layer-one.json");assert(file);
     String json(std::string((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>()));
     String err;assert(saveRawJson(json,err));Config cfg;assert(loadConfig(cfg));
     assert(cfg.layers.size()==2&&cfg.layers[0].keys[0].steps[0].type==StepType::COMBAT);
     const Step& combat=cfg.layers[0].keys[0].steps[0];assert(combat.value==25000&&combat.maxValue==85000);
-    assert(combat.choices.size()==6&&combat.avoidRecent==1);
+    assert(combat.choices().size()==6&&combat.avoidRecent==1);
     assert(cfg.workflows[0].steps[0].type==StepType::MOVE&&cfg.workflows[0].steps[0].maxValue==524);
     bool found=false;for(const auto& w:cfg.workflows)if(w.id=="pet-food"){
         found=true;assert(w.cooldownMs==1800000&&!w.utilityEnabled&&w.chancePermille==50);

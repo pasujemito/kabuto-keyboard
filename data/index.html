@@ -108,10 +108,6 @@
   .log-empty{padding:18px 8px;text-align:center;color:var(--faint);font-size:11px}
 
   /* ---------- editor ---------- */
-  .ed-head{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-  .ed-head input.name{background:var(--panel);border:1px solid var(--edge);color:var(--ink);padding:9px 12px;border-radius:var(--r);font-size:15px;flex:1;min-width:140px}
-  .macro-setting{display:flex;align-items:center;gap:8px;margin:0 0 14px;color:var(--muted);font-size:12px}
-  .macro-setting input{accent-color:var(--amber);width:15px;height:15px}
   .seg{display:inline-flex;border:1px solid var(--edge);border-radius:var(--r);overflow:hidden}
   .seg button{background:var(--panel);border:0;color:var(--muted);padding:9px 13px;font-size:12px;font-family:var(--mono)}
   .seg button.on{background:var(--amber);color:#1a1300;font-weight:600}
@@ -122,33 +118,26 @@
   .grid.run .keycap.empty{opacity:.45}
   .grid.run .keycap:active{border-color:var(--amber);box-shadow:inset 0 0 0 2px var(--amber)}
   .ed-tools{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
-  .loopbal{font-family:var(--mono);font-size:12px;color:var(--muted);align-self:center;margin-left:auto}
-  .loopbal.bad{color:var(--stop)}
 
-  .steps{display:flex;flex-direction:column;gap:7px;margin:4px 0 14px}
-  .step{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--edge);border-radius:var(--r);padding:9px 10px;flex-wrap:wrap}
-  .step .num{font-family:var(--mono);font-size:11px;color:var(--faint);width:20px;text-align:right}
-  .step select.type{background:var(--panel2);color:var(--amber);border:1px solid var(--edge);border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:12px}
-  .step .fields{display:flex;align-items:center;gap:7px;flex:1;flex-wrap:wrap;min-width:0}
-  .step label{font-size:11px;color:var(--faint)}
-  .step input[type=text],.step input[type=number],.step select.val{background:var(--panel2);color:var(--ink);border:1px solid var(--edge);border-radius:6px;padding:7px 8px}
-  .step input[type=number]{width:84px}
-  .step input.txt{min-width:140px;flex:1;font-family:var(--mono)}
+  /* ---------- recording step editor ---------- */
   .modchips{display:flex;gap:4px;flex-wrap:wrap}
   .modchips button{background:var(--panel2);border:1px solid var(--edge);color:var(--faint);border-radius:5px;padding:6px 8px;font-family:var(--mono);font-size:11px}
   .modchips button.on{background:var(--amber-dim);color:var(--amber);border-color:var(--amber)}
-  .step .rm{margin-left:auto;background:none;border:0;color:var(--faint);font-size:17px;padding:0 4px}
-  .step .rm:hover{color:var(--stop)}
-  .step .mv{background:none;border:0;color:var(--faint);padding:0 2px;font-size:13px}
-  .step.loopstart{border-left:2px solid var(--amber)}
-  .step.loopend{border-left:2px solid var(--amber-dim)}
-  .random-choices{display:flex;gap:6px;flex-wrap:wrap;min-width:100%}
-  .random-choice{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:11px}
-  .random-choice input{accent-color:var(--amber)}
-
-  .add-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
-  .add-row button{background:var(--panel2);border:1px dashed var(--edge);color:var(--muted);padding:8px 11px;border-radius:var(--r);font-size:12px}
-  .add-row button:hover{color:var(--ink);border-color:var(--faint)}
+  .edit-dialog{width:min(860px,calc(100vw - 32px))}
+  .edit-summary{margin:0 0 10px;color:var(--muted);font-size:12px}
+  .step-list{list-style:none;margin:0;padding:0;height:42vh;min-height:160px;overflow:auto;border:1px solid var(--edge);background:var(--bg);font:12px/1.4 var(--mono)}
+  .step-row{display:grid;grid-template-columns:40px 58px minmax(0,1fr);gap:8px;padding:5px 10px;border-bottom:1px solid var(--edge);cursor:pointer}
+  .step-row:hover{background:var(--panel)}
+  .step-row.sel{background:var(--amber-dim)}
+  .step-row .n,.step-row .at{color:var(--faint);text-align:right}
+  .step-row .what{overflow-wrap:anywhere}
+  .step-row.delay .what{color:var(--muted)}
+  .step-form{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px;border:1px solid var(--edge);border-top:0;background:var(--panel2);min-height:40px}
+  .step-form label{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:var(--faint)}
+  .step-form input,.step-form select{background:var(--panel);color:var(--ink);border:1px solid var(--edge);border-radius:6px;padding:6px 8px}
+  .step-form input[type=number]{width:86px}
+  .step-form input[type=text]{min-width:160px;flex:1;font-family:var(--mono)}
+  .step-form .step-actions{display:flex;gap:6px;flex-wrap:wrap;width:100%}
   .empty-state{color:var(--faint);padding:34px 0;text-align:center}
   .hint{color:var(--faint);font-size:12px;margin-top:4px}
 
@@ -347,6 +336,13 @@
   </div>
   <div class="json-actions"><button class="btn" id="jsonCopy">Copy JSON</button><button class="btn primary" id="jsonDownload">Download JSON</button></div>
 </dialog>
+<dialog class="json-dialog edit-dialog" id="editDialog" aria-labelledby="editTitle">
+  <header><h3 id="editTitle">Edit recording</h3><button class="btn sm" id="editClose">Close</button></header>
+  <p class="edit-summary" id="editSummary"></p>
+  <ol class="step-list" id="stepList" tabindex="0" aria-label="Recording steps"></ol>
+  <div class="step-form" id="stepForm"></div>
+  <div class="json-actions"><button class="btn primary" id="editApply">Apply changes</button><span class="hint" style="align-self:center">Applied edits are saved to the device with the header Save.</span></div>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -501,7 +497,7 @@ function recordingSteps(recording,seen=new Set()){
   });
 }
 function recordingSummary(recording){
-  const steps=recordingSteps(recording),ms=steps.reduce((n,s)=>n+(s.type==='delay'?s.ms||0:s.type==='key'?s.hold||0:0),0);
+  const steps=recordingSteps(recording),ms=steps.reduce((n,s)=>n+stepMs(s),0);
   return steps.length+' steps · '+(ms/1000).toFixed(1)+' s';
 }
 function storeRecording(recording,steps){
@@ -543,7 +539,7 @@ function renderRecordings(){
     name.oninput=()=>{recording.name=name.value;updateDirty();renderEditor();};card.appendChild(name);
     const summary=document.createElement('p');summary.className='hint';try{summary.textContent=recordingSummary(recording);}catch(e){summary.textContent='Existing custom workflow';}card.appendChild(summary);
     const actions=document.createElement('div');actions.className='recording-actions';
-    [['Record again',()=>{selectedWorkflow=recording.id;openRecorder(recording.id);}],['Add to button',()=>addRecordingToButton(recording.id)],['JSON',()=>{selectedWorkflow=recording.id;openJsonPreview('selected');}],['Delete',()=>deleteRecording(recording.id)]].forEach(([label,action])=>{const b=document.createElement('button');b.className='btn sm';b.textContent=label;b.onclick=action;actions.appendChild(b);});
+    [['Edit',()=>{selectedWorkflow=recording.id;openStepEditor(recording.id);}],['Record again',()=>{selectedWorkflow=recording.id;openRecorder(recording.id);}],['Add to button',()=>addRecordingToButton(recording.id)],['JSON',()=>{selectedWorkflow=recording.id;openJsonPreview('selected');}],['Delete',()=>deleteRecording(recording.id)]].forEach(([label,action])=>{const b=document.createElement('button');b.className='btn sm';b.textContent=label;b.onclick=action;actions.appendChild(b);});
     card.appendChild(actions);list.appendChild(card);
   });
 }
@@ -583,16 +579,9 @@ function importRecordingObject(payload){
     recording=keys[0];
   }
   const steps=recording.steps;
-  const allowed=new Set(['key','down','up','delay','text','media']);
-  if(!steps.length||steps.length>12000||steps.some(s=>!s||!allowed.has(s.type)))throw new Error('Import captured actions and delays (up to 12000 steps), without workflow references.');
-  for(const s of steps){
-    for(const field of ['ms','hold','maxMs','maxHold'])if(s[field]!==undefined&&(!Number.isInteger(s[field])||s[field]<0||s[field]>90000))throw new Error('Timings must be integer milliseconds from 0 to 90000.');
-    if(s.type==='delay'&&!Number.isInteger(s.ms))throw new Error('A delay needs an ms value.');
-    if(s.maxMs&&s.maxMs<s.ms||s.maxHold&&s.maxHold<(s.hold||0))throw new Error('The maximum timing must not be below the minimum.');
-    if(s.mods!==undefined&&(!Array.isArray(s.mods)||s.mods.some(m=>!['ctrl','rctrl','shift','rshift','alt','altgr','gui','rgui'].includes(m))))throw new Error('Unknown modifier in recording.');
-    if(['key','down'].includes(s.type)&&!s.key&&!s.mods?.length)throw new Error('A captured press needs a key or modifier.');
-    if(s.key&&meta.keys&&!meta.keys.includes(s.key))throw new Error('Unknown captured key: '+s.key);
-  }
+  if(!steps.length||steps.length>12000||steps.some(s=>!s||!CAPTURED_TYPES[s.type]))throw new Error('Import captured actions and delays (up to 12000 steps), without workflow references.');
+  validateCapturedSteps(steps);
+  for(const s of steps)if(s.key&&meta.keys&&!meta.keys.includes(s.key))throw new Error('Unknown captured key: '+s.key);
   if(cfg.workflows.length>=64)throw new Error('Recording storage is full');
   const result={id:freshId(),name:String(recording.name||'Imported recording'),kind:'nano',recording:true,steps:[]};
   cfg.workflows.push(result);
@@ -632,6 +621,139 @@ function renderEditor(){
   const json=document.createElement('button');json.className='btn sm';json.textContent='Button JSON';json.onclick=()=>{selectedWorkflow=null;openJsonPreview('selected');};tools.appendChild(json);w.appendChild(tools);updateDirty();
 }
 
+
+/* ---------------- recording step editor ---------------- */
+const CAPTURED_TYPES={key:"Tap key",down:"Key down",up:"Key up",delay:"Delay",text:"Type text",media:"Media key"};
+const MOD_NAMES=["ctrl","shift","alt","gui","rctrl","rshift","altgr","rgui"];
+function stepMs(s){return s.type==='delay'?s.ms||0:s.type==='key'?s.hold||0:0;}
+// Checks captured step types; other step types are passed through unchanged.
+function validateCapturedSteps(steps){
+  steps.forEach((s,i)=>{
+    if(!CAPTURED_TYPES[s.type])return;
+    const fail=m=>{throw new Error(`Step ${i+1}: ${m}`);};
+    for(const field of ['ms','hold','maxMs','maxHold'])if(s[field]!==undefined&&(!Number.isInteger(s[field])||s[field]<0||s[field]>90000))fail('timings must be integer milliseconds from 0 to 90000.');
+    if(s.type==='delay'&&!Number.isInteger(s.ms))fail('a delay needs an ms value.');
+    if(s.maxMs&&s.maxMs<s.ms||s.maxHold&&s.maxHold<(s.hold||0))fail('the maximum timing must not be below the minimum.');
+    if(s.mods!==undefined&&(!Array.isArray(s.mods)||s.mods.some(m=>!MOD_NAMES.includes(m))))fail('unknown modifier.');
+    if(['key','down'].includes(s.type)&&!s.key&&!s.mods?.length)fail('a press needs a key or modifier.');
+  });
+}
+function stepDescription(s){
+  const combo=[...(s.mods||[]).map(m=>m.toUpperCase()),...(s.key?[s.key]:[])].join('+')||'nothing';
+  const range=(min,max)=>max?`${min||0}–${max} ms`:`${min||0} ms`;
+  switch(s.type){
+    case 'key':return `Tap ${combo} · ${range(s.hold,s.maxHold)}`;
+    case 'down':return `Press ${combo}`;
+    case 'up':return `Release ${combo}`;
+    case 'delay':return `Wait ${range(s.ms,s.maxMs)}`;
+    case 'text':return `Type "${s.text||''}"`;
+    case 'media':return `Media ${s.media}`;
+  }
+  return `${s.type} step (kept as is)`;
+}
+let editTarget=null,editSteps=[],editSel=-1,editDirty=false;
+function openStepEditor(id){
+  const recording=cfg.workflows.find(w=>w.id===id);if(!recording)return;
+  try{editSteps=JSON.parse(JSON.stringify(recordingSteps(recording)));}catch(e){toast(e.message,true);return;}
+  editTarget=recording;editSel=editSteps.length?0:-1;editDirty=false;
+  $("#editTitle").textContent='Edit · '+(recording.name||'Recording');
+  renderStepList();renderStepForm();$("#editDialog").showModal();
+}
+function closeStepEditor(){
+  if(editDirty&&!confirm('Discard changes to this recording?'))return false;
+  editDirty=false;$("#editDialog").close();return true;
+}
+function markStepEdited(){editDirty=true;renderStepList();}
+function renderStepList(){
+  const list=$("#stepList"),frag=document.createDocumentFragment();let at=0;
+  editSteps.forEach((s,i)=>{
+    const li=document.createElement('li');li.className='step-row '+s.type+(i===editSel?' sel':'');li.dataset.i=i;
+    li.innerHTML=`<span class="n">${i+1}</span><span class="at">${(Math.round(at/10)/100).toFixed(2)}s</span><span class="what">${esc(stepDescription(s))}</span>`;
+    at+=stepMs(s);frag.appendChild(li);
+  });
+  list.replaceChildren(frag);
+  $("#editSummary").textContent=`${editSteps.length} steps · ${(at/1000).toFixed(1)} s`+(editDirty?' · unapplied changes':'');
+}
+function selectStep(i){
+  if(i<0||i>=editSteps.length)return;
+  const list=$("#stepList");
+  list.querySelector('.sel')?.classList.remove('sel');
+  editSel=i;const row=list.children[i];row.classList.add('sel');row.scrollIntoView({block:'nearest'});
+  renderStepForm();
+}
+function stepNumber(label,value,on){
+  const l=document.createElement('label'),n=document.createElement('input');l.textContent=label;
+  n.type='number';n.min=0;n.max=90000;n.value=value||0;
+  n.onchange=()=>{on(Math.max(0,Math.min(90000,parseInt(n.value||'0',10))));markStepEdited();};
+  l.appendChild(n);return l;
+}
+function renderStepForm(){
+  const f=$("#stepForm");f.replaceChildren();
+  const s=editSteps[editSel];
+  if(!s){const p=document.createElement('span');p.className='hint';p.textContent='No steps. Insert a delay or a key tap to start.';f.appendChild(p);}
+  else{
+    const type=document.createElement('select');type.setAttribute('aria-label','Step type');
+    const types=CAPTURED_TYPES[s.type]?CAPTURED_TYPES:{...CAPTURED_TYPES,[s.type]:s.type+' (kept as is)'};
+    Object.entries(types).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;type.appendChild(o);});
+    type.value=s.type;
+    type.onchange=()=>{
+      const keep=['key','down','up'].includes(type.value)?{key:s.key,mods:s.mods}:{};
+      const fresh={key:{type:'key',key:'A',hold:0},down:{type:'down',key:'A'},up:{type:'up',key:'A'},delay:{type:'delay',ms:100},text:{type:'text',text:''},media:{type:'media',media:meta.media[0]||'PLAY'}}[type.value];
+      const next={...fresh,...Object.fromEntries(Object.entries(keep).filter(([,v])=>v!==undefined))};
+      if(['key','down'].includes(next.type)&&!next.key&&!next.mods?.length)next.key='A';
+      editSteps[editSel]=next;markStepEdited();renderStepForm();
+    };
+    f.appendChild(type);
+    if(['key','down','up'].includes(s.type)){
+      const key=document.createElement('select');key.setAttribute('aria-label','Key');
+      const keys=['',...meta.keys];if(s.key&&!keys.includes(s.key))keys.push(s.key);
+      keys.forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k||'(modifier only)';key.appendChild(o);});
+      key.value=s.key||'';key.onchange=()=>{if(key.value)s.key=key.value;else delete s.key;markStepEdited();};
+      f.appendChild(key);
+      const chips=document.createElement('div');chips.className='modchips';
+      MOD_NAMES.forEach(m=>{const b=document.createElement('button');b.textContent=m;b.classList.toggle('on',(s.mods||[]).includes(m));
+        b.onclick=()=>{const mods=new Set(s.mods||[]);mods.has(m)?mods.delete(m):mods.add(m);if(mods.size)s.mods=[...mods];else delete s.mods;b.classList.toggle('on');markStepEdited();};
+        chips.appendChild(b);});
+      f.appendChild(chips);
+    }
+    if(s.type==='key'){
+      f.appendChild(stepNumber('hold ms',s.hold,v=>s.hold=v));
+      f.appendChild(stepNumber('max hold (0 = fixed)',s.maxHold,v=>{if(v)s.maxHold=v;else delete s.maxHold;}));
+    }
+    if(s.type==='delay'){
+      f.appendChild(stepNumber('ms',s.ms,v=>s.ms=v));
+      f.appendChild(stepNumber('max ms (0 = fixed)',s.maxMs,v=>{if(v)s.maxMs=v;else delete s.maxMs;}));
+    }
+    if(s.type==='text'){
+      const t=document.createElement('input');t.type='text';t.value=s.text||'';t.setAttribute('aria-label','Text to type');
+      t.onchange=()=>{s.text=t.value;markStepEdited();};f.appendChild(t);
+    }
+    if(s.type==='media'){
+      const m=document.createElement('select');m.setAttribute('aria-label','Media key');
+      meta.media.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;m.appendChild(o);});
+      m.value=s.media;m.onchange=()=>{s.media=m.value;markStepEdited();};f.appendChild(m);
+    }
+  }
+  const actions=document.createElement('div');actions.className='step-actions';
+  const insert=step=>{if(editSteps.length>=12000){toast('Maximum 12000 steps',true);return;}editSteps.splice(editSel+1,0,step);editSel++;markStepEdited();selectStep(editSel);};
+  const buttons=[
+    ['↑ Move up',()=>{[editSteps[editSel-1],editSteps[editSel]]=[editSteps[editSel],editSteps[editSel-1]];editSel--;markStepEdited();selectStep(editSel);},!s||editSel===0],
+    ['↓ Move down',()=>{[editSteps[editSel+1],editSteps[editSel]]=[editSteps[editSel],editSteps[editSel+1]];editSel++;markStepEdited();selectStep(editSel);},!s||editSel===editSteps.length-1],
+    ['Duplicate',()=>insert(JSON.parse(JSON.stringify(s))),!s],
+    ['Delete',()=>{editSteps.splice(editSel,1);editSel=Math.min(editSel,editSteps.length-1);markStepEdited();if(editSel>=0)selectStep(editSel);else renderStepForm();},!s],
+    ['+ Delay after',()=>insert({type:'delay',ms:100}),false],
+    ['+ Tap after',()=>insert({type:'key',key:'A',hold:0}),false],
+  ];
+  buttons.forEach(([label,action,disabled])=>{const b=document.createElement('button');b.className='btn sm';b.textContent=label;b.disabled=disabled;b.onclick=action;actions.appendChild(b);});
+  f.appendChild(actions);
+}
+function applyStepEdits(){
+  if(!editSteps.length){toast('A recording needs at least one step',true);return;}
+  try{validateCapturedSteps(editSteps);storeRecording(editTarget,editSteps);}catch(e){toast(e.message,true);return;}
+  editDirty=false;$("#editDialog").close();
+  renderRecordings();renderEditor();renderGrid();updateDirty();
+  toast('Recording updated — press Save to store it on the device');
+}
 
 /* ---------------- virtual keyboard recorder ---------------- */
 const VK_ROWS=[
@@ -1123,6 +1245,11 @@ $("#configJson").onclick=()=>openJsonPreview("config");
 $("#recJson").onclick=()=>openJsonPreview("recording");
 $("#jsonScope").onchange=refreshJsonPreview;
 $("#jsonClose").onclick=closeJsonPreview;
+$("#editClose").onclick=closeStepEditor;
+$("#editApply").onclick=applyStepEdits;
+$("#editDialog").addEventListener("cancel",e=>{e.preventDefault();closeStepEditor();});
+$("#stepList").onclick=e=>{const row=e.target.closest(".step-row");if(row)selectStep(+row.dataset.i);};
+$("#stepList").onkeydown=e=>{if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();selectStep(editSel+(e.key==="ArrowDown"?1:-1));}};
 $("#jsonDialog").addEventListener("close",()=>{if(jsonReturnFocus&&jsonReturnFocus.isConnected)jsonReturnFocus.focus();});
 $("#jsonCopy").onclick=copyJson;
 $("#jsonDownload").onclick=downloadJson;

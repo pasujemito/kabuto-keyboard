@@ -52,3 +52,10 @@ metadata and button playback preferences. Interpreter tests ensure Ctrl holds
 continue across internal parts and captured fixed delays use the configured
 global jitter, with smaller variation on key holds, while existing custom
 macros remain supported.
+
+The browser test also covers loading errors (a truncated `/api/config` shows
+Retry instead of an empty editor), the storage readout, and the recording
+editor: all steps of a multi-part recording, timeline times, editing a delay,
+insert/delete, the discard prompt, and re-splitting on Apply. Storage tests
+check that uploads are committed through a temporary file that is removed on
+failure.

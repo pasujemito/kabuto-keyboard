@@ -141,8 +141,18 @@ preset. Back up device macros first: uploading the filesystem replaces the
 saved configuration. Flashing firmware alone does not replace existing macros.
 Existing configurations remain readable. Custom macros keep their behaviour;
 **Move to Recordings** makes an existing button macro reusable without dropping
-its steps. The editor no longer exposes nano/micro types, combat block controls,
-cooldown settings, or a low-level step builder.
+its steps. The editor no longer exposes nano/micro types, combat block controls
+or cooldown settings.
+
+### Editing a recording
+
+**Edit** on a recording opens the whole recording as one step list, even when it
+is stored in several internal parts. Each row shows when the step starts, so the
+list doubles as a timeline preview. Select a step to change its type, key,
+modifiers, hold time or delay, move it, duplicate it, delete it, or insert a
+delay or key tap after it. **Apply changes** re-splits the recording into
+storage parts; press the header **Save** to store it on the device. Closing with
+unapplied changes asks before discarding them.
 
 ## JSON import and export
 

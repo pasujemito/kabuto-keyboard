@@ -214,6 +214,16 @@
   .toast{position:fixed;left:50%;bottom:calc(16px + var(--safe-b));transform:translateX(-50%);background:var(--panel2);border:1px solid var(--edge);padding:10px 16px;border-radius:var(--r);font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
   .toast.show{opacity:1}
   .toast.err{border-color:var(--stop);color:var(--stop)}
+  .load-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #3a2626;background:#2a1c1c;color:var(--stop)}
+  .load-error[hidden]{display:none}
+  .load-error span{flex:1;min-width:200px}
+  .storage{display:grid;gap:7px;margin:12px 0 4px;font-size:12px;color:var(--muted)}
+  .storage .srow{display:flex;justify-content:space-between;gap:8px}
+  .storage .srow b{color:var(--ink);font-weight:500;font-family:var(--mono)}
+  .storage .meter{height:4px;background:var(--edge);border-radius:2px;overflow:hidden;margin-top:3px}
+  .storage .meter i{display:block;height:100%;background:var(--live)}
+  .storage .meter i.warn{background:var(--amber)}
+  .storage .meter i.full{background:var(--stop)}
 </style>
 </head>
 <body>
@@ -229,6 +239,7 @@
     <button class="btn primary sm" id="saveBtn">Save</button>
   </div>
 </header>
+<div class="load-error" id="loadError" role="alert" hidden><span id="loadErrorText"></span><button class="btn sm" id="loadRetry">Retry</button></div>
 
 <main>
   <section class="panel show" id="panelKeys">
@@ -263,6 +274,7 @@
   <section class="panel" id="panelRecordings">
     <h2>Recordings</h2>
     <div class="recording-actions"><button class="btn primary" id="newRecording">New recording</button><button class="btn" id="importRecording">Import JSON</button></div>
+    <div class="storage" id="storage" aria-label="Storage"></div>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
   </section>
@@ -347,14 +359,49 @@ function normalize(){
   }
 }
 
+async function getJson(p){
+  const r=await api(p);
+  if(!r.ok)throw new Error(`${p} returned HTTP ${r.status}`);
+  // A truncated body (e.g. the device ran low on memory) fails to parse here.
+  try{return await r.json();}catch(e){throw new Error(`${p} sent incomplete data`);}
+}
+function showLoadError(e){
+  $("#loadErrorText").textContent=`Couldn't load the configuration from Kabuto (${e.message}). Nothing on the device was changed. Retry, or reboot the device if this keeps happening.`;
+  $("#loadError").hidden=false;
+}
+let storage=null;
+function fmtBytes(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";}
+async function refreshStorage(){
+  try{storage=await getJson("/api/storage");}catch(e){storage=null;}
+  renderStorage();
+}
+function renderStorage(){
+  const box=$("#storage");if(!box||!cfg)return;
+  // Size of what the next Save uploads, including unsaved edits.
+  const pending=new Blob([JSON.stringify(cfg)]).size;
+  const rows=[["Recording slots",cfg.workflows.length,64,`${cfg.workflows.length} of 64`,"Long recordings use several slots"]];
+  if(storage){
+    rows.push(["Config size",pending,storage.maxConfig,`${fmtBytes(pending)} of ${fmtBytes(storage.maxConfig)}`,"Largest config the device accepts on Save"]);
+    rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem, including the web UI"]);
+    rows.push(["Device memory",storage.heapSize-storage.heapFree,storage.heapSize,`${fmtBytes(storage.heapFree)} free`,`Largest free block ${fmtBytes(storage.heapLargest)}`]);
+  }
+  box.replaceChildren(...rows.map(([label,used,max,text,title])=>{
+    const row=document.createElement("div");row.title=title;
+    const pct=max?Math.min(100,used/max*100):0;
+    row.innerHTML=`<div class="srow"><span>${label}</span><b>${text}</b></div><div class="meter"><i class="${pct>=95?"full":pct>=80?"warn":""}" style="width:${pct}%"></i></div>`;
+    return row;
+  }));
+}
 async function loadAll(){
-  meta=await(await api("/api/meta")).json();
+  meta=await getJson("/api/meta");
   $("#fw").textContent=" v"+meta.firmware;
-  cfg=await(await api("/api/config")).json();
+  cfg=await getJson("/api/config");
+  $("#loadError").hidden=true;
   normalize();
   savedSnapshot=JSON.stringify(cfg);
   renderLayers();renderGrid();renderEditor();buildVKeyboard();updateDirty();
   renderRecordings();
+  refreshStorage();
   pollStatus();
   pollMacroLog();
 }
@@ -456,6 +503,7 @@ function storeRecording(recording,steps){
   recording.recording=true;cfg.version=2;
 }
 function newRecording(){
+  if(!cfg){toast('Configuration not loaded yet',true);return;}
   if(cfg.workflows.length>=64){toast('Recording storage is full',true);return;}
   const recording={id:freshId(),name:'Recording '+(recordingList().length+1),kind:'nano',recording:true,steps:[]};
   cfg.workflows.push(recording);cfg.version=2;selectedWorkflow=recording.id;renderRecordings();updateDirty();openRecorder(recording.id);
@@ -470,6 +518,7 @@ function deleteRecording(id){
   renderRecordings();renderEditor();updateDirty();
 }
 function renderRecordings(){
+  renderStorage();
   const list=$('#recordings');list.replaceChildren();
   if(!recordingList().length){const p=document.createElement('p');p.className='hint';p.textContent='Record a workflow, give it a name, then add it to a button.';list.appendChild(p);}
   recordingList().forEach(recording=>{
@@ -920,9 +969,10 @@ function downloadJson(){
 
 /* actions */
 async function save(){
+  if(!cfg){toast('Configuration not loaded yet',true);return;}
   const body=JSON.stringify(cfg);
   const r=await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body});
-  if(r.ok){savedSnapshot=body;updateDirty();toast("Saved to device");}
+  if(r.ok){savedSnapshot=body;updateDirty();toast("Saved to device");refreshStorage();}
   else{const e=await r.json().catch(()=>({}));toast(e.error||"Save failed",true);}
 }
 async function testKey(){
@@ -1025,7 +1075,8 @@ $("#recUse").onclick=useSteps;
 $("#recLive").onchange=e=>{liveOn=e.target.checked;if(liveOn&&!status.connected)toast("Live send needs a paired host",true);};
 $("#gridMode").querySelectorAll("button").forEach(b=>b.onclick=()=>setGridMode(b.dataset.g));
 $("#recMode").querySelectorAll("button").forEach(b=>b.onclick=()=>{$("#recMode").querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");});
-loadAll().catch(()=>{$("#editor").innerHTML='<div class="empty-state">Could not reach device API.</div>';});
+$("#loadRetry").onclick=()=>loadAll().catch(showLoadError);
+loadAll().catch(showLoadError);
 </script>
 </body>
 </html>

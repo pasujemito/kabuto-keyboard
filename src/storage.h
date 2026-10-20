@@ -16,8 +16,17 @@ bool saveConfig(const Config& cfg);
 // Used by the web UI which edits the JSON directly. 'err' gets a message.
 bool saveRawJson(const String& json, String& err);
 
-// Read the raw MACRO_FILE contents (for the web UI GET). "" if absent.
+// Validate the JSON file at 'path' and, if valid, atomically replace
+// MACRO_FILE with it. The file at 'path' is removed either way.
+bool commitConfigFile(const char* path, String& err);
+
+// Read the raw MACRO_FILE contents. "" if absent. Loads the whole file into
+// RAM; the web UI streams the file instead.
 String readRawJson();
+
+// Filesystem usage for the web UI.
+struct StorageInfo { size_t totalBytes; size_t usedBytes; size_t configBytes; };
+StorageInfo storageInfo();
 
 // Write a minimal valid default config if none exists yet.
 void ensureDefaultConfig();

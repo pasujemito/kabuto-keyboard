@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  try{
-  const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
+  const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];let truncateConfig=true;
   page.on('pageerror',e=>errors.push(e.message));
   const html=fs.readFileSync(path.join(__dirname,'../data/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
@@ -12,10 +12,21 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    const url=new URL(route.request().url());
    if(url.hostname!=='kabuto.test')return route.abort();
    if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
-   const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','W','H','LEFT','RIGHT','Z'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
+   if(url.pathname==='/api/config'&&truncateConfig)return route.fulfill({contentType:'application/json',body:JSON.stringify(config).slice(0,20000)});
+   const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','W','H','LEFT','RIGHT','Z'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:url.pathname==='/api/storage'?{fsTotal:1441792,fsUsed:180224,configBytes:80719,maxConfig:262144,heapSize:327680,heapFree:122880,heapLargest:73728}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   });
-  await page.goto('http://kabuto.test');await page.locator('.recording-card').waitFor();
+  // A truncated config (device low on memory) shows an error instead of an
+  // empty editor, and recording reports why it can't start.
+  await page.goto('http://kabuto.test');await page.locator('#loadError').waitFor();
+  assert.match(await page.locator('#loadErrorText').textContent(),/incomplete data/);
+  await page.getByRole('button',{name:'New recording',exact:true}).click();
+  assert.equal(await page.locator('#sheet.show').count(),0);
+  truncateConfig=false;await page.locator('#loadRetry').click();await page.locator('.recording-card').waitFor();
+  assert(!(await page.locator('#loadError').isVisible()));
+  assert.equal(await page.locator('#layerbar button b').first().textContent(),'0');
+  const storage=await page.locator('#storage').textContent();
+  assert.match(storage,/Recording slots6 of 64/);assert.match(storage,/Flash176 KB of 1\.4 MB/);assert.match(storage,/Device memory120 KB free/);
   assert.equal(await page.locator('.recording-card').count(),1);
   assert(await page.locator('#panelRecordings').isVisible());assert(await page.locator('#panelEdit').isVisible());
   await page.getByRole('button',{name:'Add to button',exact:true}).click();

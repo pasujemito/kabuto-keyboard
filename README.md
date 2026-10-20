@@ -121,6 +121,14 @@ one item and split into internal storage parts automatically; key holds continue
 across those parts. The library can run out of storage, in which case an edit
 fails without discarding the previous recording.
 
+The **Recordings** panel shows how much space is left: recording slots (64 in
+total; long recordings use several), the size of the config the next Save will
+upload (256 KB max), flash used on the device, and free device memory. Saves are
+written to a temporary file and swapped in only once they validate, so a failed
+or interrupted save keeps the previous configuration. If the editor can't load
+the configuration from the device it shows an error with **Retry** instead of an
+empty layout.
+
 The shipped first layer contains **Sample gameplay**, based on the uploaded
 97.927-second recording, assigned to button 1 with Play once. GUI and Escape
 presses are excluded as requested; original recorded delays remain. The other

@@ -375,28 +375,58 @@ static void buildDoc(const Config& cfg, JsonDocument& doc) {
     }
 }
 
+// Swap a fully written file into MACRO_FILE. LittleFS renames are atomic, so
+// a failed or interrupted write never leaves a truncated config behind.
+static bool replaceConfigWith(const char* path) {
+    if (LittleFS.rename(path, MACRO_FILE)) return true;
+    // Fallback in case the VFS refuses to rename over an existing file.
+    LittleFS.remove(MACRO_FILE);
+    return LittleFS.rename(path, MACRO_FILE);
+}
+
 bool saveConfig(const Config& cfg) {
     JsonDocument doc;
     buildDoc(cfg, doc);
-    File f = LittleFS.open(MACRO_FILE, "w");
+    File f = LittleFS.open(MACRO_TMP_FILE, "w");
     if (!f) return false;
     bool ok = serializeJson(doc, f) > 0;
     f.close();
+    if (ok) ok = replaceConfigWith(MACRO_TMP_FILE);
+    if (!ok) LittleFS.remove(MACRO_TMP_FILE);
+    return ok;
+}
+
+bool commitConfigFile(const char* path, String& err) {
+    File f = LittleFS.open(path, "r");
+    if (!f) { err = "cannot open uploaded config"; return false; }
+    JsonDocument doc;
+    DeserializationError e = deserializeJson(doc, f);
+    f.close();
+    bool ok = false;
+    if (e) err = String("invalid json: ") + e.c_str();
+    else if (!doc["layers"].is<JsonArrayConst>()) err = "missing 'layers' array";
+    else if (validateWorkflows(doc, err)) {
+        ok = replaceConfigWith(path);
+        if (!ok) err = "cannot replace saved config";
+    }
+    if (!ok) LittleFS.remove(path);
     return ok;
 }
 
 bool saveRawJson(const String& json, String& err) {
-    JsonDocument doc;
-    DeserializationError e = deserializeJson(doc, json);
-    if (e) { err = String("invalid json: ") + e.c_str(); return false; }
-    if (!doc["layers"].is<JsonArrayConst>()) { err = "missing 'layers' array"; return false; }
-    if (!validateWorkflows(doc, err)) return false;
-    File f = LittleFS.open(MACRO_FILE, "w");
+    File f = LittleFS.open(MACRO_TMP_FILE, "w");
     if (!f) { err = "cannot open file for writing"; return false; }
-    bool ok = serializeJson(doc, f) > 0;
+    bool ok = f.write((const uint8_t*)json.c_str(), json.length()) == json.length();
     f.close();
-    if (!ok) err = "write failed";
-    return ok;
+    if (!ok) { LittleFS.remove(MACRO_TMP_FILE); err = "write failed"; return false; }
+    return commitConfigFile(MACRO_TMP_FILE, err);
+}
+
+StorageInfo storageInfo() {
+    StorageInfo info{LittleFS.totalBytes(), LittleFS.usedBytes(), 0};
+    File f = LittleFS.open(MACRO_FILE, "r");
+    if (f) { info.configBytes = f.size(); f.close(); }
+    return info;
 }
 
 String readRawJson() {

@@ -6,7 +6,7 @@
 // physical keys plus one "config mode" button.
 
 #define DEVICE_NAME        "Kabuto"
-#define FIRMWARE_VERSION   "1.10.0"
+#define FIRMWARE_VERSION   "1.10.1"
 
 // --- Key matrix -----------------------------------------------------------
 // A matrix of ROWS x COLS mechanical keys. Each intersection is one
@@ -37,6 +37,8 @@ static const int COL_PINS[MATRIX_COLS] = {6, 7, 15};
 #define MAX_LAYERS         8
 #define MAX_MACRO_STEPS    256          // per macro
 #define MACRO_FILE         "/macros.json"
+#define MACRO_TMP_FILE     "/macros.tmp"  // uploads land here, then replace MACRO_FILE
+#define MAX_CONFIG_BYTES   (256 * 1024)   // reject larger config uploads
 
 // --- Config portal --------------------------------------------------------
 #define AP_SSID            "Kabuto-Setup"

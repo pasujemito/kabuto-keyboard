@@ -30,7 +30,11 @@ int main(){
         R"({"layers":[{"keys":[{"steps":[{"type":"move","ms":601}]}]}]})",
         R"({"layers":[],"workflows":[{"id":"x","steps":[],"utilityEnabled":true,"cooldownMs":300000}]})"
     };
-    for(auto raw:bad){assert(!saveRawJson(String(raw),err));assert(readRawJson()==previous);}
+    for(auto raw:bad){assert(!saveRawJson(String(raw),err));assert(readRawJson()==previous);assert(!LittleFS.exists(MACRO_TMP_FILE));}
+    // Uploads are committed from a temp file, which is removed afterwards.
+    {File upload=LittleFS.open(MACRO_TMP_FILE,"w");const char* half=R"({"layers":[{"keys":[)";upload.write((const uint8_t*)half,strlen(half));}
+    assert(!commitConfigFile(MACRO_TMP_FILE,err));assert(readRawJson()==previous);assert(!LittleFS.exists(MACRO_TMP_FILE));
+    assert(storageInfo().configBytes==previous.size());
     // Long taps retain 32-bit values rather than wrapping at 65.535 seconds.
     assert(saveRawJson(String(R"({"layers":[{"keys":[{"steps":[{"type":"key","key":"A","hold":90000}]}]}]})"),err));
     assert(loadConfig(cfg));assert(cfg.layers[0].keys[0].steps[0].value==90000);

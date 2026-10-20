@@ -31,9 +31,26 @@ static void sendJson(AsyncWebServerRequest* req, int code, const String& body) {
 }
 
 static void handleGetConfig(AsyncWebServerRequest* req) {
-    String json = readRawJson();
-    if (json.isEmpty()) json = "{\"version\":1,\"layers\":[]}";
-    sendJson(req, 200, json);
+    if (!LittleFS.exists(MACRO_FILE)) { sendJson(req, 200, "{\"version\":1,\"layers\":[]}"); return; }
+    // Stream from flash: recordings make this file large, and copying it into
+    // RAM can fail on a busy heap, sending the editor a truncated config.
+    AsyncWebServerResponse* r = req->beginResponse(LittleFS, MACRO_FILE, "application/json");
+    r->addHeader("Cache-Control", "no-store");
+    req->send(r);
+}
+
+static void handleStorage(AsyncWebServerRequest* req) {
+    StorageInfo info = storageInfo();
+    JsonDocument d;
+    d["fsTotal"]     = (uint32_t)info.totalBytes;
+    d["fsUsed"]      = (uint32_t)info.usedBytes;
+    d["configBytes"] = (uint32_t)info.configBytes;
+    d["maxConfig"]   = MAX_CONFIG_BYTES;
+    d["heapSize"]    = ESP.getHeapSize();
+    d["heapFree"]    = ESP.getFreeHeap();
+    d["heapLargest"] = ESP.getMaxAllocHeap();
+    String out; serializeJson(d, out);
+    sendJson(req, 200, out);
 }
 
 static void handleStatus(AsyncWebServerRequest* req) {
@@ -156,6 +173,7 @@ void webServerBegin() {
 
     server.on("/api/meta",   HTTP_GET, handleMeta);
     server.on("/api/status", HTTP_GET, handleStatus);
+    server.on("/api/storage", HTTP_GET, handleStorage);
     server.on("/api/recording", HTTP_POST, [](AsyncWebServerRequest* req) {
         recorderActive_ = req->hasParam("active") && req->getParam("active")->value() == "1";
         recorderHeartbeatMs_ = millis();
@@ -179,26 +197,39 @@ void webServerBegin() {
         sendJson(req, 200, out);
     });
 
-    // Save full config JSON (body = JSON). Validates, writes, reloads engine.
+    // Save full config JSON (body = JSON). The body is streamed to a temp file
+    // instead of RAM, then validated and swapped in; the engine reloads after.
     server.on("/api/config", HTTP_POST,
         [](AsyncWebServerRequest* req) {},
         nullptr,
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
-            static String body;
-            if (index == 0) body = "";
-            body.concat((const char*)data, len);
-            if (index + len == total) {
-                String err;
-                if (saveRawJson(body, err)) {
-                    Macros.post(EngineCmd::RELOAD);  // reload on the engine task
-                    sendJson(req, 200, "{\"ok\":true}");
-                } else {
-                    JsonDocument d; d["ok"] = false; d["error"] = err;
-                    String out; serializeJson(d, out);
-                    sendJson(req, 400, out);
-                }
-                body = "";
+            static File upload;
+            static bool writeFailed = false;
+            if (index == 0) {
+                if (upload) upload.close();
+                writeFailed = false;
+                if (total <= MAX_CONFIG_BYTES) upload = LittleFS.open(MACRO_TMP_FILE, "w");
+                if (!upload) writeFailed = true;
             }
+            if (!writeFailed && upload.write(data, len) != len) writeFailed = true;
+            if (index + len != total) return;
+            if (upload) upload.close();
+
+            String err;
+            int code = 400;
+            if (total > MAX_CONFIG_BYTES) {
+                err = "config too large"; code = 413;
+            } else if (writeFailed) {
+                err = "cannot write config (flash full?)"; code = 507;
+                LittleFS.remove(MACRO_TMP_FILE);
+            } else if (commitConfigFile(MACRO_TMP_FILE, err)) {
+                Macros.post(EngineCmd::RELOAD);  // reload on the engine task
+                sendJson(req, 200, "{\"ok\":true}");
+                return;
+            }
+            JsonDocument d; d["ok"] = false; d["error"] = err;
+            String out; serializeJson(d, out);
+            sendJson(req, code, out);
         });
 
     // Trigger a macro for testing: /api/test?layer=0&key=2

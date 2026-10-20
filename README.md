@@ -86,6 +86,21 @@ The first `uploadfs` installs the config UI and the example `macros.json`.
 
 ## Recordings and button assignments
 
+The editor is laid out as a pad. **Buttons** shows the current layer's buttons
+as large, evenly spaced keys; each shows its name (or its first recording's
+name), a trigger icon (once, toggle, hold) and its playback mode. Give a button
+a colour in **Assign** to tell buttons apart at a glance. The header dot shows
+whether a host is connected; the icon buttons are Stop, Export JSON and Save (a
+red dot means unsaved changes). Layers can be renamed or deleted with the icons
+next to **Layers**; deleting a layer keeps its recordings, and is blocked while
+another button switches to it.
+
+**Recordings** groups recordings into *Not on a button* (marked New) and *On
+buttons*, with a chip for each button that uses them; tap a chip to jump to
+that button. Recordings on a button are locked: unlock one to edit or re-record
+it. Deleting still requires removing it from its buttons first. Storage use is
+collapsed into one line and opens itself when something is nearly full.
+
 The interface has three areas: **Buttons**, **Recordings**, and the selected
 button's assignment. On a phone, switch between them with the bottom tabs.
 

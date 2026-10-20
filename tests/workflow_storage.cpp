@@ -44,6 +44,9 @@ int main(){
     // Long taps retain 32-bit values rather than wrapping at 65.535 seconds.
     assert(saveRawJson(String(R"({"layers":[{"keys":[{"steps":[{"type":"key","key":"A","hold":90000}]}]}]})"),err));
     assert(loadConfig(cfg));assert(cfg.layers[0].keys[0].steps[0].value==90000);
+    // UI-only fields such as a button colour are accepted and kept in the file.
+    assert(saveRawJson(String(R"({"layers":[{"keys":[{"color":"teal","steps":[{"type":"key","key":"A"}]}]}]})"),err));
+    assert(loadConfig(cfg));assert(readRawJson().find("\"teal\"")!=std::string::npos);
     // The simplified shipped recording survives save/load, including hidden
     // storage parts and an empty sequence/random preference on a button.
     std::ifstream preset("data/macros.json");assert(preset);

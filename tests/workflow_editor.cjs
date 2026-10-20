@@ -11,8 +11,7 @@ w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEven
 w.eval(html.split('<script>')[1].split('</script>')[0].replace(/loadAll\(\)\.catch\([^\n]+/,'')+'\nwindow.testEval=code=>eval(code);');
 const evaluate=code=>w.testEval(code);
 const snapshot=()=>JSON.parse(evaluate('JSON.stringify(cfg)'));
-const click=(selector,text)=>{const b=[...w.document.querySelectorAll(selector+' button')].find(b=>b.textContent===text);assert(b,`button ${text} exists`);b.click();};
-const selectMode=value=>{const select=w.document.querySelector('[aria-label="Playback mode"]');assert(select);select.value=value;select.onchange();};
+const selectMode=value=>{const option=w.document.querySelector(`[aria-label="Playback mode"] [data-mode="${value}"]`);assert(option);option.click();};
 evaluate(`meta={keyCount:6,maxLayers:8,keys:['A','W','H','LEFT','RIGHT','Z'],media:[]};cfg={version:1,layers:[{name:'Base',keys:[]}]};normalize();savedSnapshot=JSON.stringify(cfg);renderLayers();renderGrid();renderEditor();renderRecordings();`);
 async function main(){
   assert(!w.document.querySelector('#editor').textContent.match(/nano|micro|cooldown|‰/));
@@ -21,7 +20,7 @@ async function main(){
   assert.equal(w.document.querySelectorAll('.recording-card').length,2);
   evaluate(`addRecordingToButton(${JSON.stringify(first)});addRecordingToButton(${JSON.stringify(second)});`);
   let key=snapshot().layers[0].keys[0];assert.equal(key.playbackMode,'sequence');assert.deepEqual(key.steps.map(s=>s.workflow),[first,second]);
-  click('#editor','↑');key=snapshot().layers[0].keys[0];assert.deepEqual(key.steps.map(s=>s.workflow),[first,second]); // first up is disabled
+  w.document.querySelector('[aria-label="Move recording up"]').click();key=snapshot().layers[0].keys[0];assert.deepEqual(key.steps.map(s=>s.workflow),[first,second]); // first up is disabled
   w.document.querySelector('[aria-label="Move recording down"]').click();
   assert.deepEqual(snapshot().layers[0].keys[0].steps.map(s=>s.workflow),[second,first]);
   selectMode('random');key=snapshot().layers[0].keys[0];assert.equal(key.steps[0].type,'random');assert.equal(key.steps[0].choices.length,2);
@@ -30,6 +29,21 @@ async function main(){
   w.confirm=()=>false;selectMode('single');assert.equal(snapshot().layers[0].keys[0].steps.length,2);
   w.confirm=()=>true;selectMode('single');assert.equal(snapshot().layers[0].keys[0].steps[0].workflow,second);
   await evaluate('save()');assert.equal(saved.layers[0].keys[0].playbackMode,'single');
+  // Button colours are stored on the button and drawn on its keycap.
+  w.document.querySelector('[aria-label="Button colour"] [aria-label="teal"]').click();
+  assert.equal(snapshot().layers[0].keys[0].color,'teal');
+  assert.match(w.document.querySelector('#grid .keycap').style.background,/gradient/);
+  w.document.querySelector('[aria-label="Button colour"] [aria-label="none"]').click();
+  assert.equal(snapshot().layers[0].keys[0].color,undefined);
+  // Assigned recordings are grouped, badged, and locked until unlocked.
+  const cardFor=name=>[...w.document.querySelectorAll('.recording-card')].find(c=>c.querySelector('input').value===name);
+  assert(cardFor('Attack').classList.contains('locked'));assert(!cardFor('Walk').classList.contains('locked'));
+  assert.equal(cardFor('Walk').querySelector('.badge.new').textContent,'New');
+  assert.equal(cardFor('Attack').querySelector('button.badge').textContent,'#1');
+  assert(cardFor('Attack').querySelector('[aria-label="Edit"]').disabled);assert(cardFor('Attack').querySelector('input').readOnly);
+  cardFor('Attack').querySelector('[aria-label="Unlock recording"]').click();
+  assert(!cardFor('Attack').querySelector('[aria-label="Edit"]').disabled);
+  cardFor('Attack').querySelector('[aria-label="Lock recording"]').click();assert(cardFor('Attack').classList.contains('locked'));
   // Assigned recordings cannot be deleted.
   evaluate(`deleteRecording(${JSON.stringify(second)});`);assert(snapshot().workflows.some(r=>r.id===second));
   assert.match(w.document.querySelector('#toast').textContent,/Remove this recording/);
@@ -79,12 +93,19 @@ async function main(){
   const preset=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
   evaluate(`cfg=${JSON.stringify(preset)};selectedWorkflow=null;selLayer=0;selKey=0;normalize();renderLayers();renderGrid();renderEditor();renderRecordings();`);
   assert.equal(w.document.querySelectorAll('.recording-card').length,1);
-  assert.equal(w.document.querySelector('[aria-label="Playback mode"]').value,'single');
+  assert.equal(w.document.querySelector('[aria-label="Playback mode"] [aria-checked="true"]').dataset.mode,'single');
   assert(!w.document.querySelector('#editor').textContent.match(/nano|micro|cooldown|‰/));
   assert.equal(evaluate('recordingSteps(recordingList()[0]).length'),989);
   // Existing execution log exports remain available.
   evaluate(`renderMacroLog({events:[{id:1,run:1,pass:1,step:1,type:'move',key:'LEFT',elapsedMs:0,durationMs:200,complete:true}],elapsedMs:200,running:false});`);
   w.document.querySelector('#exportLog').click();assert.equal(JSON.parse(jsonText.value).events[0].key,'LEFT');evaluate('closeJsonPreview()');
+  // Layers can be deleted unless another button switches to them; later references shift down.
+  evaluate(`cfg.layers.push({name:'Two',keys:[]},{name:'Three',keys:[]});normalize();cfg.layers[0].keys[5].steps=[{type:'layer',layer:2}];selLayer=1;renderLayers();`);
+  w.document.querySelector('#layerDelete').click();
+  assert.deepEqual(snapshot().layers.map(l=>l.name),[snapshot().layers[0].name,'Three']);
+  assert.equal(snapshot().layers[0].keys[5].steps[0].layer,1);
+  evaluate(`selLayer=1;renderLayers();`);w.document.querySelector('#layerDelete').click();
+  assert.equal(snapshot().layers.length,2);assert.match(w.document.querySelector('#toast').textContent,/switches to or plays from this layer/);
   evaluate(`showTab('recordings')`);assert(w.document.querySelector('#panelRecordings').classList.contains('show'));
   dom.window.close();console.log('recordings and button assignment tests passed');
 }

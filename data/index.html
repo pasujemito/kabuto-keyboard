@@ -27,13 +27,11 @@
   .brand{font-family:var(--mono);font-weight:600;letter-spacing:.03em;white-space:nowrap}
   .brand b{color:var(--amber)}
   .brand span{color:var(--faint);font-size:11px;margin-left:6px}
-  .chips{display:flex;gap:10px;align-items:center;margin-left:auto;font-family:var(--mono);font-size:12px;overflow:hidden}
-  .chip{color:var(--muted);white-space:nowrap}
-  .chip b{color:var(--ink)}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);display:inline-block;margin-right:5px;vertical-align:middle}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--faint);display:inline-block;margin-right:auto;flex:none}
   .dot.on{background:var(--live);box-shadow:0 0 8px var(--live)}
   .dot.off{background:var(--stop)}
-  .hdr-actions{display:flex;gap:7px}
+  .hdr-actions{display:flex;gap:8px}
+  .ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:middle}
   .btn{background:var(--panel2);color:var(--ink);border:1px solid var(--edge);padding:8px 12px;border-radius:var(--r);font-size:13px;white-space:nowrap}
   .btn:hover{border-color:var(--faint)}
   .btn:active{transform:translateY(1px)}
@@ -43,6 +41,11 @@
   .btn.danger:hover{background:#2a1c1c}
   .btn:disabled{opacity:.4;cursor:default}
   .btn.sm{padding:6px 10px;font-size:12px}
+  .btn.withic{display:inline-flex;align-items:center;gap:6px}
+  .btn.ibtn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:0;border-radius:10px;position:relative}
+  .btn.ibtn.sm{width:32px;height:32px;border-radius:8px}
+  .btn.sm .ic{width:16px;height:16px}
+  .btn.primary.dirty::after{content:"";position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:var(--stop);border:2px solid var(--bg)}
 
   /* ---------- layout shell ---------- */
   main{display:grid;grid-template-columns:1fr;height:calc(100% - 53px)}
@@ -52,12 +55,13 @@
 
   /* tab bar (mobile only) */
   .tabbar{display:none;position:sticky;bottom:0;z-index:20;border-top:1px solid var(--edge);background:var(--panel);padding-bottom:var(--safe-b)}
-  .tabbar button{flex:1;background:none;border:0;color:var(--muted);padding:11px 0;font-size:12px;font-family:var(--mono);letter-spacing:.03em}
+  .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:var(--muted);padding:8px 0 9px;font-size:11px;font-family:var(--mono);letter-spacing:.03em}
+  .tabbar .ic{width:21px;height:21px}
   .tabbar button.on{color:var(--amber);box-shadow:inset 0 2px 0 var(--amber)}
 
   /* ---------- wide: buttons, recordings and assignments ---------- */
   @media (min-width:1000px){
-    main{grid-template-columns:minmax(190px,240px) minmax(240px,1fr) minmax(260px,1fr)}
+    main{grid-template-columns:minmax(300px,1.15fr) minmax(260px,1fr) minmax(280px,1fr)}
     .panel{display:block!important}
   }
   @media (max-width:999px){
@@ -73,20 +77,26 @@
   .layerbar button{flex:0 0 auto;background:var(--panel);border:1px solid var(--edge);color:var(--muted);padding:7px 12px;border-radius:20px;font-size:12px;white-space:nowrap}
   .layerbar button.on{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
   .layerbar button b{font-family:var(--mono);margin-right:6px;opacity:.7}
-  .layerbar .add{color:var(--faint);border-style:dashed}
+  .layerbar .add{color:var(--faint);border-style:dashed;display:inline-flex;align-items:center}
+  .layerbar .add .ic{width:14px;height:14px}
+  .layer-tools{display:flex;gap:6px}
 
   /* ---------- key grid ---------- */
-  .grid{display:grid;gap:9px}
-  .keycap{position:relative;aspect-ratio:1/.8;min-height:62px;border:1px solid var(--edge);background:linear-gradient(180deg,#242831,#1c1f26);border-radius:9px;color:var(--muted);padding:9px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;transition:border-color .12s,box-shadow .12s}
-  .keycap:hover{border-color:var(--faint)}
-  .keycap.sel{border-color:var(--amber);box-shadow:inset 0 0 0 1px var(--amber)}
-  .keycap.empty .kname{color:var(--faint);font-style:italic}
-  .keycap .idx{font-family:var(--mono);font-size:10px;color:var(--faint)}
-  .keycap .kname{font-size:13px;color:var(--ink);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .keycap .trig{font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--amber)}
+  .grid{display:grid;gap:12px}
+  .keycap{position:relative;aspect-ratio:1;min-width:0;border:1px solid var(--edge);background:linear-gradient(145deg,#2c303a,#1c1f26);border-radius:16px;color:#fff;padding:10px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 3px 0 rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.08);transition:transform .08s,box-shadow .12s}
+  .keycap:active{transform:scale(.97)}
+  .keycap .kt,.keycap .kb{display:flex;align-items:center;gap:6px;font:600 11px var(--mono);opacity:.85}
+  .keycap .kt{justify-content:space-between}
+  .keycap .kt .ic,.keycap .kb .ic{width:15px;height:15px}
+  .keycap .kname{font-size:15px;font-weight:600;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;text-shadow:0 1px 2px rgba(0,0,0,.45)}
+  .keycap.empty{background:transparent;border-style:dashed;color:var(--faint);box-shadow:none}
+  .keycap.empty .kname{display:flex;justify-content:center;text-shadow:none}
+  .keycap.empty .kname .ic{width:26px;height:26px}
+  .keycap.sel{outline:2px solid var(--amber);outline-offset:2px}
   .keycap.running{animation:pulse 1s ease-in-out infinite}
-  .keycap.down{border-color:var(--live);box-shadow:inset 0 0 0 2px var(--live)}
-  @keyframes pulse{0%,100%{box-shadow:inset 0 0 0 1px var(--amber)}50%{box-shadow:inset 0 0 0 1px var(--amber),0 0 16px var(--amber-dim)}}
+  .keycap.down{box-shadow:inset 0 0 0 3px var(--live)}
+  .grid.run .keycap.empty{opacity:.35}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--amber-dim)}50%{box-shadow:0 0 0 6px var(--amber-dim)}}
   @media (prefers-reduced-motion:reduce){.keycap.running{animation:none}}
 
   /* ---------- live monitor ---------- */
@@ -112,11 +122,12 @@
   .seg button{background:var(--panel);border:0;color:var(--muted);padding:9px 13px;font-size:12px;font-family:var(--mono)}
   .seg button.on{background:var(--amber);color:#1a1300;font-weight:600}
   .seg.tiny button{padding:5px 11px;font-size:11px}
+  .seg.icons{display:flex}
+  .seg.icons button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 6px}
+  .seg.tiny.icons button{padding:5px 10px}
+  .seg.icons .ic{width:16px;height:16px}
   .keyshead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
   .keyshead h2{margin:0}
-  .grid.run .keycap{cursor:pointer;border-color:var(--amber-dim)}
-  .grid.run .keycap.empty{opacity:.45}
-  .grid.run .keycap:active{border-color:var(--amber);box-shadow:inset 0 0 0 2px var(--amber)}
   .ed-tools{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
 
   /* ---------- recording step editor ---------- */
@@ -192,18 +203,39 @@
   @media(max-width:700px){.json-preview-grid.with-timing{grid-template-columns:1fr}.timing-preview{height:24vh;min-height:100px}}
   .json-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
   #panelRecordings{border-right:1px solid var(--edge)}
-  .recording-card{border:1px solid var(--edge);border-radius:var(--r);padding:12px;margin:12px 0}
-  .recording-card.selected{border-color:var(--amber)}
-  .keycap{min-width:0;aspect-ratio:auto;height:78px}
   select{padding:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--edge);border-radius:var(--r)}
   .recording-card input,.name{box-sizing:border-box;max-width:100%;padding:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--edge);border-radius:var(--r)}
-  .recording-card input{width:100%}
-  .recording-actions{display:flex;gap:6px;flex-wrap:wrap}
-  .assignment-list{padding-left:24px}
-  .assignment-list li{padding:8px 0}
-  .assignment-list li span{margin-right:8px}
-  #editor>label,#editor>select,#editor>.seg{display:block;margin:14px 0}
+  .recording-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .rec-group{margin:18px 0 2px;font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  .recording-card{display:grid;gap:8px;border:1px solid var(--edge);border-radius:12px;padding:10px;margin:8px 0;background:var(--panel)}
+  .recording-card.selected{border-color:var(--amber)}
+  .rec-top{display:flex;gap:6px;align-items:center}
+  .rec-top input{flex:1;min-width:0}
+  .recording-card.locked .rec-top input{color:var(--muted)}
+  .rec-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .rec-meta .hint{margin:0}
+  .badge{display:inline-flex;align-items:center;max-width:100%;padding:3px 9px;border-radius:999px;border:0;font:600 11px var(--mono);color:#fff;background:var(--panel2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge.new{background:#14473e;color:var(--live)}
+  #editor{display:grid;gap:14px;align-content:start}
   #editor select{max-width:100%}
+  .ed-row{display:flex;gap:8px;align-items:center}
+  .ed-row .name{flex:1;min-width:0}
+  .ed-num{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font:700 15px var(--mono);color:#fff;background:var(--panel2);flex:none}
+  .ed-label{font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:0 0 6px}
+  #editor .hint{margin:6px 0 0}
+  .swatches{display:flex;gap:8px;flex-wrap:wrap}
+  .swatch{width:30px;height:30px;border-radius:50%;border:2px solid transparent;padding:0;background:var(--panel2)}
+  .swatch.on{border-color:#fff;box-shadow:0 0 0 2px var(--amber)}
+  .swatch.none{background:repeating-linear-gradient(45deg,var(--panel2) 0 4px,var(--edge) 4px 8px)}
+  .assignment-list{list-style:none;padding:0;margin:0;border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+  .assignment-list li{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 10px;border-bottom:1px solid var(--edge)}
+  .assignment-list li:last-child{border-bottom:0}
+  .assignment-list .n{font:11px var(--mono);color:var(--faint);width:16px;flex:none}
+  .assignment-list .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .add-row{display:flex;gap:6px}
+  .add-row select{flex:1;min-width:0}
+  .toggle-row{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
+  .toggle-row input{accent-color:var(--amber);width:16px;height:16px}
   body{display:flex;flex-direction:column;overflow:hidden}
   body>header,body>.tabbar{flex-shrink:0}
   main{flex:1;min-height:0;height:auto!important}
@@ -215,7 +247,10 @@
   .load-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #3a2626;background:#2a1c1c;color:var(--stop)}
   .load-error[hidden]{display:none}
   .load-error span{flex:1;min-width:200px}
-  .storage{display:grid;gap:7px;margin:12px 0 4px;font-size:12px;color:var(--muted)}
+  .storage-box{margin:12px 0 4px;font-size:12px;color:var(--muted)}
+  .storage-box summary{cursor:pointer;font-family:var(--mono)}
+  .storage-box.warn summary{color:var(--amber)}
+  .storage{display:grid;gap:7px;margin-top:10px;font-size:12px;color:var(--muted)}
   .storage .srow{display:flex;justify-content:space-between;gap:8px}
   .storage .srow b{color:var(--ink);font-weight:500;font-family:var(--mono)}
   .storage .meter{height:4px;background:var(--edge);border-radius:2px;overflow:hidden;margin-top:3px}
@@ -225,29 +260,57 @@
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 20h14"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 3l3 3-3 3M4 12V9a3 3 0 013-3h13M7 21l-3-3 3-3M20 12v3a3 3 0 01-3 3H4"/></symbol>
+  <symbol id="i-hold" viewBox="0 0 24 24"><path d="M9 11V5a1.5 1.5 0 013 0v5M12 10V9a1.5 1.5 0 013 0v2M15 10.5a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-1a6 6 0 01-5-2.7L4 15.5a1.6 1.6 0 012.5-2L9 16"/></symbol>
+  <symbol id="i-one" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10.5 9l2-1.5V16"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 017.7-1.5"/></symbol>
+  <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 12h1M8 8v8M12 5v14M16 9v6M20 11v2"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+</svg>
 <header>
   <div class="brand"><b>■</b> Kabuto<span id="fw"></span></div>
-  <div class="chips">
-    <span class="chip"><span id="dotConn" class="dot"></span><span id="connText">—</span></span>
-    <span class="chip">bonds <b id="bonds">0</b></span>
-  </div>
+  <span id="dotConn" class="dot" role="img" aria-label="Host status unknown" title="Host status unknown"></span>
   <div class="hdr-actions">
-    <button class="btn danger sm" id="stopBtn">Stop</button>
-    <button class="btn sm" id="configJson">Export JSON</button>
-    <button class="btn primary sm" id="saveBtn">Save</button>
+    <button class="btn ibtn danger" id="stopBtn" aria-label="Stop" title="Stop playback and release all keys"><svg class="ic" aria-hidden="true"><use href="#i-stop"/></svg></button>
+    <button class="btn ibtn" id="configJson" aria-label="Export JSON" title="Export the full configuration as JSON"><svg class="ic" aria-hidden="true"><use href="#i-export"/></svg></button>
+    <button class="btn ibtn primary" id="saveBtn" aria-label="Save" title="Save to device"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg></button>
   </div>
 </header>
 <div class="load-error" id="loadError" role="alert" hidden><span id="loadErrorText"></span><button class="btn sm" id="loadRetry">Retry</button></div>
 
 <main>
   <section class="panel show" id="panelKeys">
-    <h2>Layers</h2>
+    <div class="keyshead">
+      <h2>Layers</h2>
+      <div class="layer-tools">
+        <button class="btn ibtn sm" id="layerRename" aria-label="Rename layer" title="Rename layer"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg></button>
+        <button class="btn ibtn sm danger" id="layerDelete" aria-label="Delete layer" title="Delete layer"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg></button>
+      </div>
+    </div>
     <div class="layerbar" id="layerbar"></div>
     <div class="keyshead">
-      <h2>Keys</h2>
-      <div class="seg tiny" id="gridMode">
-        <button class="on" data-g="edit">Edit</button>
-        <button data-g="run">Run</button>
+      <h2>Buttons</h2>
+      <div class="seg tiny icons" id="gridMode">
+        <button class="on" data-g="edit" title="Tap a button to edit its assignment"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>Edit</span></button>
+        <button data-g="run" title="Tap a button to play it on the host"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
       </div>
     </div>
     <div class="grid" id="grid"></div>
@@ -271,8 +334,8 @@
 
   <section class="panel" id="panelRecordings">
     <h2>Recordings</h2>
-    <div class="recording-actions"><button class="btn primary" id="newRecording">New recording</button><button class="btn" id="importRecording">Import JSON</button></div>
-    <div class="storage" id="storage" aria-label="Storage"></div>
+    <div class="recording-actions"><button class="btn primary withic" id="newRecording"><svg class="ic" aria-hidden="true"><use href="#i-record"/></svg>New recording</button><button class="btn withic" id="importRecording"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg>Import JSON</button></div>
+    <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
   </section>
@@ -282,9 +345,9 @@
 </main>
 
 <nav class="tabbar">
-  <button id="tabKeys" class="on" onclick="showTab('keys')">Buttons</button>
-  <button id="tabRecordings" onclick="showTab('recordings')">Recordings</button>
-  <button id="tabEdit" onclick="showTab('edit')">Assignment</button>
+  <button id="tabKeys" class="on" onclick="showTab('keys')"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg>Buttons</button>
+  <button id="tabRecordings" onclick="showTab('recordings')"><svg class="ic" aria-hidden="true"><use href="#i-wave"/></svg>Recordings</button>
+  <button id="tabEdit" onclick="showTab('edit')"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>Assign</button>
 </nav>
 
 <!-- recorder sheet -->
@@ -348,7 +411,23 @@
 <script>
 const $=s=>document.querySelector(s);
 let meta=null,cfg=null,selLayer=0,selKey=0,status={},savedSnapshot="",selectedWorkflow=null;
-function updateDirty(){if(!cfg)return;const d=JSON.stringify(cfg)!==savedSnapshot;const b=$("#saveBtn");b.classList.toggle("dirty",d);b.textContent=d?"Save •":"Save";}
+function updateDirty(){if(!cfg)return;const d=JSON.stringify(cfg)!==savedSnapshot;const b=$("#saveBtn");b.classList.toggle("dirty",d);b.title=d?"Save to device (unsaved changes)":"Save to device";}
+const ic=name=>`<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!==undefined)e.innerHTML=html;return e;}
+function iconButton(icon,label,onclick,cls="btn ibtn sm"){const b=el("button",cls,ic(icon));b.type="button";b.setAttribute("aria-label",label);b.title=label;b.onclick=onclick;return b;}
+// Button colours: [light, dark] gradient stops, readable with white text.
+const KEY_COLORS={amber:["#d9962a","#7a4a0e"],coral:["#e0664f","#7a2a1d"],rose:["#d4507a","#6b1f3a"],violet:["#8a5ae0","#3d2478"],blue:["#4a7fe0","#1d3a7a"],teal:["#26a88f","#0e5246"],green:["#5aa83e","#28521a"],slate:["#6b7487","#2e333e"]};
+function keyGradient(color){const g=KEY_COLORS[color];return g?`linear-gradient(145deg,${g[0]},${g[1]})`:"";}
+// Accessible segmented control: options are [value, icon, text, ariaLabel].
+function segRadio(label,options,value,on){
+  const g=el("div","seg icons");g.setAttribute("role","radiogroup");g.setAttribute("aria-label",label);
+  options.forEach(([v,icon,text,aria])=>{
+    const b=el("button",v===value?"on":"",ic(icon)+`<span>${text}</span>`);b.type="button";b.dataset.mode=v;
+    b.setAttribute("role","radio");b.setAttribute("aria-checked",String(v===value));if(aria)b.setAttribute("aria-label",aria);
+    b.onclick=()=>on(v);g.appendChild(b);
+  });
+  return g;
+}
 
 async function api(p,o){return fetch(p,o);}
 function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast",1900);}
@@ -397,6 +476,10 @@ function renderStorage(){
     rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem, including the web UI"]);
     rows.push(["Device memory",storage.heapSize-storage.heapFree,storage.heapSize,`${fmtBytes(storage.heapFree)} free`,`Largest free block ${fmtBytes(storage.heapLargest)}`]);
   }
+  // Collapsed summary; opens itself when something is nearly full.
+  const tight=rows.some(([,used,max])=>max&&used/max>=.8);
+  $("#storageSummary").textContent=`Storage · ${cfg.workflows.length}/64 slots`+(storage?` · ${fmtBytes(storage.heapFree)} memory free`:"");
+  $("#storageBox").classList.toggle("warn",tight);if(tight)$("#storageBox").open=true;
   box.replaceChildren(...rows.map(([label,used,max,text,title])=>{
     const row=document.createElement("div");row.title=title;
     const pct=max?Math.min(100,used/max*100):0;
@@ -430,44 +513,81 @@ function showTab(t){
 
 /* layers */
 function renderLayers(){
-  const b=$("#layerbar");b.innerHTML="";
+  const b=$("#layerbar");b.replaceChildren();
   cfg.layers.forEach((L,i)=>{
-    const btn=document.createElement("button");
-    btn.className=i===selLayer?"on":"";
-    btn.innerHTML=`<b>${i}</b>${esc(L.name||"Layer")}`;
-    btn.onclick=()=>{selLayer=i;selKey=0;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();postLayer(i);};
-    btn.ondblclick=()=>{const n=prompt("Layer name",L.name||"");if(n!=null){L.name=n;renderLayers();}};
+    const btn=el("button",i===selLayer?"on":"",`<b>${i}</b>${esc(L.name||"Layer")}`);
+    btn.onclick=()=>{selLayer=i;selKey=0;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();renderRecordings();postLayer(i);};
+    btn.ondblclick=renameLayer;
     b.appendChild(btn);
   });
   if(cfg.layers.length<meta.maxLayers){
-    const add=document.createElement("button");add.className="add";add.textContent="+ layer";
-    add.onclick=()=>{cfg.layers.push({name:"Layer "+cfg.layers.length,keys:[]});normalize();selLayer=cfg.layers.length-1;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();};
+    const add=el("button","add",ic("plus"));add.setAttribute("aria-label","Add layer");add.title="Add layer";
+    add.onclick=()=>{cfg.layers.push({name:"Layer "+cfg.layers.length,keys:[]});normalize();selLayer=cfg.layers.length-1;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();updateDirty();};
     b.appendChild(add);
   }
+  $("#layerDelete").disabled=cfg.layers.length<=1;
+}
+function renameLayer(){
+  const L=cfg.layers[selLayer],n=prompt("Layer name",L.name||"");
+  if(n!=null){L.name=n;renderLayers();updateDirty();}
+}
+// Steps elsewhere that switch to, or play buttons from, layer i.
+function layerReferences(i){
+  const bindings=cfg.layers.filter((_,l)=>l!==i).flatMap(l=>l.keys).concat(cfg.workflows);
+  return bindings.some(b=>b.steps.some(s=>s.type==="layer"&&s.layer===i||(s.choices||[]).some(c=>!c.workflow&&c.layer===i)));
+}
+function deleteLayer(){
+  const i=selLayer,L=cfg.layers[i];
+  if(cfg.layers.length<=1){toast("Keep at least one layer",true);return;}
+  if(layerReferences(i)){toast("Another button switches to or plays from this layer. Remove that first.",true);return;}
+  const used=L.keys.filter(k=>k.steps.length).length;
+  if(!confirm(`Delete layer "${L.name||i}"${used?` and its ${used} button assignment${used>1?"s":""}`:""}? Recordings are kept.`))return;
+  cfg.layers.splice(i,1);
+  // Later layers move down one place; keep references pointing at them.
+  for(const b of cfg.layers.flatMap(l=>l.keys).concat(cfg.workflows))for(const s of b.steps){
+    if(s.type==="layer"&&s.layer>i)s.layer--;
+    for(const c of s.choices||[])if(!c.workflow&&c.layer>i)c.layer--;
+  }
+  selLayer=Math.max(0,i-1);selKey=0;selectedWorkflow=null;
+  renderLayers();renderGrid();renderEditor();renderRecordings();postLayer(selLayer);updateDirty();
 }
 
 /* grid */
 let gridMode="edit";
+function recordingName(id){return cfg.workflows.find(w=>w.id===id)?.name;}
 function renderGrid(){
   const g=$("#grid");g.style.gridTemplateColumns=`repeat(${meta.cols||3},minmax(0,1fr))`;
-  g.classList.toggle("run",gridMode==="run");g.innerHTML="";
+  g.classList.toggle("run",gridMode==="run");g.replaceChildren();
   cfg.layers[selLayer].keys.forEach((k,i)=>{
-    const cap=document.createElement("button");
-    const empty=k.steps.length===0;
+    const empty=k.steps.length===0,a=assignmentFor(k);
     const down=status.keyMask&&(status.keyMask&(1<<i));
     const running=status.running&&status.runningKey===i&&selLayer===status.activeLayer;
-    cap.className="keycap"+(i===selKey&&gridMode==="edit"?" sel":"")+(empty?" empty":"")+(running?" running":"")+(down?" down":"");
-    cap.innerHTML=`<span class="idx">#${i+1}</span><span class="kname">${empty?"unassigned":esc(k.name||("button "+(i+1)))}</span><span class="trig">${empty?"":k.trigger}</span>`;
+    const name=k.name||(a.ids.length?recordingName(a.ids[0]):"")||("Button "+(i+1));
+    const cap=el("button","keycap"+(i===selKey&&gridMode==="edit"?" sel":"")+(empty?" empty":"")+(running?" running":"")+(down?" down":""));
+    cap.setAttribute("aria-label",`Button ${i+1}: ${empty?"unassigned":name}`);
+    if(empty)cap.innerHTML=`<span class="kt"><span>${i+1}</span></span><span class="kname">${ic("plus")}</span><span class="kb"></span>`;
+    else{
+      const mode=!a.recognized?"code":a.mode==="random"?"shuffle":a.mode==="sequence"?"list":"one";
+      const trigger={tap:"play",toggle:"repeat",hold:"hold"}[k.trigger]||"play";
+      cap.innerHTML=`<span class="kt"><span>${i+1}</span>${ic(trigger)}</span><span class="kname">${esc(name)}</span><span class="kb">${ic(mode)}${a.ids.length>1?`<span>${a.ids.length}</span>`:""}</span>`;
+      cap.style.background=keyGradient(k.color);
+    }
     if(gridMode==="run"){
       // fire the macro with real trigger semantics (down/up)
       cap.addEventListener("pointerdown",e=>{e.preventDefault();runPress(i);});
       cap.addEventListener("pointerup",e=>{e.preventDefault();runRelease(i);});
       cap.addEventListener("pointercancel",()=>runRelease(i));
     }else{
-      cap.onclick=()=>{selKey=i;selectedWorkflow=null;renderGrid();renderEditor();if(window.innerWidth<1000)showTab('edit');};
+      cap.onclick=()=>selectButton(selLayer,i);
     }
     g.appendChild(cap);
   });
+}
+function selectButton(layer,key){
+  const layerChanged=layer!==selLayer;
+  selLayer=layer;selKey=key;selectedWorkflow=null;
+  if(layerChanged){renderLayers();postLayer(layer);}
+  renderGrid();renderEditor();renderRecordings();if(window.innerWidth<1000)showTab('edit');
 }
 async function runPress(i){
   if(!status.connected){toast("Run needs a paired host",true);return;}
@@ -529,19 +649,56 @@ function deleteRecording(id){
   cfg.workflows=cfg.workflows.filter(w=>!family.has(w.id));if(selectedWorkflow===id)selectedWorkflow=null;
   renderRecordings();renderEditor();updateDirty();
 }
+// Where each recording is used: buttons ({layer,key}) or other workflows.
+function recordingUsage(){
+  const usage=new Map(),add=(id,use)=>{if(!usage.has(id))usage.set(id,[]);usage.get(id).push(use);};
+  const ids=steps=>new Set(steps.flatMap(s=>[s.workflow,...(s.choices||[]).map(c=>c.workflow)]).filter(Boolean));
+  cfg.layers.forEach((L,layer)=>L.keys.forEach((k,key)=>ids(k.steps).forEach(id=>add(id,{layer,key}))));
+  cfg.workflows.filter(w=>!w.recordingPartOf).forEach(w=>ids(w.steps).forEach(id=>{if(id!==w.id)add(id,{workflow:w});}));
+  return usage;
+}
+const unlockedRecordings=new Set();   // per visit: assigned recordings are locked until unlocked
 function renderRecordings(){
   renderStorage();
   const list=$('#recordings');list.replaceChildren();
-  if(!recordingList().length){const p=document.createElement('p');p.className='hint';p.textContent='Record a workflow, give it a name, then add it to a button.';list.appendChild(p);}
-  recordingList().forEach(recording=>{
-    const card=document.createElement('div');card.className='recording-card'+(selectedWorkflow===recording.id?' selected':'');
-    const name=document.createElement('input');name.value=recording.name||'';name.placeholder='Recording name';name.setAttribute('aria-label','Recording name');
-    name.oninput=()=>{recording.name=name.value;updateDirty();renderEditor();};card.appendChild(name);
-    const summary=document.createElement('p');summary.className='hint';try{summary.textContent=recordingSummary(recording);}catch(e){summary.textContent='Existing custom workflow';}card.appendChild(summary);
-    const actions=document.createElement('div');actions.className='recording-actions';
-    [['Edit',()=>{selectedWorkflow=recording.id;openStepEditor(recording.id);}],['Record again',()=>{selectedWorkflow=recording.id;openRecorder(recording.id);}],['Add to button',()=>addRecordingToButton(recording.id)],['JSON',()=>{selectedWorkflow=recording.id;openJsonPreview('selected');}],['Delete',()=>deleteRecording(recording.id)]].forEach(([label,action])=>{const b=document.createElement('button');b.className='btn sm';b.textContent=label;b.onclick=action;actions.appendChild(b);});
-    card.appendChild(actions);list.appendChild(card);
-  });
+  const recordings=recordingList(),usage=recordingUsage();
+  if(!recordings.length){const p=el('p','hint');p.textContent='Record a workflow, give it a name, then add it to a button.';list.appendChild(p);}
+  const groups=[['Not on a button',recordings.filter(r=>!usage.has(r.id))],['On buttons',recordings.filter(r=>usage.has(r.id))]];
+  for(const [title,group] of groups){
+    if(!group.length)continue;
+    const h=el('h3','rec-group');h.textContent=title;list.appendChild(h);
+    group.forEach(recording=>list.appendChild(recordingCard(recording,usage.get(recording.id)||[])));
+  }
+}
+function recordingCard(recording,uses){
+  const used=uses.length>0,locked=used&&!unlockedRecordings.has(recording.id);
+  const card=el('div','recording-card'+(selectedWorkflow===recording.id?' selected':'')+(locked?' locked':''));
+  const top=el('div','rec-top'),name=document.createElement('input');
+  name.value=recording.name||'';name.placeholder='Recording name';name.setAttribute('aria-label','Recording name');name.readOnly=locked;
+  name.oninput=()=>{recording.name=name.value;updateDirty();renderEditor();renderGrid();};top.appendChild(name);
+  if(used)top.appendChild(iconButton(locked?'lock':'unlock',locked?'Unlock recording':'Lock recording',()=>{
+    if(locked)unlockedRecordings.add(recording.id);else unlockedRecordings.delete(recording.id);renderRecordings();
+  },'btn ibtn sm'+(locked?'':' primary')));
+  card.appendChild(top);
+  const metaRow=el('div','rec-meta');
+  if(!used)metaRow.appendChild(el('span','badge new','New'));
+  for(const use of uses){
+    if(use.workflow){const b=el('span','badge');b.textContent='In '+(use.workflow.name||'workflow');metaRow.appendChild(b);continue;}
+    const key=cfg.layers[use.layer].keys[use.key],b=el('button','badge');b.type='button';
+    b.textContent=(cfg.layers.length>1?(cfg.layers[use.layer].name||'Layer '+use.layer)+' ':'')+'#'+(use.key+1);
+    b.title='Go to button '+(use.key+1);b.style.background=keyGradient(key.color);
+    b.onclick=()=>selectButton(use.layer,use.key);metaRow.appendChild(b);
+  }
+  const summary=el('span','hint');try{summary.textContent=recordingSummary(recording);}catch(e){summary.textContent='Existing custom workflow';}metaRow.appendChild(summary);
+  card.appendChild(metaRow);
+  const actions=el('div','recording-actions'),lockedNote=locked?' (unlock first)':'';
+  const edit=iconButton('edit','Edit',()=>{selectedWorkflow=recording.id;openStepEditor(recording.id);});edit.disabled=locked;edit.title='Edit steps'+lockedNote;
+  const again=iconButton('record','Record again',()=>{selectedWorkflow=recording.id;openRecorder(recording.id);});again.disabled=locked;again.title='Record again'+lockedNote;
+  const add=el('button','btn sm withic',ic('plus')+'#'+(selKey+1));add.type='button';add.setAttribute('aria-label','Add to button');add.title='Add to button '+(selKey+1);add.onclick=()=>addRecordingToButton(recording.id);
+  const json=iconButton('code','JSON',()=>{selectedWorkflow=recording.id;openJsonPreview('selected');});json.title='Preview or export JSON';
+  const del=iconButton('trash','Delete',()=>deleteRecording(recording.id),'btn ibtn sm danger');del.disabled=used;del.title=used?'Remove it from its buttons before deleting':'Delete';
+  actions.append(edit,again,add,json,del);card.appendChild(actions);
+  return card;
 }
 function assignmentFor(key){
   if(!key.steps.length)return {mode:key.playbackMode||'single',ids:[],recognized:true};
@@ -591,36 +748,63 @@ function importRecordingObject(payload){
 
 function renderEditor(){
   const w=$('#editor'),key=cfg.layers[selLayer].keys[selKey];w.replaceChildren();
-  const title=document.createElement('h2');title.textContent='Button '+(selKey+1);w.appendChild(title);
-  const name=document.createElement('input');name.className='name';name.value=key.name||'';name.placeholder='Button name';name.setAttribute('aria-label','Button name');name.oninput=()=>{key.name=name.value;renderGrid();updateDirty();};w.appendChild(name);
-  const triggers=document.createElement('div');triggers.className='seg';
-  [['tap','Play once'],['toggle','Toggle'],['hold','While held']].forEach(([value,label])=>{const b=document.createElement('button');b.textContent=label;b.className=key.trigger===value?'on':'';b.onclick=()=>{key.trigger=value;renderEditor();renderGrid();updateDirty();};triggers.appendChild(b);});w.appendChild(triggers);
+  const rerender=()=>{renderEditor();renderGrid();renderRecordings();updateDirty();};
+  const section=(label,...children)=>{const d=el('div');const h=el('p','ed-label');h.textContent=label;d.append(h,...children);w.appendChild(d);};
+  // Name row: number badge in the button colour, name, test and JSON.
+  const head=el('div','ed-row'),num=el('span','ed-num');num.textContent=selKey+1;num.style.background=keyGradient(key.color);
+  const name=el('input','name');name.value=key.name||'';name.placeholder='Button '+(selKey+1);name.setAttribute('aria-label','Button name');
+  name.oninput=()=>{key.name=name.value;renderGrid();updateDirty();};
+  const test=iconButton('play','Test button',testKey,'btn ibtn');test.disabled=!key.steps.length;
+  const json=iconButton('code','Button JSON',()=>{selectedWorkflow=null;openJsonPreview('selected');},'btn ibtn');
+  head.append(num,name,test,json);w.appendChild(head);
+  section('When pressed',segRadio('Trigger',[['tap','play','Once','Play once'],['toggle','repeat','Toggle','Toggle'],['hold','hold','Hold','While held']],key.trigger,v=>{key.trigger=v;rerender();}));
+  const swatches=el('div','swatches');swatches.setAttribute('role','radiogroup');swatches.setAttribute('aria-label','Button colour');
+  [['','none'],...Object.keys(KEY_COLORS).map(c=>[c,c])].forEach(([color,label])=>{
+    const b=el('button','swatch'+(color?'':' none')+((key.color||'')===color?' on':''));b.type='button';
+    b.setAttribute('role','radio');b.setAttribute('aria-checked',String((key.color||'')===color));b.setAttribute('aria-label',label);b.title=label;
+    if(color)b.style.background=keyGradient(color);
+    b.onclick=()=>{if(color)key.color=color;else delete key.color;rerender();};swatches.appendChild(b);
+  });
+  section('Colour',swatches);
   const a=assignmentFor(key);
   if(!a.recognized){
-    const p=document.createElement('p');p.className='hint';p.textContent='This button has an existing custom macro. It will keep playing as before. Move it to Recordings to reuse it.';w.appendChild(p);
-    const keep=document.createElement('button');keep.className='btn';keep.textContent='Move to Recordings';keep.onclick=()=>{try{preserveDirectMacro(key);renderEditor();renderRecordings();updateDirty();}catch(e){toast(e.message,true);}};w.appendChild(keep);
-  }else{
-    const label=document.createElement('label');label.textContent='Playback ';const mode=document.createElement('select');mode.setAttribute('aria-label','Playback mode');
-    [['single','One recording'],['sequence','In sequence'],['random','Random choice']].forEach(([value,text])=>{const o=document.createElement('option');o.value=value;o.textContent=text;mode.appendChild(o);});mode.value=a.mode;
-    mode.onchange=()=>{if(mode.value==='single'&&a.ids.length>1&&!confirm('Keep only the first recording on this button?')){mode.value=a.mode;return;}setAssignment(key,mode.value,mode.value==='single'?a.ids.slice(0,1):a.ids);renderEditor();renderGrid();updateDirty();};label.appendChild(mode);w.appendChild(label);
-    const help=document.createElement('p');help.className='hint';help.textContent=a.mode==='random'?'Choose one recording each time the button plays. Toggle chooses again after each recording finishes.':a.mode==='sequence'?'Play every recording in the listed order.':'Play the selected recording. Add another to make a sequence.';w.appendChild(help);
-    const list=document.createElement('ol');list.className='assignment-list';
-    a.ids.forEach((id,index)=>{
-      const row=document.createElement('li'),recording=cfg.workflows.find(r=>r.id===id),text=document.createElement('span');text.textContent=recording?.name||'Missing recording';row.appendChild(text);
-      if(a.mode==='sequence')for(const [label,delta]of [['↑',-1],['↓',1]]){const b=document.createElement('button');b.className='btn sm';b.textContent=label;b.setAttribute('aria-label',label==='↑'?'Move recording up':'Move recording down');b.disabled=index+delta<0||index+delta>=a.ids.length;b.onclick=()=>{const ids=[...a.ids];[ids[index],ids[index+delta]]=[ids[index+delta],ids[index]];setAssignment(key,a.mode,ids);renderEditor();updateDirty();};row.appendChild(b);}
-      const remove=document.createElement('button');remove.className='btn sm';remove.textContent='Remove';remove.onclick=()=>{setAssignment(key,a.mode,a.ids.filter((_,i)=>i!==index),key.steps[0]?.avoidRecent>0);renderEditor();renderGrid();updateDirty();};row.appendChild(remove);list.appendChild(row);
-    });w.appendChild(list);
-    if(!a.ids.length){const p=document.createElement('p');p.className='hint';p.textContent='No recordings assigned yet.';w.appendChild(p);}
-    if(a.mode==='random'&&a.ids.length>1){const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=key.steps[0]?.avoidRecent>0;check.onchange=()=>{setAssignment(key,'random',a.ids,check.checked);updateDirty();};label.append(check,' Avoid the same recording twice in a row');w.appendChild(label);}
-    const choices=document.createElement('select');choices.setAttribute('aria-label','Recording to add');
-    recordingList().forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name||'Unnamed recording';choices.appendChild(o);});
-    const add=document.createElement('button');add.className='btn';add.textContent=a.mode==='single'?'Use recording':'Add recording';add.disabled=!choices.options.length;add.onclick=()=>{if(a.mode==='single'){setAssignment(key,'single',[choices.value]);renderEditor();renderGrid();updateDirty();}else addRecordingToButton(choices.value);};const addRow=document.createElement('div');addRow.className='recording-actions';addRow.append(choices,add);w.appendChild(addRow);
+    const p=el('p','hint');p.textContent='This button has an existing custom macro. It will keep playing as before. Move it to Recordings to reuse it.';
+    const keep=el('button','btn','Move to Recordings');keep.onclick=()=>{try{preserveDirectMacro(key);rerender();}catch(e){toast(e.message,true);}};
+    section('Recordings',p,keep);
+    return;
   }
-  const tools=document.createElement('div');tools.className='ed-tools';
-  const test=document.createElement('button');test.className='btn';test.textContent='Test button';test.disabled=!key.steps.length;test.onclick=testKey;tools.appendChild(test);
-  const json=document.createElement('button');json.className='btn sm';json.textContent='Button JSON';json.onclick=()=>{selectedWorkflow=null;openJsonPreview('selected');};tools.appendChild(json);w.appendChild(tools);updateDirty();
+  const mode=segRadio('Playback mode',[['single','one','One','One recording'],['sequence','list','Sequence','In sequence'],['random','shuffle','Random','Random choice']],a.mode,value=>{
+    if(value===a.mode)return;
+    if(value==='single'&&a.ids.length>1&&!confirm('Keep only the first recording on this button?'))return;
+    setAssignment(key,value,value==='single'?a.ids.slice(0,1):a.ids);rerender();
+  });
+  const help=el('p','hint');help.textContent=a.mode==='random'?'Picks one recording each time; Toggle picks again after each one.':a.mode==='sequence'?'Plays every recording in order.':'Plays the selected recording.';
+  section('Playback',mode,help);
+  const list=el('ol','assignment-list');
+  a.ids.forEach((id,index)=>{
+    const row=el('li');row.append(el('span','n',String(index+1)));
+    const text=el('span','nm');text.textContent=recordingName(id)||'Missing recording';row.appendChild(text);
+    if(a.mode==='sequence')for(const [icon,label,delta] of [['up','Move recording up',-1],['down','Move recording down',1]]){
+      const b=iconButton(icon,label,()=>{const ids=[...a.ids];[ids[index],ids[index+delta]]=[ids[index+delta],ids[index]];setAssignment(key,a.mode,ids);rerender();});
+      b.disabled=index+delta<0||index+delta>=a.ids.length;row.appendChild(b);
+    }
+    row.appendChild(iconButton('x','Remove recording',()=>{setAssignment(key,a.mode,a.ids.filter((_,i)=>i!==index),key.steps[0]?.avoidRecent>0);rerender();}));
+    list.appendChild(row);
+  });
+  const parts=[];
+  if(a.ids.length)parts.push(list);else{const p=el('p','hint');p.textContent='No recordings assigned yet.';parts.push(p);}
+  if(a.mode==='random'&&a.ids.length>1){
+    const label=el('label','toggle-row'),check=document.createElement('input');check.type='checkbox';check.checked=key.steps[0]?.avoidRecent>0;
+    check.onchange=()=>{setAssignment(key,'random',a.ids,check.checked);updateDirty();};label.append(check,'Avoid the same recording twice in a row');parts.push(label);
+  }
+  const choices=document.createElement('select');choices.setAttribute('aria-label','Recording to add');
+  recordingList().forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name||'Unnamed recording';choices.appendChild(o);});
+  const add=iconButton('plus',a.mode==='single'?'Use recording':'Add recording',()=>{if(a.mode==='single'){setAssignment(key,'single',[choices.value]);rerender();}else addRecordingToButton(choices.value);},'btn ibtn primary');
+  add.disabled=!choices.options.length;
+  const addRow=el('div','add-row');addRow.append(choices,add);parts.push(addRow);
+  section('Recordings',...parts);
+  updateDirty();
 }
-
 
 /* ---------------- recording step editor ---------------- */
 const CAPTURED_TYPES={key:"Tap key",down:"Key down",up:"Key up",delay:"Delay",text:"Type text",media:"Media key"};
@@ -1222,9 +1406,8 @@ async function pollMacroLog(){
 async function pollStatus(){
   try{
     status=await(await api("/api/status")).json();
-    $("#bonds").textContent=status.bonds;
-    $("#dotConn").className="dot "+(status.connected?"on":"off");
-    $("#connText").textContent=status.connected?"host":"no host";
+    const dot=$("#dotConn"),label=status.connected?"Host connected":"No host connected";
+    dot.className="dot "+(status.connected?"on":"off");dot.title=label;dot.setAttribute("aria-label",label);
     $("#monLast").textContent=(status.lastKeyDown>=0?"#"+status.lastKeyDown:"—");
     $("#monCount").textContent=status.keyDownCount||0;
     const down=[];for(let i=0;i<meta.keyCount;i++)if(status.keyMask&(1<<i))down.push("#"+i);
@@ -1242,6 +1425,8 @@ $("#recordingFile").onchange=async event=>{
 };
 $("#exportLog").onclick=()=>openJsonPreview("log");
 $("#configJson").onclick=()=>openJsonPreview("config");
+$("#layerRename").onclick=renameLayer;
+$("#layerDelete").onclick=deleteLayer;
 $("#recJson").onclick=()=>openJsonPreview("recording");
 $("#jsonScope").onchange=refreshJsonPreview;
 $("#jsonClose").onclick=closeJsonPreview;

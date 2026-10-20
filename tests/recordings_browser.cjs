@@ -30,6 +30,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('.recording-card').count(),1);
   // The editor shows the whole recording across its hidden storage parts.
   const rows=page.locator('#stepList .step-row');
+  // The shipped recording is on button 1, so it is locked until unlocked.
+  assert(await page.locator('#recordings').getByRole('button',{name:'Edit',exact:true}).isDisabled());
+  await page.locator('#recordings').getByRole('button',{name:'Unlock recording'}).click();
   await page.locator('#recordings').getByRole('button',{name:'Edit',exact:true}).click();await page.locator('#editDialog[open]').waitFor();
   assert.equal(await rows.count(),989);
   assert.match(await page.locator('#editSummary').textContent(),/^989 steps · 97\.9 s$/);
@@ -52,12 +55,18 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('#editClose').click();assert(!(await page.locator('#editDialog[open]').count()));
   assert(await page.locator('#panelRecordings').isVisible());assert(await page.locator('#panelEdit').isVisible());
   await page.getByRole('button',{name:'Add to button',exact:true}).click();
-  assert.equal(await page.getByLabel('Playback mode').inputValue(),'sequence');
-  await page.getByLabel('Playback mode').selectOption('random');
+  assert.equal(await page.locator('[aria-label="Playback mode"] [aria-checked="true"]').getAttribute('data-mode'),'sequence');
+  await page.getByRole('radio',{name:'Random choice'}).click();
   // Repeated sequence entries become one unique random candidate.
   assert.equal(await page.locator('.assignment-list li').count(),1);
   await page.screenshot({path:'/tmp/kabuto-recordings-desktop.png'});
   await page.setViewportSize({width:390,height:844});
+  // Phone pad: three evenly sized, roughly square buttons per row.
+  await page.locator('#tabKeys').click();
+  const caps=await page.locator('#grid .keycap').evaluateAll(cs=>cs.map(c=>c.getBoundingClientRect()).map(r=>({w:Math.round(r.width),h:Math.round(r.height),y:Math.round(r.y)})));
+  assert.equal(caps.length,6);assert(caps.every(c=>c.w>=100&&Math.abs(c.w-caps[0].w)<=1&&Math.abs(c.h-c.w)<=1));
+  assert.equal(new Set(caps.map(c=>c.y)).size,2);
+  await page.screenshot({path:'/tmp/kabuto-pad-mobile.png'});
   await page.locator('#tabRecordings').click();assert(await page.locator('#panelRecordings').isVisible());assert(!(await page.locator('#panelEdit').isVisible()));
   await page.screenshot({path:'/tmp/kabuto-recordings-mobile.png'});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
@@ -68,7 +77,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'New recording',exact:true}).click();await page.locator('#sheet.show').waitFor();
   assert.equal(await page.locator('#recUse').textContent(),'Save recording');
   await page.locator('.sheet-head .close').click();
-  await page.locator('#tabEdit').click();assert(await page.getByLabel('Playback mode').isVisible());
+  await page.locator('#tabEdit').click();assert(await page.getByRole('radiogroup',{name:'Playback mode'}).isVisible());
   const bounds=await page.locator('.tabbar').boundingBox();assert(bounds.y+bounds.height<=845);
   assert.deepEqual(errors,[]);console.log('desktop/mobile recordings browser tests passed');
  }finally{await browser.close();}

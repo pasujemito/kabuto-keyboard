@@ -5,7 +5,22 @@
 #include <cstddef>
 #include <string>
 #include <functional>
-using String = std::string;
+#include <algorithm>
+#include <cctype>
+class String : public std::string {
+public:
+    using std::string::string;
+    using std::string::operator=;
+    String() = default;
+    String(const std::string& value):std::string(value) {}
+    String(char ch):std::string(1,ch) {}
+    void toLowerCase(){for(char& c:*this)c=std::tolower(static_cast<unsigned char>(c));}
+    void toUpperCase(){for(char& c:*this)c=std::toupper(static_cast<unsigned char>(c));}
+    void trim(){auto first=find_first_not_of(" \t\r\n");if(first==npos){clear();return;}*this=substr(first,find_last_not_of(" \t\r\n")-first+1);}
+    int indexOf(char c,int from=0)const{auto i=find(c,from);return i==npos?-1:static_cast<int>(i);}
+    String substring(int from)const{return substr(from);}
+    String substring(int from,int to)const{return substr(from,to-from);}
+};
 using TaskHandle_t = void*;
 using QueueHandle_t = void*;
 using TickType_t = uint32_t;
@@ -20,8 +35,9 @@ extern uint32_t testClock;
 extern std::function<void()> testDelayHook;
 inline uint32_t millis() { return testClock; }
 inline void vTaskDelay(uint32_t ticks) { testClock += ticks; if(testDelayHook) testDelayHook(); }
-inline long random(long) { return 0; } // always lowest eligible weighted interval
-inline long random(long low, long) { return low; }
+extern std::function<long(long)> testRandomHook;
+inline long random(long upper) { return testRandomHook ? testRandomHook(upper) : 0; }
+inline long random(long low, long high) { return low+random(high-low); }
 inline QueueHandle_t xQueueCreate(int, std::size_t) { return nullptr; }
 inline int xQueueSend(QueueHandle_t, const void*, int) { return 0; }
 inline int xQueueReceive(QueueHandle_t, void*, int) { return 0; }

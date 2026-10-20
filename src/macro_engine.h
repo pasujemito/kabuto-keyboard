@@ -29,6 +29,9 @@ enum class StepType : uint8_t {
     LOOP_START, // begin loop; 'value' = repeat count (0 = until stopped)
     LOOP_END,   // end of innermost loop
     LAYER,      // switch active layer to 'value'
+    MOVE,       // short balanced left/right pulse
+    COMBAT,     // hold Ctrl while choosing bounded micro workflows
+    UTILITIES,  // occasionally invoke eligible cooldown workflows
     CALL,       // execute a named workflow once
     RANDOM,     // run one randomly selected macro from 'choices'
 };
@@ -44,8 +47,9 @@ struct Step {
     StepType    type   = StepType::DELAY;
     uint8_t     keycode   = 0;
     uint8_t     modifiers = 0;
-    uint16_t    value   = 0;      // ms / repeat / usage / layer, per type
-    std::string text;            // only for TEXT
+    uint32_t    value   = 0;      // ms / repeat / usage / layer, per type
+    uint32_t maxValue = 0;       // inclusive upper timing bound, 0 = fixed
+    std::string text;            // TEXT / CALL
     std::vector<MacroRef> choices;
     uint8_t avoidRecent = 0; // exclude up to 16 recent choices; skip if exhausted
     int         matchIndex = -1; // LOOP_START<->LOOP_END pairing (precomputed)
@@ -61,7 +65,7 @@ struct MacroLogEntry {
     StepType type = StepType::DELAY;
     uint8_t keycode = 0;
     uint8_t modifiers = 0;
-    uint16_t value = 0;
+    uint32_t value = 0;
     bool complete = true;
     char text[40] = {};
     char loopPath[64] = {};
@@ -84,6 +88,9 @@ struct Layer {
 struct Workflow : KeyBinding {
     std::string id;
     std::string kind = "nano";
+    bool utilityEnabled = false;
+    uint32_t cooldownMs = 0;
+    uint16_t chancePermille = 100;
 };
 
 struct Config {
@@ -149,6 +156,9 @@ private:
         uint32_t heldModStartedAt[8] = {};
         uint32_t heldModLogId[8] = {};
         bool heldMod[8] = {};
+        bool combat = false;
+        uint32_t combatStart = 0;
+        uint32_t combatBudget = 0;
     };
 
     static void taskTrampoline(void* arg);
@@ -164,6 +174,10 @@ private:
     // History lasts for one key activation, including all toggle/hold passes.
     std::map<const Step*, std::vector<const KeyBinding*>> choiceHistory_;
     std::vector<const std::vector<Step>*> callStack_;
+    int32_t movementBalanceMs_ = 0;
+    bool utilityClockStarted_ = false;
+    uint32_t utilityEpoch_ = 0;
+    std::map<std::string, uint32_t> utilityLastRun_;
     Config cfg_;
     int    layer_      = 0;
 

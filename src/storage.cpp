@@ -39,7 +39,11 @@ static bool parseStep(JsonObjectConst o, Step& step) {
         step.type = StepType::KEY;
         step.keycode = keycodeFromName(String((const char*)(o["key"] | "")));
         step.modifiers = parseMods(o["mods"]);
-        step.value = o["hold"] | 0;
+        if (!o["hold"].isNull() && !o["hold"].is<uint32_t>()) return false;
+        step.value = o["hold"] | 0U;
+        if (!o["maxHold"].isNull() && !o["maxHold"].is<uint32_t>()) return false;
+        step.maxValue = o["maxHold"] | 0U;
+        if (step.value > 90000 || step.maxValue > 90000 || (step.maxValue && step.maxValue < step.value)) return false;
         return step.keycode != KC_NONE || step.modifiers != 0;
     }
     if (type == "down") {
@@ -64,11 +68,19 @@ static bool parseStep(JsonObjectConst o, Step& step) {
         step.value = consumerFromName(String((const char*)(o["media"] | "")));
         return step.value != 0;
     }
-    if (type == "delay") {
-        step.type = StepType::DELAY;
-        step.value = o["ms"] | 0;
-        return true;
+    if (type == "delay" || type == "move" || type == "combat") {
+        step.type = type == "move" ? StepType::MOVE : type == "combat" ? StepType::COMBAT : StepType::DELAY;
+        if (!o["ms"].is<uint32_t>()) return false;
+        step.value = o["ms"].as<uint32_t>();
+        if (!o["maxMs"].isNull() && !o["maxMs"].is<uint32_t>()) return false;
+        step.maxValue = o["maxMs"] | 0U;
+        uint32_t limit = type == "move" ? 600 : 90000;
+        if (step.value > limit || step.maxValue > limit || (step.maxValue && step.maxValue < step.value)) return false;
+        if (type != "delay" && !step.value) return false;
+        if (type != "combat") return true;
+        // Combat also parses the same weighted workflow choices as random.
     }
+    if (type == "utilities") { step.type = StepType::UTILITIES; return true; }
     if (type == "loop") {
         step.type = StepType::LOOP_START;
         step.value = o["count"] | 0;   // 0 = until stopped
@@ -88,8 +100,8 @@ static bool parseStep(JsonObjectConst o, Step& step) {
         step.text = (const char*)(o["workflow"] | "");
         return !step.text.empty();
     }
-    if (type == "random") {
-        step.type = StepType::RANDOM;
+    if (type == "random" || type == "combat") {
+        step.type = type == "combat" ? StepType::COMBAT : StepType::RANDOM;
         int recent = o["avoidRecent"] | 0;
         if (recent < 0 || recent > 16) return false;
         step.avoidRecent = recent;
@@ -129,6 +141,14 @@ static bool validateWorkflows(JsonDocument& doc, String& err) {
             err = "workflow IDs must be unique (1-48 characters); kind must be nano or micro";
             return false;
         }
+        if ((!w["cooldownMs"].isNull() && !w["cooldownMs"].is<uint32_t>()) ||
+            (w["cooldownMs"] | 0U) > 86400000U ||
+            (!w["chancePermille"].isNull() && !w["chancePermille"].is<uint16_t>()) ||
+            (w["chancePermille"] | 100) < 0 || (w["chancePermille"] | 100) > 1000 ||
+            ((w["utilityEnabled"] | false) && !(w["cooldownMs"] | 0U))) {
+            err = "utility cooldown must be 1-86400000 ms and chance 0-1000"; return false;
+        }
+        if ((w["utilityEnabled"] | false) && !w["steps"].size()) { err = "assign utility steps before enabling"; return false; }
         if (!w["steps"].is<JsonArrayConst>() || w["steps"].size() > MAX_MACRO_STEPS) {
             err = "workflow requires steps (maximum 256)"; return false;
         }
@@ -138,7 +158,7 @@ static bool validateWorkflows(JsonDocument& doc, String& err) {
         for (JsonObjectConst so : steps) {
             String type = so["type"] | "";
             type.toLowerCase();
-            if (strict || type == "call" || type == "random") {
+            if (strict || type == "call" || type == "random" || type == "combat" || type == "move" || type == "utilities" || type == "delay" || type == "key") {
                 Step step;
                 if (!parseStep(so, step)) { err = "invalid workflow step or random choice"; return false; }
                 if (step.type == StepType::CALL && !ids.count(step.text)) {
@@ -192,6 +212,9 @@ bool loadConfig(Config& cfg) {
         workflow.id = (const char*)(wo["id"] | "");
         workflow.name = (const char*)(wo["name"] | "");
         workflow.kind = (const char*)(wo["kind"] | "nano");
+        workflow.utilityEnabled = wo["utilityEnabled"] | false;
+        workflow.cooldownMs = wo["cooldownMs"] | 0U;
+        workflow.chancePermille = wo["chancePermille"] | 100;
         for (JsonObjectConst so : wo["steps"].as<JsonArrayConst>()) {
             Step step;
             if (parseStep(so, step)) workflow.steps.push_back(step);
@@ -241,6 +264,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             o["key"]  = keyNameFromCode(s.keycode);
             if (s.modifiers) modsToJson(s.modifiers, o["mods"].to<JsonArray>());
             if (s.value) o["hold"] = s.value;
+            if (s.maxValue) o["maxHold"] = s.maxValue;
             break;
         case StepType::KEY_DOWN:
             o["type"] = "down";
@@ -261,8 +285,13 @@ static void stepToJson(const Step& s, JsonObject o) {
             o["media"] = consumerNameFromUsage(s.value);
             break;
         case StepType::DELAY:
-            o["type"] = "delay";
-            o["ms"]   = s.value;
+        case StepType::MOVE:
+            o["type"] = s.type == StepType::MOVE ? "move" : "delay";
+            o["ms"] = s.value;
+            if (s.maxValue) o["maxMs"] = s.maxValue;
+            break;
+        case StepType::UTILITIES:
+            o["type"] = "utilities";
             break;
         case StepType::LOOP_START:
             o["type"]  = "loop";
@@ -279,8 +308,13 @@ static void stepToJson(const Step& s, JsonObject o) {
             o["type"] = "call";
             o["workflow"] = s.text;
             break;
-        case StepType::RANDOM: {
-            o["type"] = "random";
+        case StepType::RANDOM:
+        case StepType::COMBAT: {
+            o["type"] = s.type == StepType::COMBAT ? "combat" : "random";
+            if (s.type == StepType::COMBAT) {
+                o["ms"] = s.value;
+                if (s.maxValue) o["maxMs"] = s.maxValue;
+            }
             o["avoidRecent"] = s.avoidRecent;
             JsonArray choices = o["choices"].to<JsonArray>();
             for (const MacroRef& ref : s.choices) {
@@ -311,6 +345,9 @@ static void buildDoc(const Config& cfg, JsonDocument& doc) {
         wo["id"] = workflow.id;
         wo["name"] = workflow.name;
         wo["kind"] = workflow.kind;
+        wo["utilityEnabled"] = workflow.utilityEnabled;
+        wo["cooldownMs"] = workflow.cooldownMs;
+        wo["chancePermille"] = workflow.chancePermille;
         JsonArray steps = wo["steps"].to<JsonArray>();
         for (const auto& step : workflow.steps) stepToJson(step, steps.add<JsonObject>());
     }

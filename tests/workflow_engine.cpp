@@ -8,18 +8,38 @@
 #undef private
 #include "../src/hid_keyboard.h"
 #include <cassert>
+#include <algorithm>
 #include <iostream>
 
 uint32_t testClock = 0;
 std::function<void()> testDelayHook;
+std::function<long(long)> testRandomHook;
 HidKeyboard Keyboard;
 std::vector<uint8_t> taps, held;
 unsigned releases = 0;
-void HidKeyboard::tap(uint8_t key, uint8_t, uint16_t) { taps.push_back(key); }
-void HidKeyboard::pressKey(uint8_t key, uint8_t) { held.push_back(key); }
-void HidKeyboard::releaseKey(uint8_t) {}
-void HidKeyboard::releaseModifiers(uint8_t) {}
-void HidKeyboard::releaseAll() { held.clear(); ++releases; }
+uint8_t heldMods=0;
+uint32_t ctrlStarted=0;
+std::vector<uint32_t> ctrlDurations;
+struct HidEvent { uint32_t at; uint8_t key; uint8_t mods; bool down; };
+std::vector<HidEvent> hidEvents;
+std::vector<uint8_t> tapModifiers;
+
+void HidKeyboard::tap(uint8_t key, uint8_t, uint16_t) { taps.push_back(key);tapModifiers.push_back(heldMods); }
+void HidKeyboard::pressKey(uint8_t key, uint8_t mods) {
+    if((mods&1)&&!(heldMods&1))ctrlStarted=millis();
+    heldMods|=mods;
+    if(key)held.push_back(key);
+    hidEvents.push_back({millis(),key,heldMods,true});
+}
+void HidKeyboard::releaseKey(uint8_t key) {
+    held.erase(std::remove(held.begin(),held.end(),key),held.end());
+    hidEvents.push_back({millis(),key,heldMods,false});
+}
+void HidKeyboard::releaseModifiers(uint8_t mods) {
+    if((mods&1)&&(heldMods&1))ctrlDurations.push_back(millis()-ctrlStarted);
+    heldMods &= ~mods;
+}
+void HidKeyboard::releaseAll() { releaseModifiers(255);held.clear(); ++releases; }
 void HidKeyboard::typeString(const String&) {}
 void HidKeyboard::consumerPress(uint16_t) {}
 void HidKeyboard::consumerRelease() {}
@@ -93,5 +113,68 @@ int main() {
     engine.config().workflows.push_back(workflow("hold",{down,delay,tap(20)}));
     testDelayHook=[&] {engine.stopFlag_=true;};
     run(engine,{call("hold"),tap(21)});testDelayHook={};assert(taps.empty());
+    // Attack envelopes retain Ctrl across movement and jumps, but respect
+    // their deadline even when a child requests a 90-second wait.
+    engine.config().workflows.clear();
+    Step move;move.type=StepType::MOVE;move.value=200;move.maxValue=524;
+    Step jumpDown; jumpDown.type=StepType::KEY_DOWN;jumpDown.modifiers=4;
+    Step jumpUp; jumpUp.type=StepType::KEY_UP;jumpUp.modifiers=4;
+    Step shortDelay;shortDelay.type=StepType::DELAY;shortDelay.value=121;shortDelay.maxValue=194;
+    engine.config().workflows.push_back(workflow("combat-micro",{move,jumpDown,shortDelay,jumpUp}));
+    MacroRef cr;cr.workflow="combat-micro";
+    Step combat;combat.type=StepType::COMBAT;combat.value=90000;combat.maxValue=90000;combat.choices={cr};
+    hidEvents.clear();ctrlDurations.clear();
+    run(engine,{combat});
+    assert(ctrlDurations.size()==1 && ctrlDurations[0]==90000);
+    assert(!heldMods && held.empty());
+    bool sawLeft=false,sawRight=false;
+    for(auto e:hidEvents) if(e.key==80||e.key==79) {
+        assert(e.mods&1); // arrows never release the attack modifier
+        sawLeft|=e.key==80;sawRight|=e.key==79;
+    }
+    assert(sawLeft&&sawRight);
+    assert(engine.movementBalanceMs_>=-600 && engine.movementBalanceMs_<=600);
+    Step longDelay;longDelay.type=StepType::DELAY;longDelay.value=90000;
+    engine.config().workflows[0].steps={jumpDown,longDelay,jumpUp};
+    combat.value=1234;combat.maxValue=1234;ctrlDurations.clear();
+    run(engine,{combat});assert(ctrlDurations.size()==1 && ctrlDurations[0]==1234);
+    // Inclusive range endpoints are honored instead of applying global jitter.
+    testRandomHook=[](long upper){return upper-1;};
+    combat.value=1000;combat.maxValue=1234;ctrlDurations.clear();
+    engine.config().randomizedDelay=true;
+    run(engine,{combat});assert(ctrlDurations.size()==1&&ctrlDurations[0]==1234);
+    testRandomHook={};engine.config().randomizedDelay=false;
+    // Stop midway through held movement releases Ctrl, Alt and arrows.
+    engine.config().workflows[0].steps={move,jumpDown,longDelay,jumpUp};
+    uint32_t stopAt=millis()+73;
+    testDelayHook=[&]{if(millis()>=stopAt)engine.stopFlag_=true;};
+    run(engine,{combat});testDelayHook={};assert(held.empty()&&!heldMods);
+    // Utility first-use/full cooldown, completion anchoring, and persistence
+    // over starting another key. No Ctrl is held when the utility fires.
+    Workflow utility=workflow("heal",{tap(11),shortDelay});utility.utilityEnabled=true;
+    utility.cooldownMs=300000;utility.chancePermille=1000;
+    engine.config().workflows={utility};engine.utilityClockStarted_=false;engine.utilityLastRun_.clear();
+    Step utilities;utilities.type=StepType::UTILITIES;
+    run(engine,{utilities});assert(taps.empty());
+    uint32_t epoch=engine.utilityEpoch_;
+    testClock=epoch+299999;run(engine,{utilities});assert(taps.empty());
+    testClock=epoch+300000;tapModifiers.clear();run(engine,{utilities});
+    assert((taps==std::vector<uint8_t>{11}) && tapModifiers.back()==0);
+    uint32_t completed=millis();assert(engine.utilityLastRun_["heal"]==completed);
+    testClock=completed+299999;run(engine,{utilities});assert(taps.empty());
+    testClock=completed+300000;engine.config().workflows[0].chancePermille=0;
+    run(engine,{utilities});assert(taps.empty());
+    engine.config().workflows[0].chancePermille=1000;
+    run(engine,{utilities});assert(taps.size()==1);
+    // A utility check under Ctrl must not run or consume its cooldown.
+    Step attackDown;attackDown.type=StepType::KEY_DOWN;attackDown.modifiers=1;
+    testClock+=300000;run(engine,{attackDown,utilities});assert(taps.empty());
+    engine.config().workflows[0].utilityEnabled=false;
+    run(engine,{utilities});assert(taps.empty());
+    // Unsigned elapsed-time arithmetic works across millis() wraparound.
+    engine.utilityEpoch_=UINT32_MAX-100;engine.utilityLastRun_.clear();engine.config().workflows[0].utilityEnabled=true;
+    engine.config().workflows[0].cooldownMs=200;testClock=50;
+    run(engine,{utilities});assert(taps.empty());testClock=100;
+    run(engine,{utilities});assert(taps.size()==1);
     std::cout << "workflow engine tests passed\n";
 }

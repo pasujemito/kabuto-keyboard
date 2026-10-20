@@ -1,0 +1,549 @@
+{
+  "version": 2,
+  "randomizedDelay": false,
+  "workflows": [
+    {
+      "id": "combat-move",
+      "name": "Short balanced movement",
+      "kind": "nano",
+      "steps": [
+        {
+          "type": "move",
+          "ms": 120,
+          "maxMs": 524
+        },
+        {
+          "type": "delay",
+          "ms": 75,
+          "maxMs": 226
+        }
+      ]
+    },
+    {
+      "id": "combat-jump",
+      "name": "Recorded jump timing",
+      "kind": "nano",
+      "steps": [
+        {
+          "type": "down",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 120,
+          "maxMs": 194
+        },
+        {
+          "type": "up",
+          "mods": [
+            "alt"
+          ]
+        },
+        {
+          "type": "delay",
+          "ms": 270,
+          "maxMs": 570
+        }
+      ]
+    },
+    {
+      "id": "combat-pick",
+      "name": "Pickup pulse",
+      "kind": "nano",
+      "steps": [
+        {
+          "type": "down",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 72,
+          "maxMs": 130
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 80,
+          "maxMs": 180
+        }
+      ]
+    },
+    {
+      "id": "combat-moving-pick",
+      "name": "Pickup during movement",
+      "kind": "nano",
+      "steps": [
+        {
+          "type": "down",
+          "key": "Z"
+        },
+        {
+          "type": "move",
+          "ms": 163,
+          "maxMs": 322
+        },
+        {
+          "type": "up",
+          "key": "Z"
+        },
+        {
+          "type": "delay",
+          "ms": 106,
+          "maxMs": 226
+        }
+      ]
+    },
+    {
+      "id": "combat-pause",
+      "name": "Variable recovery pause",
+      "kind": "nano",
+      "steps": [
+        {
+          "type": "delay",
+          "ms": 300,
+          "maxMs": 736
+        }
+      ]
+    },
+    {
+      "id": "combat-approach",
+      "name": "Move, jump, pick",
+      "kind": "micro",
+      "steps": [
+        {
+          "type": "call",
+          "workflow": "combat-move"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-jump"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-pick"
+        }
+      ]
+    },
+    {
+      "id": "combat-loot-first",
+      "name": "Pick, move, jump",
+      "kind": "micro",
+      "steps": [
+        {
+          "type": "call",
+          "workflow": "combat-pick"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-move"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-jump"
+        }
+      ]
+    },
+    {
+      "id": "combat-double-jump",
+      "name": "Jump, move, jump",
+      "kind": "micro",
+      "steps": [
+        {
+          "type": "call",
+          "workflow": "combat-jump"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-move"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-jump"
+        }
+      ]
+    },
+    {
+      "id": "combat-loot-pass",
+      "name": "Move while collecting",
+      "kind": "micro",
+      "steps": [
+        {
+          "type": "call",
+          "workflow": "combat-moving-pick"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-jump"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-pause"
+        }
+      ]
+    },
+    {
+      "id": "combat-reposition",
+      "name": "Move, pause, jump, collect",
+      "kind": "micro",
+      "steps": [
+        {
+          "type": "call",
+          "workflow": "combat-move"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-pause"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-jump"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-moving-pick"
+        }
+      ]
+    },
+    {
+      "id": "combat-stationary",
+      "name": "Jump, pick, pause",
+      "kind": "micro",
+      "steps": [
+        {
+          "type": "call",
+          "workflow": "combat-jump"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-pick"
+        },
+        {
+          "type": "call",
+          "workflow": "combat-pause"
+        }
+      ]
+    },
+    {
+      "id": "pet-food",
+      "name": "Pet food \u2014 assign button",
+      "kind": "nano",
+      "steps": [],
+      "utilityEnabled": false,
+      "cooldownMs": 1800000,
+      "chancePermille": 50
+    },
+    {
+      "id": "heal",
+      "name": "Heal \u2014 assign button",
+      "kind": "nano",
+      "steps": [],
+      "utilityEnabled": false,
+      "cooldownMs": 300000,
+      "chancePermille": 150
+    },
+    {
+      "id": "passive-skill",
+      "name": "Passive skill \u2014 assign button",
+      "kind": "nano",
+      "steps": [],
+      "utilityEnabled": false,
+      "cooldownMs": 360000,
+      "chancePermille": 100
+    }
+  ],
+  "layers": [
+    {
+      "name": "1 \u00b7 Combat baseline",
+      "keys": [
+        {
+          "name": "Combat on/off",
+          "trigger": "toggle",
+          "steps": [
+            {
+              "type": "combat",
+              "ms": 25000,
+              "maxMs": 85000,
+              "avoidRecent": 1,
+              "choices": [
+                {
+                  "workflow": "combat-approach",
+                  "weight": 3
+                },
+                {
+                  "workflow": "combat-loot-first",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-double-jump",
+                  "weight": 3
+                },
+                {
+                  "workflow": "combat-loot-pass",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-reposition",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-stationary",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "type": "delay",
+              "ms": 350,
+              "maxMs": 1100
+            },
+            {
+              "type": "utilities"
+            },
+            {
+              "type": "delay",
+              "ms": 200,
+              "maxMs": 600
+            }
+          ]
+        },
+        {
+          "name": "One combat block",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "combat",
+              "ms": 25000,
+              "maxMs": 85000,
+              "avoidRecent": 1,
+              "choices": [
+                {
+                  "workflow": "combat-approach",
+                  "weight": 3
+                },
+                {
+                  "workflow": "combat-loot-first",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-double-jump",
+                  "weight": 3
+                },
+                {
+                  "workflow": "combat-loot-pass",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-reposition",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-stationary",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "type": "delay",
+              "ms": 350,
+              "maxMs": 1100
+            },
+            {
+              "type": "utilities"
+            },
+            {
+              "type": "delay",
+              "ms": 200,
+              "maxMs": 600
+            }
+          ]
+        },
+        {
+          "name": "Combat while held",
+          "trigger": "hold",
+          "steps": [
+            {
+              "type": "combat",
+              "ms": 25000,
+              "maxMs": 85000,
+              "avoidRecent": 1,
+              "choices": [
+                {
+                  "workflow": "combat-approach",
+                  "weight": 3
+                },
+                {
+                  "workflow": "combat-loot-first",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-double-jump",
+                  "weight": 3
+                },
+                {
+                  "workflow": "combat-loot-pass",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-reposition",
+                  "weight": 2
+                },
+                {
+                  "workflow": "combat-stationary",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "type": "delay",
+              "ms": 350,
+              "maxMs": 1100
+            },
+            {
+              "type": "utilities"
+            },
+            {
+              "type": "delay",
+              "ms": 200,
+              "maxMs": 600
+            }
+          ]
+        },
+        {
+          "name": "Move pulse",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "call",
+              "workflow": "combat-move"
+            }
+          ]
+        },
+        {
+          "name": "Jump + pickup",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "call",
+              "workflow": "combat-jump"
+            },
+            {
+              "type": "call",
+              "workflow": "combat-pick"
+            }
+          ]
+        },
+        {
+          "name": "Check utilities",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "utilities"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Base",
+      "keys": [
+        {
+          "name": "Sign-off",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "text",
+              "text": "Best regards,\nDamian"
+            }
+          ]
+        },
+        {
+          "name": "Save all",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "key",
+              "key": "S",
+              "mods": [
+                "ctrl"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Volume +3",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "loop",
+              "count": 3
+            },
+            {
+              "type": "media",
+              "media": "VOLUP"
+            },
+            {
+              "type": "delay",
+              "ms": 80
+            },
+            {
+              "type": "endloop"
+            }
+          ]
+        },
+        {
+          "name": "Build",
+          "trigger": "tap",
+          "steps": [
+            {
+              "type": "key",
+              "key": "B",
+              "mods": [
+                "ctrl",
+                "shift"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Keep-awake",
+          "trigger": "toggle",
+          "steps": [
+            {
+              "type": "loop",
+              "count": 0
+            },
+            {
+              "type": "key",
+              "key": "DOWN"
+            },
+            {
+              "type": "delay",
+              "ms": 500
+            },
+            {
+              "type": "key",
+              "key": "UP"
+            },
+            {
+              "type": "delay",
+              "ms": 500
+            },
+            {
+              "type": "endloop"
+            }
+          ]
+        },
+        {
+          "name": "",
+          "trigger": "tap",
+          "steps": []
+        }
+      ]
+    }
+  ]
+}

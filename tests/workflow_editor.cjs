@@ -123,6 +123,31 @@ async function main() {
   w.testEval('closeJsonPreview()');
   w.document.querySelector('#recClear').click();
   assert(w.document.querySelector('#recJson').disabled);
+  // Execution exports identify the ring buffer limitation and preserve actual
+  // chosen actions, rather than re-sampling their definitions.
+  w.testEval(`renderMacroLog({events:[{id:1,run:1,pass:1,step:1,type:'move',key:'LEFT',elapsedMs:0,durationMs:200,complete:true}],elapsedMs:200,running:false});`);
+  w.document.querySelector('#exportLog').click();
+  assert.equal(JSON.parse(jsonText.value).events[0].key,'LEFT');
+  assert.match(JSON.parse(jsonText.value).scope,/not a complete session/);
+  w.testEval('closeJsonPreview()');
+  // The shipped first layer and all new fields survive editing and JSON export.
+  const preset=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
+  w.testEval(`cfg=${JSON.stringify(preset)};selectedWorkflow=null;selLayer=0;selKey=0;normalize();renderLayers();renderGrid();renderEditor();`);
+  assert.match(snapshot().layers[0].name,/Combat baseline/);
+  const block=snapshot().layers[0].keys[0].steps[0];
+  assert.equal(block.type,'combat');assert.equal(block.maxMs,85000);assert.equal(block.avoidRecent,1);
+  assert(w.document.querySelector('#editor').textContent.includes('attack max ms'));
+  edit('pet-food');
+  const utilityToggle=[...w.document.querySelectorAll('#editor input[type="checkbox"]')].find(i=>i.parentNode.textContent.includes('Occasional utility'));
+  assert(utilityToggle&&!utilityToggle.checked);
+  assert.equal(snapshot().workflows.find(w=>w.id==='pet-food').cooldownMs,1800000);
+  // Configure the actual key before enabling a timed action.
+  click('+ Tap key');utilityToggle.checked=true;utilityToggle.onchange();
+  click('JSON / Export');scope.value='config';scope.onchange();
+  const exportedPreset=JSON.parse(jsonText.value);
+  assert(exportedPreset.workflows.find(w=>w.id==='pet-food').utilityEnabled);
+  assert.equal(exportedPreset.workflows.find(w=>w.id==='combat-move').steps[0].maxMs,524);
+  w.testEval('closeJsonPreview()');
   dom.window.close();
   console.log('workflow editor tests passed');
 }

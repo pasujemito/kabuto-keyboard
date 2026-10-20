@@ -35,21 +35,29 @@ void Config::ensureLayer(size_t n) {
 // --- interruptible delay ---------------------------------------------------
 static void sleepMs(uint32_t ms, volatile bool& stop) {
     const uint32_t chunk = 5;
-    uint32_t elapsed = 0;
-    while (elapsed < ms) {
-        if (stop) return;
-        uint32_t step = (ms - elapsed) < chunk ? (ms - elapsed) : chunk;
+    uint32_t started = millis();
+    while (true) {
+        uint32_t elapsed = millis() - started;
+        if (stop || elapsed >= ms) return;
+        uint32_t remaining = ms - elapsed;
+        uint32_t step = remaining < chunk ? remaining : chunk;
         TickType_t ticks = pdMS_TO_TICKS(step);
         vTaskDelay(ticks ? ticks : 1);
-        elapsed += step;
     }
 }
 
-static uint32_t randomizedDuration(uint16_t ms, bool enabled) {
+static uint32_t randomizedDuration(uint32_t ms, bool enabled) {
     if (!enabled || ms == 0) return ms;
     int32_t jitter = ms < 2000 ? random(-10L, 11L) : random(-1000L, 1001L);
     int32_t duration = (int32_t)ms + jitter;
     return duration > 0 ? (uint32_t)duration : 1;
+}
+
+// Explicit timing ranges take precedence over global jitter.
+static uint32_t stepDuration(const Step& step, bool jitter) {
+    if (step.maxValue >= step.value && step.maxValue)
+        return step.value + (uint32_t)random((long)(step.maxValue - step.value + 1));
+    return randomizedDuration(step.value, jitter);
 }
 
 // Give the scheduler at least one tick. The macro task runs at a higher
@@ -210,6 +218,8 @@ bool MacroEngine::load() {
     // Don't swap config out from under a running macro.
     stopAll();
     bool ok = loadConfig(cfg_);
+    utilityClockStarted_ = false;
+    utilityLastRun_.clear();
     cfg_.ensureLayer(0);
     commit();
     if (layer_ >= (int)cfg_.layers.size()) layer_ = 0;
@@ -244,7 +254,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         entry.modifiers = step.modifiers;
         entry.value = step.value;
         entry.complete = complete;
-        if (step.type == StepType::TEXT || step.type == StepType::RANDOM || step.type == StepType::CALL)
+        if (!step.text.empty())
             std::strncpy(entry.text, step.text.c_str(), sizeof(entry.text) - 1);
         size_t pathLength = 0;
         for (const Frame& frame : loops) {
@@ -267,18 +277,52 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
         return false;
     };
 
+    auto combatExpired = [&]() { return state.combat && (uint32_t)(millis() - state.combatStart) >= state.combatBudget; };
+    auto wait = [&](uint32_t ms) {
+        if (state.combat) {
+            uint32_t elapsed = millis() - state.combatStart;
+            ms = elapsed >= state.combatBudget ? 0 : std::min(ms, state.combatBudget - elapsed);
+        }
+        sleepMs(ms, stop);
+    };
+    auto releaseTracked = [&]() {
+        uint32_t ended = millis();
+        for (int k = 0; k < 256; ++k) if (state.heldKey[k])
+            updateLogDuration(state.heldKeyLogId[k], ended - state.heldKeyStartedAt[k], true);
+        for (int k = 0; k < 8; ++k) if (state.heldMod[k])
+            updateLogDuration(state.heldModLogId[k], ended - state.heldModStartedAt[k], true);
+        Keyboard.releaseAll();
+        state = ExecutionState{};
+    };
+
     int pc = 0;
     const int n = (int)steps.size();
     while (pc < n) {
-        if (stop) break;
-        const Step& s = steps[pc];
+        if (stop || combatExpired()) break;
+        Step guarded;
+        const Step* current = &steps[pc];
+        if (state.combat && current->type == StepType::KEY_UP && (current->modifiers & KM_LCTRL)) {
+            guarded = *current; guarded.modifiers &= ~KM_LCTRL; current = &guarded;
+        }
+        const Step& s = *current;
         uint32_t stepStartedAt = millis();
+        if (state.combat && (s.type == StepType::TEXT || s.type == StepType::CONSUMER)) {
+            Step entry=s;entry.text="skipped: unsupported in combat";logStep(entry,pc,stepStartedAt,0,true);++pc;continue;
+        }
         switch (s.type) {
             case StepType::KEY: {
-                uint32_t holdMs = randomizedDuration(s.value, cfg_.randomizedDelay);
-                if (holdMs > UINT16_MAX) holdMs = UINT16_MAX;
+                uint32_t holdMs = stepDuration(s, cfg_.randomizedDelay);
                 uint32_t id = logStep(s, pc, stepStartedAt, holdMs, false);
-                Keyboard.tap(s.keycode, s.modifiers, (uint16_t)holdMs);
+                // Long taps and combat taps must remain interruptible. Retain
+                // modifiers that were already held by the parent workflow.
+                if (state.combat || holdMs > UINT16_MAX) {
+                    uint8_t newMods = s.modifiers;
+                    for (int bit=0; bit<8; ++bit) if(state.heldMod[bit]) newMods &= ~(1U<<bit);
+                    Keyboard.pressKey(s.keycode, newMods);
+                    wait(holdMs);
+                    Keyboard.releaseKey(s.keycode);
+                    Keyboard.releaseModifiers(newMods);
+                } else Keyboard.tap(s.keycode, s.modifiers, (uint16_t)holdMs);
                 updateLogDuration(id, millis() - stepStartedAt, true);
                 break;
             }
@@ -350,9 +394,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 break;
             }
             case StepType::DELAY: {
-                uint32_t duration = randomizedDuration(s.value, cfg_.randomizedDelay);
+                uint32_t duration = stepDuration(s, cfg_.randomizedDelay);
                 uint32_t id = logStep(s, pc, stepStartedAt, duration, false);
-                sleepMs(duration, stop);
+                wait(duration);
                 updateLogDuration(id, millis() - stepStartedAt, true);
                 break;
             }
@@ -360,50 +404,115 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 setLayer(s.value);
                 logStep(s, pc, stepStartedAt, 0, true);
                 break;
+            case StepType::MOVE: {
+                uint32_t duration = stepDuration(s, false);
+                // Bound accumulated commanded movement, not merely press count.
+                bool left = movementBalanceMs_ > 0 || (movementBalanceMs_ == 0 && random(2L) == 0);
+                if (movementBalanceMs_ > -600 && movementBalanceMs_ < 600) {
+                    bool proposedLeft = random(2L) == 0;
+                    int32_t proposed = movementBalanceMs_ + (proposedLeft ? -(int32_t)duration : (int32_t)duration);
+                    if (proposed >= -600 && proposed <= 600) left = proposedLeft;
+                }
+                uint8_t key = left ? KC_LEFT : KC_RIGHT;
+                Step entry = s; entry.keycode = key;
+                uint32_t id = logStep(entry, pc, stepStartedAt, duration, false);
+                Keyboard.pressKey(key);
+                wait(duration);
+                Keyboard.releaseKey(key);
+                uint32_t actual = millis() - stepStartedAt;
+                movementBalanceMs_ += left ? -(int32_t)actual : (int32_t)actual;
+                updateLogDuration(id, actual, true);
+                break;
+            }
+            case StepType::UTILITIES: {
+                bool neutral = !state.combat;
+                for (bool held : state.heldKey) if (held) neutral = false;
+                for (bool held : state.heldMod) if (held) neutral = false;
+                if (!neutral) { Step entry=s;entry.text="skipped: keys held";logStep(entry,pc,stepStartedAt,0,true);break; }
+                std::vector<const Workflow*> eligible;
+                for (const auto& w : cfg_.workflows) {
+                    auto last = utilityLastRun_.find(w.id);
+                    uint32_t since = last == utilityLastRun_.end() ? utilityEpoch_ : last->second;
+                    if (w.utilityEnabled && !w.empty() && (uint32_t)(millis()-since) >= w.cooldownMs &&
+                        (uint32_t)random(1000L) < w.chancePermille) eligible.push_back(&w);
+                }
+                if (!eligible.empty() && depth < 8) {
+                    const Workflow& w=*eligible[random((long)eligible.size())];
+                    if (std::find(callStack_.begin(),callStack_.end(),&w.steps)!=callStack_.end()) break;
+                    Step entry=s;entry.text=w.name;
+                    uint32_t id=logStep(entry,pc,stepStartedAt,0,false);
+                    executeSteps(w.steps,stop,state,depth+1);
+                    releaseTracked();
+                    utilityLastRun_[w.id]=millis();
+                    updateLogDuration(id,millis()-stepStartedAt,true);
+                } else { Step entry=s;entry.text="no utility due/selected";logStep(entry,pc,stepStartedAt,0,true); }
+                break;
+            }
             case StepType::CALL:
-            case StepType::RANDOM: {
-                const KeyBinding* selected = nullptr;
-                if (s.type == StepType::CALL) {
-                    selected = cfg_.findWorkflow(s.text);
-                } else {
-                    std::vector<const KeyBinding*> candidates;
-                    std::vector<uint16_t> weights;
-                    for (const MacroRef& ref : s.choices) {
-                        const KeyBinding* candidate = nullptr;
-                        if (!ref.workflow.empty()) candidate = cfg_.findWorkflow(ref.workflow);
-                        else if (ref.layer < cfg_.layers.size() && ref.key < KEY_COUNT)
-                            candidate = &cfg_.layers[ref.layer].keys[ref.key];
-                        if (!candidate || candidate->empty() || !ref.weight ||
-                            std::find(candidates.begin(), candidates.end(), candidate) != candidates.end()) continue;
-                        candidates.push_back(candidate);
-                        weights.push_back(ref.weight);
-                    }
-                    auto& history = choiceHistory_[&s];
-                    std::vector<bool> eligible;
-                    for (const auto* candidate : candidates) {
-                        eligible.push_back(!workflowIsRecent(candidate, history, s.avoidRecent));
-                    }
-                    uint32_t total = workflowWeightTotal(weights, eligible);
-                    int index = total ? selectWorkflow(weights, eligible, (uint32_t)random((long)total)) : -1;
-                    if (index >= 0) {
-                        selected = candidates[index];
-                        rememberWorkflow(selected, history, s.avoidRecent);
-                    }
+            case StepType::RANDOM:
+            case StepType::COMBAT: {
+                bool combat = s.type == StepType::COMBAT;
+                if (combat && state.combat) { Step entry=s;entry.text="skipped: nested combat";logStep(entry,pc,stepStartedAt,0,true);break; }
+                uint32_t combatLog = 0;
+                if (combat) {
+                    releaseTracked();
+                    state.combat=true;state.combatStart=millis();
+                    state.combatBudget=std::min<uint32_t>(90000,stepDuration(s,false));
+                    Step attack=s;attack.modifiers=KM_LCTRL;
+                    combatLog=logStep(attack,pc,stepStartedAt,0,false);
+                    Keyboard.pressKey(KC_NONE,KM_LCTRL);
+                    state.heldMod[0]=true;state.heldModStartedAt[0]=millis();state.heldModLogId[0]=combatLog;
                 }
-                Step entryStep = s;
-                const char* skipReason = nullptr;
-                if (!selected) skipReason = s.type == StepType::CALL ? "skipped: missing workflow" : "skipped: no eligible choices";
-                else if (depth >= 8) skipReason = "skipped: nesting limit";
-                else if (std::find(callStack_.begin(), callStack_.end(), &selected->steps) != callStack_.end())
-                    skipReason = "skipped: recursive call";
-                const bool canCall = !skipReason;
-                entryStep.text = canCall ? (selected->name.empty() ? "unnamed workflow" : selected->name) : skipReason;
-                uint32_t id = logStep(entryStep, pc, stepStartedAt, 0, !canCall);
-                if (canCall) {
-                    executeSteps(selected->steps, stop, state, depth + 1);
-                    updateLogDuration(id, millis() - stepStartedAt, true);
+                do {
+                    if (stop || combatExpired()) break;
+                    uint32_t choiceStartedAt = millis();
+                    const KeyBinding* selected = nullptr;
+                    if (s.type == StepType::CALL) {
+                        selected = cfg_.findWorkflow(s.text);
+                    } else {
+                        std::vector<const KeyBinding*> candidates;
+                        std::vector<uint16_t> weights;
+                        for (const MacroRef& ref : s.choices) {
+                            const KeyBinding* candidate = nullptr;
+                            if (!ref.workflow.empty()) candidate = cfg_.findWorkflow(ref.workflow);
+                            else if (ref.layer < cfg_.layers.size() && ref.key < KEY_COUNT)
+                                candidate = &cfg_.layers[ref.layer].keys[ref.key];
+                            if (!candidate || candidate->empty() || !ref.weight ||
+                                std::find(candidates.begin(), candidates.end(), candidate) != candidates.end()) continue;
+                            candidates.push_back(candidate);
+                            weights.push_back(ref.weight);
+                        }
+                        auto& history = choiceHistory_[&s];
+                        std::vector<bool> eligible;
+                        for (const auto* candidate : candidates) {
+                            eligible.push_back(!workflowIsRecent(candidate, history, s.avoidRecent));
+                        }
+                        uint32_t total = workflowWeightTotal(weights, eligible);
+                        int index = total ? selectWorkflow(weights, eligible, (uint32_t)random((long)total)) : -1;
+                        if (index >= 0) {
+                            selected = candidates[index];
+                            rememberWorkflow(selected, history, s.avoidRecent);
+                        }
+                    }
+                    Step entryStep = s;
+                    const char* skipReason = nullptr;
+                    if (!selected) skipReason = s.type == StepType::CALL ? "skipped: missing workflow" : "skipped: no eligible choices";
+                    else if (depth >= 8) skipReason = "skipped: nesting limit";
+                    else if (std::find(callStack_.begin(), callStack_.end(), &selected->steps) != callStack_.end())
+                        skipReason = "skipped: recursive call";
+                    const bool canCall = !skipReason;
+                    entryStep.text = canCall ? (selected->name.empty() ? "unnamed workflow" : selected->name) : skipReason;
+                    uint32_t id = logStep(entryStep, pc, choiceStartedAt, 0, !canCall);
+                    if (canCall) {
+                        executeSteps(selected->steps, stop, state, depth + 1);
+                        updateLogDuration(id, millis() - choiceStartedAt, true);
+                    }
+                    if (!stop && !combatExpired()) yieldTick();
+                } while (combat && !stop && !combatExpired());
+                if (combat) {
+                    releaseTracked();
+                    updateLogDuration(combatLog,millis()-stepStartedAt,true);
                 }
-                yieldTick();
                 break;
             }
             case StepType::LOOP_START:
@@ -452,6 +561,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
 void MacroEngine::runMacro(const KeyBinding& kb) {
     choiceHistory_.clear();
     callStack_.clear();
+    movementBalanceMs_ = 0;
+    if (!utilityClockStarted_) {utilityEpoch_=millis();utilityClockStarted_=true;}
     if (oneShot_) {                       // Test / single pass
         macroPass_ = 1;
         ExecutionState state{};
@@ -506,7 +617,7 @@ void MacroEngine::startMacroTask(int keyIndex, bool oneShot) {
     macroRunId_++;
     macroPass_     = 0;
     runningKey_    = keyIndex;
-    if (xTaskCreatePinnedToCore(taskTrampoline, "macro", 8192, this, 2, &task_, 1) != pdPASS) {
+    if (xTaskCreatePinnedToCore(taskTrampoline, "macro", 16384, this, 2, &task_, 1) != pdPASS) {
         task_ = nullptr;
         runningKey_ = -1;
     }

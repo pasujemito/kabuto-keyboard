@@ -227,6 +227,7 @@
     <div class="monitor" id="monitor">
       <div class="monitor-head">
         <h2>Macro execution log</h2>
+        <button class="btn sm" id="exportLog" disabled>Export log JSON</button>
         <button class="btn sm" id="clearLog">Clear</button>
       </div>
       <div class="row"><span>Macro</span><b id="macroRunState">idle</b></div>
@@ -301,7 +302,7 @@ let meta=null,cfg=null,selLayer=0,selKey=0,status={},savedSnapshot="",selectedWo
 function updateDirty(){if(!cfg)return;const d=JSON.stringify(cfg)!==savedSnapshot;const b=$("#saveBtn");b.classList.toggle("dirty",d);b.textContent=d?"Save •":"Save";}
 
 const MOD_SET=["ctrl","shift","alt","gui"];
-const STEP_TYPES=[["key","Tap key"],["down","Key down"],["up","Key up"],["text","Type text"],["media","Media key"],["delay","Delay"],["loop","Loop start"],["endloop","Loop end"],["layer","Switch layer"],["call","Call workflow"],["random","Random workflow"]];
+const STEP_TYPES=[["key","Tap key"],["down","Key down"],["up","Key up"],["text","Type text"],["media","Media key"],["delay","Delay"],["loop","Loop start"],["endloop","Loop end"],["layer","Switch layer"],["move","Balanced movement"],["combat","Held attack block"],["utilities","Occasional utilities"],["call","Call workflow"],["random","Random workflow"]];
 
 async function api(p,o){return fetch(p,o);}
 function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast",1900);}
@@ -430,6 +431,14 @@ function renderEditor(){
     b.onclick=()=>{k.trigger=v;renderEditor();renderGrid();};seg.appendChild(b);});
   if(selectedWorkflow===null)head.appendChild(seg);
   w.appendChild(head);
+  if(selectedWorkflow!==null){
+    const utility=document.createElement("div");utility.className="ed-tools";
+    const label=document.createElement("label"),enabled=document.createElement("input");enabled.type="checkbox";enabled.checked=!!k.utilityEnabled;
+    enabled.onchange=()=>{k.utilityEnabled=enabled.checked;updateDirty();};label.append(enabled," Occasional utility (assign steps before enabling)");utility.appendChild(label);
+    utility.appendChild(numField("cooldown minutes",(k.cooldownMs||0)/60000,v=>{k.cooldownMs=Math.max(0,Math.min(1440,v))*60000;updateDirty();},0));
+    utility.appendChild(numField("chance ‰ / check",k.chancePermille??100,v=>{k.chancePermille=Math.max(0,Math.min(1000,v));updateDirty();},0));
+    w.appendChild(utility);
+  }
 
   const setting=document.createElement("label");setting.className="macro-setting";
   const randomized=document.createElement("input");randomized.type="checkbox";randomized.checked=cfg.randomizedDelay;
@@ -458,7 +467,7 @@ function renderEditor(){
   w.appendChild(add);
   const h=document.createElement("p");h.className="hint";
   h.textContent="Loop count 0 repeats until stopped (pair with Toggle/Hold). When enabled, timings under 2 seconds vary by +/-10 ms; longer timings vary by +/-1000 ms.";
-  h.append(" Named workflows run once per call. Random history resets when a key is started; excluded choices cause a skip if none remain. Nano and micro are organizational labels; either can call the other. Test named workflows by calling them from a key.");
+  h.append(" Explicit timing ranges override global jitter. Balanced movement uses 1–600 ms pulses. Attack blocks hold Ctrl and release all inputs before utility checks; never put utility checks inside a combat block. Named workflows run once per call. Random history resets when a key is started; excluded choices cause a skip if none remain. Nano and micro are organizational labels; either can call the other. Test named workflows by calling them from a key.");
   w.appendChild(h);updateDirty();
 }
 
@@ -470,7 +479,7 @@ function defaultRandomChoices(){
   cfg.workflows.filter(w=>w.id!==selectedWorkflow&&w.steps.length).forEach(w=>choices.push({workflow:w.id,weight:1}));
   return choices;
 }
-function newStep(t){return{key:{type:"key",key:"A",mods:[],hold:0},down:{type:"down",key:"A",mods:[]},up:{type:"up",key:"A"},text:{type:"text",text:""},media:{type:"media",media:"PLAY"},delay:{type:"delay",ms:100},loop:{type:"loop",count:1},endloop:{type:"endloop"},layer:{type:"layer",layer:0},call:{type:"call",workflow:""},random:{type:"random",avoidRecent:1,choices:defaultRandomChoices()}}[t];}
+function newStep(t){return{key:{type:"key",key:"A",mods:[],hold:0},down:{type:"down",key:"A",mods:[]},up:{type:"up",key:"A"},text:{type:"text",text:""},media:{type:"media",media:"PLAY"},delay:{type:"delay",ms:100},loop:{type:"loop",count:1},endloop:{type:"endloop"},layer:{type:"layer",layer:0},move:{type:"move",ms:120,maxMs:524},combat:{type:"combat",ms:25000,maxMs:85000,avoidRecent:1,choices:defaultRandomChoices()},utilities:{type:"utilities"},call:{type:"call",workflow:""},random:{type:"random",avoidRecent:1,choices:defaultRandomChoices()}}[t];}
 
 function renderStep(k,st,i,depth){
   const row=document.createElement("div");
@@ -487,16 +496,16 @@ function renderStep(k,st,i,depth){
   row.appendChild(up);row.appendChild(dn);row.appendChild(rm);return row;
 }
 
-function keySelect(val,on){const s=document.createElement("select");s.className="val";meta.keys.forEach(k=>{const o=document.createElement("option");o.value=k;o.textContent=k;if(k===val)o.selected=true;s.appendChild(o);});s.onchange=()=>on(s.value);return s;}
+function keySelect(val,on){const s=document.createElement("select");s.className="val";const blank=document.createElement("option");blank.value="";blank.textContent="Modifier only";blank.selected=!val;s.appendChild(blank);meta.keys.forEach(k=>{const o=document.createElement("option");o.value=k;o.textContent=k;if(k===val)o.selected=true;s.appendChild(o);});s.onchange=()=>on(s.value);return s;}
 function modChips(arr,on){const box=document.createElement("div");box.className="modchips";MOD_SET.forEach(m=>{const b=document.createElement("button");b.textContent=m;if(arr.includes(m))b.classList.add("on");b.onclick=()=>{const x=arr.indexOf(m);if(x>=0)arr.splice(x,1);else arr.push(m);on();b.classList.toggle("on");};box.appendChild(b);});return box;}
 function numField(label,val,on,min){const w=document.createElement("span");w.style.cssText="display:inline-flex;gap:6px;align-items:center";const l=document.createElement("label");l.textContent=label;w.appendChild(l);const n=document.createElement("input");n.type="number";n.value=val;if(min!=null)n.min=min;n.oninput=()=>on(parseInt(n.value||"0",10));w.appendChild(n);return w;}
 
 function buildFields(f,st){
-  if(st.type==="key"||st.type==="down"){if(!st.mods)st.mods=[];f.appendChild(modChips(st.mods,()=>{}));f.appendChild(keySelect(st.key,v=>st.key=v));if(st.type==="key")f.appendChild(numField("hold ms",st.hold||0,v=>st.hold=v,0));}
-  else if(st.type==="up"){f.appendChild(keySelect(st.key,v=>st.key=v));}
+  if(st.type==="key"||st.type==="down"){if(!st.mods)st.mods=[];f.appendChild(modChips(st.mods,()=>{}));f.appendChild(keySelect(st.key,v=>st.key=v));if(st.type==="key"){f.appendChild(numField("hold ms",st.hold||0,v=>st.hold=v,0));f.appendChild(numField("max hold (0=fixed)",st.maxHold||0,v=>st.maxHold=v,0));}}
+  else if(st.type==="up"){if(!st.mods)st.mods=[];f.appendChild(modChips(st.mods,updateDirty));f.appendChild(keySelect(st.key,v=>st.key=v));}
   else if(st.type==="text"){const t=document.createElement("input");t.type="text";t.className="txt";t.placeholder="text to type";t.value=st.text||"";t.oninput=()=>st.text=t.value;f.appendChild(t);}
   else if(st.type==="media"){const s=document.createElement("select");s.className="val";meta.media.forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;if(m===st.media)o.selected=true;s.appendChild(o);});s.onchange=()=>st.media=s.value;f.appendChild(s);}
-  else if(st.type==="delay"){f.appendChild(numField("ms",st.ms||0,v=>st.ms=v,0));}
+  else if(st.type==="delay"||st.type==="move"){f.appendChild(numField("min ms",st.ms||0,v=>st.ms=v,0));f.appendChild(numField("max ms (0=fixed)",st.maxMs||0,v=>st.maxMs=v,0));}
   else if(st.type==="loop"){f.appendChild(numField("count (0=∞)",st.count||0,v=>st.count=v,0));}
   else if(st.type==="endloop"){const s=document.createElement("span");s.style.color="var(--faint)";s.textContent="end of innermost loop";f.appendChild(s);}
   else if(st.type==="layer"){const s=document.createElement("select");s.className="val";cfg.layers.forEach((L,i)=>{const o=document.createElement("option");o.value=i;o.textContent=i+": "+(L.name||"Layer");if(i===st.layer)o.selected=true;s.appendChild(o);});s.onchange=()=>st.layer=parseInt(s.value,10);f.appendChild(s);}
@@ -506,7 +515,12 @@ function buildFields(f,st){
     cfg.workflows.filter(w=>w.id!==selectedWorkflow).forEach(w=>{const o=document.createElement("option");o.value=w.id;o.textContent=w.kind+" · "+(w.name||w.id);select.appendChild(o);});
     select.value=st.workflow||"";select.onchange=()=>{st.workflow=select.value;updateDirty();};f.appendChild(select);
   }
-  else if(st.type==="random"){
+  else if(st.type==="utilities"){const hint=document.createElement("span");hint.className="hint";hint.textContent="At a neutral boundary, check enabled workflows whose cooldown has elapsed. First use waits a full cooldown; timers persist across Stop/Start, but reset on reload/reboot.";f.appendChild(hint);}
+  else if(st.type==="random"||st.type==="combat"){
+    if(st.type==="combat"){
+      f.appendChild(numField("attack min ms",st.ms||25000,v=>st.ms=v,1));
+      f.appendChild(numField("attack max ms (≤90000)",st.maxMs||0,v=>st.maxMs=v,0));
+    }
     f.appendChild(numField("exclude last (0–16)",st.avoidRecent||0,v=>{st.avoidRecent=Math.max(0,Math.min(16,v));updateDirty();},0));
     if(!st.choices)st.choices=[];
     const choices=document.createElement("div");choices.className="random-choices";
@@ -845,12 +859,13 @@ function useSteps(){
 }
 
 /* JSON preview/export: snapshots only; never save to the device. */
-let jsonFilename="kabuto.json",jsonReturnFocus=null;
+let jsonFilename="kabuto.json",jsonReturnFocus=null,latestMacroLog=null;
 function openJsonPreview(scope){
   if(scope==="recording"&&(rec.on||!rec.steps.length)){toast("Stop a recording before exporting it",true);return;}
   jsonReturnFocus=document.activeElement;
   const select=$("#jsonScope");select.replaceChildren();
   const scopes=[["selected","Selected key / workflow"],["config","Full configuration"]];
+  if(latestMacroLog)scopes.push(["log","Recent execution log"]);
   if(!rec.on&&rec.steps.length)scopes.push(["recording","Recorded macro"]);
   scopes.forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;select.appendChild(option);});
   select.value=scope;refreshJsonPreview();$("#jsonDialog").showModal();
@@ -858,7 +873,11 @@ function openJsonPreview(scope){
 function refreshJsonPreview(){
   const scope=$("#jsonScope").value;
   let payload,name,hint;
-  if(scope==="recording"){
+  if(scope==="log"){
+    payload={kind:"kabuto-execution-log",scope:"Recent firmware ring buffer, at most 96 events; not a complete session",...latestMacroLog};
+    name="kabuto-execution-log";
+    hint="Recent measured actions from the last log poll, including selected workflows and movement directions. The firmware retains at most 96 events; this is not a complete session trace.";
+  }else if(scope==="recording"){
     payload={version:1,randomizedDelay:false,layers:[{name:"Recording",keys:[{name:"Recorded macro",trigger:"tap",steps:rec.steps}]}]};
     name="kabuto-recording";
     hint="Standalone macros.json configuration with exact recorded delays and key transitions. Loading it replaces the configuration; back up existing macros first.";
@@ -917,12 +936,16 @@ function macroEventLabel(e){
     case "loop-start":return "LOOP START "+(e.value?"x"+e.value:"∞");
     case "loop-end":return "LOOP END";
     case "layer":return "SWITCH LAYER "+e.value;
+    case "move":return "MOVE "+(e.key||"");
+    case "combat":return "ATTACK "+(e.text||"held Ctrl");
+    case "utilities":return "UTILITY "+(e.text||"check");
     case "call":return "CALL "+(e.text||"workflow");
     case "random":return "RANDOM "+(e.text||"macro");
     default:return e.type;
   }
 }
 function renderMacroLog(data){
+  latestMacroLog=data;$("#exportLog").disabled=!(data.events&&data.events.length);
   const list=$("#macroLog");
   const atBottom=list.scrollHeight-list.scrollTop-list.clientHeight<24;
   $("#macroRunState").textContent=data.running?"running · key #"+data.runningKey:"idle";
@@ -963,6 +986,7 @@ async function pollStatus(){
   setTimeout(pollStatus,700);
 }
 
+$("#exportLog").onclick=()=>openJsonPreview("log");
 $("#configJson").onclick=()=>openJsonPreview("config");
 $("#recJson").onclick=()=>openJsonPreview("recording");
 $("#jsonScope").onchange=refreshJsonPreview;

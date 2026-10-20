@@ -115,9 +115,9 @@ controller. Its bindings (`W`, `A`, `H`) are illustrative. To use it, back up
 replaces the device configuration; normal editor saves retain existing keys.
 
 The firmware sends keyboard input without observing game state. The example
-heals when randomly selected, not when health is low. Health/enemy conditions,
-cooldowns and per-action timing ranges are not implemented by this change.
-The existing global timing variation is still available.
+heals when randomly selected, not when health is low. Health/enemy conditions are not implemented. The combat preset below adds
+explicit timing ranges and cooldown-based utility checks; the existing global
+timing variation remains available for fixed-duration steps.
 
 The library supports up to 64 workflows, 256 steps each, and eight nested
 calls. Missing references are rejected on save. Runtime cycles/depth overflow
@@ -138,6 +138,69 @@ before deleting a workflow in the editor. Config version 2 adds:
 ```
 
 See [`tests/README.md`](tests/README.md) for host tests and firmware checks.
+
+## Default first layer: combat baseline
+
+The shipped `data/macros.json` now starts with **1 · Combat baseline** (firmware
+layer index 0). The previous demonstration layer is retained as the second
+layer. A copy is in `examples/combat-layer-one.json`. Build and flash the new
+firmware before uploading the new filesystem; back up device macros first,
+because `uploadfs` replaces the saved configuration. Existing device configs
+are not migrated by flashing firmware alone.
+
+| Physical key | Behaviour |
+| --- | --- |
+| 1 | Toggle combat on/off |
+| 2 | Run one combat block |
+| 3 | Combat while held |
+| 4 | One short movement pulse, without Ctrl |
+| 5 | Jump and pickup, without Ctrl |
+| 6 | Check configured utility cooldowns |
+
+Combat holds Ctrl for a randomly selected 25–85 seconds and chooses among six
+weighted micro combinations, excluding the immediately preceding choice. They
+vary movement/jump/pickup order, including movement while Z is held. These are
+adaptations guided by the recording, not exact replays. Arrow pulses last
+120–524 ms (163–322 ms during pickup), jump holds 120–194 ms, and pickup taps
+72–130 ms. Pauses have independent explicit ranges. Ctrl stays held across
+these actions; each arrow is released after its pulse. The engine caps combat
+blocks at 90 seconds, interrupts nested waits at the block deadline, and
+releases all inputs on completion or Stop. The cap is enforced cooperatively
+by the firmware scheduler, not by a hardware timer.
+
+Movement selection uses cumulative left/right pulse duration, favouring the
+opposite side when necessary to keep the difference approximately within
+600 ms. This is not position feedback or enemy detection, and does not
+promise equal attack time facing each side. Collision, acceleration and game
+mechanics can still cause drift. The balance resets when a new key activation
+starts, but continues across repeated Toggle/Hold passes.
+
+Explicit timing ranges override global jitter. The default disables global
+jitter to avoid the old +/-1-second adjustment distorting longer waits. A
+`delay` or `move` uses `ms` and optional `maxMs`; a `key` uses `hold` and optional
+`maxHold`. Times are inclusive integer milliseconds. Delays/taps support up to
+90000 ms; balanced movement supports 1–600 ms. Keep raw held direction keys out
+of combat micros; use the bounded movement step instead. Text/media steps are
+skipped inside combat blocks so they cannot introduce an uninterruptible
+operation. Eight-level recursion/cycle protection still applies.
+
+Pet food, healing and passive skill exist as **disabled, empty utility nanos**.
+Assign their actual key steps in the editor, then enable **Occasional utility**.
+Their initial minimum gaps are 30, 5 and 6 minutes respectively. The probability
+settings are 50, 150 and 100 per thousand checks. Each enabled, non-empty action
+gets an independent chance roll after its cooldown; at most one successful
+candidate is selected at a check. These are minimum gaps, not deadlines.
+The default checks only between attack blocks, after inputs are released.
+The full cooldown must elapse from the first macro activation before first use,
+and then from the previous utility's completion. Timers survive Stop/Start;
+configuration reload or reboot resets them. They are volatile, not persisted
+across power loss. This is timer-driven healing, not health-aware healing.
+
+The execution log has **Export log JSON** for the latest observed actions,
+selected combinations and measured timings. It is a snapshot of the firmware's
+96-event ring buffer, not a complete session trace. Macro JSON exports contain
+definitions, not simulated executions. Neither random selection nor finite
+history exclusions guarantees absence of longer repeated patterns.
 
 ## Preview and export JSON
 

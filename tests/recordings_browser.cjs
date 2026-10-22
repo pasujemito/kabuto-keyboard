@@ -13,7 +13,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    if(url.hostname!=='kabuto.test')return route.abort();
    if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
    if(url.pathname==='/api/config'&&truncateConfig)return route.fulfill({contentType:'application/json',body:JSON.stringify(config).slice(0,20000)});
-   const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','W','H','LEFT','RIGHT','Z'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:url.pathname==='/api/storage'?{fsTotal:1441792,fsUsed:180224,configBytes:80719,maxConfig:262144,heapSize:327680,heapFree:122880,heapLargest:73728}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
+   const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','C','W','H','F1','LEFT','RIGHT','Z'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:url.pathname==='/api/storage'?{fsTotal:1441792,fsUsed:180224,configBytes:80719,maxConfig:262144,heapSize:327680,heapFree:122880,heapLargest:73728}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   });
   // A truncated config (device low on memory) shows an error instead of an
@@ -79,6 +79,29 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('.sheet-head .close').click();
   await page.locator('#tabEdit').click();assert(await page.getByRole('radiogroup',{name:'Playback mode'}).isVisible());
   const bounds=await page.locator('.tabbar').boundingBox();assert(bounds.y+bounds.height<=845);
+  // The dynamic editor stays in the recording library and fits a phone.
+  await page.locator('#tabRecordings').click();
+  await page.getByRole('button',{name:'Dynamic pattern',exact:true}).click();
+  await page.locator('#dynamicDialog[open]').waitFor();
+  await page.getByLabel('Dynamic pattern name').fill('Jump combat varied');
+  await page.getByLabel('Turn after batch (%)',{exact:true}).fill('75');
+  await page.getByLabel('Skill 1 chance per batch (%)',{exact:true}).fill('20');
+  await page.getByRole('button',{name:'Add skill',exact:true}).click();
+  await page.getByLabel('Skill 2 key',{exact:true}).selectOption('H');
+  const dynamicBounds=await page.locator('#dynamicDialog').boundingBox();assert(dynamicBounds.x>=0&&dynamicBounds.x+dynamicBounds.width<=390);
+  assert(await page.locator('#dynamicDialog').evaluate(d=>d.scrollWidth<=d.clientWidth));
+  await page.screenshot({path:'/tmp/kabuto-dynamic-mobile.png'});
+  await page.getByRole('button',{name:'Preview example JSON',exact:true}).click();
+  await page.locator('#jsonDialog[open]').waitFor();
+  const generated=JSON.parse(await page.locator('#jsonText').inputValue());assert(generated.steps.length>1&&generated.steps[0].key);
+  await page.locator('#jsonClose').click();
+  await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicDialog[open]').count(),0);
+  const dynamicCard=page.locator('.recording-card').filter({hasText:'Dynamic ·'});assert.equal(await dynamicCard.count(),1);
+  await dynamicCard.getByRole('button',{name:'Edit',exact:true}).click();
+  assert.equal(await page.getByLabel('Turn after batch (%)',{exact:true}).inputValue(),'75');
+  assert.equal(await page.getByLabel('Skill 1 chance per batch (%)',{exact:true}).inputValue(),'20');
+  await page.locator('#dynamicClose').click();
   assert.deepEqual(errors,[]);console.log('desktop/mobile recordings browser tests passed');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -82,6 +82,7 @@ static const char* stepTypeName(StepType type) {
         case StepType::MOVE:       return "move";
         case StepType::COMBAT:     return "combat";
         case StepType::UTILITIES:  return "utilities";
+        case StepType::DYNAMIC:    return "dynamic";
         case StepType::CALL:       return "call";
         case StepType::RANDOM:     return "random";
     }

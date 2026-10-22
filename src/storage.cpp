@@ -31,10 +31,69 @@ static uint8_t parseMods(JsonVariantConst v) {
     return mods;
 }
 
+// Dynamic presets stay compact: validate all user-controlled bounds before
+// the uploaded temporary file can replace the working configuration.
+static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
+    auto validId=[](const std::string& id){
+        if(id.empty() || id.size()>48)return false;
+        for(char c:id)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'))return false;
+        return true;
+    };
+    p.id = o["id"] | "";
+    if (!validId(p.id)) return false;
+    auto range = [](JsonVariantConst v, DynamicRange& out, uint32_t low, uint32_t high) {
+        if (v.isNull()) return true;
+        if (!v.is<JsonArrayConst>() || v.size()!=2 || !v[0].is<uint32_t>() || !v[1].is<uint32_t>()) return false;
+        out = {v[0].as<uint32_t>(),v[1].as<uint32_t>()};
+        return out.min >= low && out.max >= out.min && out.max <= high;
+    };
+    auto chance = [](JsonVariantConst v, uint16_t& out) {
+        if (v.isNull()) return true;
+        if (!v.is<double>()) return false;
+        double value = v.as<double>();
+        if (!std::isfinite(value) || value < 0 || value > 1) return false;
+        out = (uint16_t)std::lround(value*1000);return true;
+    };
+    if (!range(o["jump_to_attack"],p.jumpToAttack,0,90000) ||
+        !range(o["attack_to_jump_up"],p.attackToJumpUp,0,90000) ||
+        !range(o["jump_up_to_attack_up"],p.jumpUpToAttackUp,0,90000) ||
+        !range(o["combo_gap"],p.comboGap,0,90000) ||
+        !range(o["dir_hold"],p.directionHold,1,90000) ||
+        !range(o["dir_after"],p.directionAfter,0,90000) ||
+        !range(o["combos_per_side"],p.combosPerBatch,1,100) ||
+        !range(o["sides"],p.batches,1,100) || !chance(o["turn_chance"],p.turnChancePermille)) return false;
+    if (p.jumpToAttack.max+p.attackToJumpUp.max>90000 || p.attackToJumpUp.max+p.jumpUpToAttackUp.max>90000) return false;
+    if (!o["shuffle_skills"].isNull() && !o["shuffle_skills"].is<bool>()) return false;
+    p.shuffleSkills = o["shuffle_skills"] | true;
+    if (!o["skills"].is<JsonArrayConst>() || o["skills"].size()>8) return false;
+    std::set<std::string> ids;
+    for (JsonObjectConst s : o["skills"].as<JsonArrayConst>()) {
+        DynamicSkill skill;skill.id=s["id"] | "";
+        if (!validId(skill.id) || !ids.insert(skill.id).second) return false;
+        skill.keycode=keycodeFromName(String(s["key"] | ""));
+        if (!skill.keycode || skill.keycode==KC_LEFT || skill.keycode==KC_RIGHT) return false;
+        if (!s["enabled"].isNull() && !s["enabled"].is<bool>()) return false;
+        skill.enabled=s["enabled"] | true;
+        if (!chance(s["chance"],skill.chancePermille) || !range(s["repeats"],skill.repeats,1,10) ||
+            !range(s["hold"],skill.hold,1,90000) || !range(s["after"],skill.after,0,90000)) return false;
+        if (!s["cooldown_ms"].isNull() && !s["cooldown_ms"].is<uint32_t>()) return false;
+        skill.cooldownMs=s["cooldown_ms"] | 0U;
+        if (skill.cooldownMs>86400000U) return false;
+        p.skills.push_back(std::move(skill));
+    }
+    return true;
+}
+
 static bool parseStep(JsonObjectConst o, Step& step) {
     String type = o["type"] | "";
     type.toLowerCase();
 
+    if (type == "dynamic") {
+        if (!o["pattern"].is<JsonObjectConst>()) return false;
+        DynamicPattern pattern;
+        if (!parseDynamic(o["pattern"].as<JsonObjectConst>(),pattern)) return false;
+        step.type=StepType::DYNAMIC;step.setPattern(std::move(pattern));return true;
+    }
     if (type == "key") {
         step.type = StepType::KEY;
         step.keycode = keycodeFromName(String((const char*)(o["key"] | "")));
@@ -155,14 +214,16 @@ static bool validateWorkflows(JsonDocument& doc, String& err) {
             err = "workflow requires steps (maximum 256)"; return false;
         }
     }
+    std::set<std::string> patternIds;
     auto checkSteps = [&](JsonArrayConst steps, bool strict) -> bool {
         int loops = 0;
         for (JsonObjectConst so : steps) {
             String type = so["type"] | "";
             type.toLowerCase();
-            if (strict || type == "call" || type == "random" || type == "combat" || type == "move" || type == "utilities" || type == "delay" || type == "key") {
+            if (strict || type == "call" || type == "random" || type == "combat" || type == "move" || type == "utilities" || type == "dynamic" || type == "delay" || type == "key") {
                 Step step;
                 if (!parseStep(so, step)) { err = "invalid workflow step or random choice"; return false; }
+                if (step.type == StepType::DYNAMIC && !patternIds.insert(step.pattern()->id).second) { err="dynamic pattern IDs must be unique";return false; }
                 if (step.type == StepType::CALL && !ids.count(step.text())) {
                     err = "call references a missing workflow"; return false;
                 }
@@ -203,7 +264,7 @@ bool loadConfig(Config& cfg) {
     if (!f) { cfg.ensureLayer(0); return false; }
 
     JsonDocument doc;
-    DeserializationError e = deserializeJson(doc, f);
+    DeserializationError e = deserializeJson(doc, f, DeserializationOption::NestingLimit(16));
     f.close();
     if (e) { cfg.ensureLayer(0); return false; }
 
@@ -265,6 +326,19 @@ static void modsToJson(uint8_t mods, JsonArray out) {
 
 static void stepToJson(const Step& s, JsonObject o) {
     switch (s.type) {
+        case StepType::DYNAMIC: {
+            const DynamicPattern* p=s.pattern();if(!p)break;
+            o["type"]="dynamic";JsonObject d=o["pattern"].to<JsonObject>();d["id"]=p->id;
+            auto range=[&](JsonObject object,const char* name,DynamicRange value){JsonArray a=object[name].to<JsonArray>();a.add(value.min);a.add(value.max);};
+            range(d,"jump_to_attack",p->jumpToAttack);range(d,"attack_to_jump_up",p->attackToJumpUp);
+            range(d,"jump_up_to_attack_up",p->jumpUpToAttackUp);range(d,"combo_gap",p->comboGap);
+            range(d,"dir_hold",p->directionHold);range(d,"dir_after",p->directionAfter);
+            range(d,"combos_per_side",p->combosPerBatch);range(d,"sides",p->batches);
+            d["turn_chance"]=p->turnChancePermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
+            JsonArray skills=d["skills"].to<JsonArray>();
+            for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;k["cooldown_ms"]=skill.cooldownMs;range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
+            break;
+        }
         case StepType::KEY:
             o["type"] = "key";
             o["key"]  = keyNameFromCode(s.keycode);
@@ -402,7 +476,7 @@ bool commitConfigFile(const char* path, String& err) {
     File f = LittleFS.open(path, "r");
     if (!f) { err = "cannot open uploaded config"; return false; }
     JsonDocument doc;
-    DeserializationError e = deserializeJson(doc, f);
+    DeserializationError e = deserializeJson(doc, f, DeserializationOption::NestingLimit(16));
     f.close();
     bool ok = false;
     if (e) err = String("invalid json: ") + e.c_str();

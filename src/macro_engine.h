@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include "config.h"
+#include "dynamic_pattern.h"
 
 // ---------------------------------------------------------------------------
 // Macro data model + execution engine.
@@ -35,6 +36,7 @@ enum class StepType : uint8_t {
     COMBAT,     // hold Ctrl while choosing bounded micro workflows
     UTILITIES,  // occasionally invoke eligible cooldown workflows
     CALL,       // execute a named workflow once
+    DYNAMIC,    // stream a fresh parameterized jump-attack pattern
     RANDOM,     // run one randomly selected macro from 'choices'
 };
 
@@ -50,6 +52,7 @@ struct MacroRef {
 struct StepExtra {
     std::string           text;    // TEXT: string to type, CALL: workflow id
     std::vector<MacroRef> choices; // RANDOM / COMBAT
+    std::shared_ptr<const DynamicPattern> pattern; // DYNAMIC only
 };
 
 struct Step {
@@ -64,6 +67,8 @@ struct Step {
 
     const std::string& text() const { static const std::string none; return extra ? extra->text : none; }
     const std::vector<MacroRef>& choices() const { static const std::vector<MacroRef> none; return extra ? extra->choices : none; }
+    const DynamicPattern* pattern() const { return extra ? extra->pattern.get() : nullptr; }
+    void setPattern(DynamicPattern value) { auto e = mutableExtra(); e->pattern = std::make_shared<const DynamicPattern>(std::move(value)); extra = std::move(e); }
     void setText(std::string value) { auto e = mutableExtra(); e->text = std::move(value); extra = std::move(e); }
     void setChoices(std::vector<MacroRef> value) { auto e = mutableExtra(); e->choices = std::move(value); extra = std::move(e); }
 
@@ -198,6 +203,7 @@ private:
     bool utilityClockStarted_ = false;
     uint32_t utilityEpoch_ = 0;
     std::map<std::string, uint32_t> utilityLastRun_;
+    std::map<std::string, uint32_t> dynamicSkillLastRun_;
     Config cfg_;
     int    layer_      = 0;
 

@@ -1,0 +1,67 @@
+{
+  "name": "Dynamic jump-attack",
+  "trigger": "tap",
+  "steps": [
+    {
+      "type": "dynamic",
+      "pattern": {
+        "id": "jump-combat-dynamic",
+        "jump_to_attack": [
+          45,
+          120
+        ],
+        "attack_to_jump_up": [
+          30,
+          120
+        ],
+        "jump_up_to_attack_up": [
+          16,
+          80
+        ],
+        "combo_gap": [
+          510,
+          760
+        ],
+        "dir_hold": [
+          85,
+          180
+        ],
+        "dir_after": [
+          16,
+          330
+        ],
+        "combos_per_side": [
+          2,
+          10
+        ],
+        "sides": [
+          8,
+          12
+        ],
+        "turn_chance": 0.8,
+        "shuffle_skills": true,
+        "skills": [
+          {
+            "id": "skill-c",
+            "enabled": true,
+            "key": "C",
+            "chance": 0.1,
+            "repeats": [
+              2,
+              2
+            ],
+            "hold": [
+              85,
+              110
+            ],
+            "after": [
+              880,
+              1130
+            ],
+            "cooldown_ms": 0
+          }
+        ]
+      }
+    }
+  ]
+}

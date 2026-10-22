@@ -5,6 +5,8 @@ and interpreter. Minimal adapters record HID output and provide a deterministic
 clock/RNG; they do not simulate Bluetooth, FreeRTOS scheduling or ESP32 hardware.
 
 ```sh
+g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/kabuto-dynamic-tests
+/tmp/kabuto-dynamic-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o /tmp/kabuto-selection-tests
 /tmp/kabuto-selection-tests
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/kabuto-engine-tests
@@ -59,3 +61,14 @@ editor: all steps of a multi-part recording, timeline times, editing a delay,
 insert/delete, the discard prompt, and re-splitting on Apply. Storage tests
 check that uploads are committed through a temporary file that is removed on
 failure.
+
+Dynamic tests exercise the triangular sampler's endpoints, bounds and centre
+weighting; live Alt/Ctrl ordering and actual hold times; fresh batch counts;
+0/100% turn probability; independent skill repeats/chances/cooldowns;
+Stop during direction, modifier and skill holds; definition persistence; and
+rejection of invalid or unsafe bounds without replacing the saved config.
+The UI tests cover the mobile settings dialog, multiple skills, invalid edits,
+JSON previews, discard protection, export/import and independent timer IDs.
+Chromium checks the new dialog on a phone viewport while retaining the existing
+pad, storage, recording editor and assignment tests. Physical BLE/game behaviour
+remains outside these host tests.

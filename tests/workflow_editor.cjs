@@ -107,6 +107,49 @@ async function main(){
   evaluate(`selLayer=1;renderLayers();`);w.document.querySelector('#layerDelete').click();
   assert.equal(snapshot().layers.length,2);assert.match(w.document.querySelector('#toast').textContent,/switches to or plays from this layer/);
   evaluate(`showTab('recordings')`);assert(w.document.querySelector('#panelRecordings').classList.contains('show'));
+  // Dynamic presets use a settings dialog, not a low-level step editor.
+  evaluate(`meta.keys.push('C','F1');`);
+  w.document.querySelector('#newDynamic').click();assert(w.document.querySelector('#dynamicDialog').open);
+  assert.equal(w.document.querySelector('#dynamicName').value,'Dynamic jump-attack');
+  const chance=w.document.querySelector('[aria-label="Skill 1 chance per batch (%)"]');chance.value='35';chance.oninput();
+  w.document.querySelector('#dynamicAddSkill').click();
+  const h=w.document.querySelector('[aria-label="Skill 2 key"]');h.value='H';h.onchange();
+  const hEnabled=w.document.querySelector('[aria-label="Enable skill 2"]');hEnabled.click();
+  const cooldown=w.document.querySelector('[aria-label="Skill 2 minimum interval (minutes)"]');cooldown.value='5';cooldown.oninput();
+  // Invalid fields leave the configuration unchanged and keep the draft open.
+  const originalConfig=snapshot();
+  const max=w.document.querySelector('[aria-label="Attacks per batch maximum"]');max.value='1';max.oninput();
+  w.document.querySelector('#dynamicApply').click();assert.match(w.document.querySelector('#dynamicError').textContent,/ordered range/);assert.deepEqual(snapshot(),originalConfig);
+  max.value='10';max.oninput();w.document.querySelector('#dynamicApply').click();assert(!w.document.querySelector('#dynamicDialog').open);
+  let dynamic=snapshot().workflows.find(r=>r.steps.length===1&&r.steps[0].type==='dynamic');assert(dynamic);
+  assert.equal(dynamic.steps[0].pattern.skills.length,2);assert.equal(dynamic.steps[0].pattern.skills[0].chance,.35);
+  assert.equal(dynamic.steps[0].pattern.skills[1].cooldown_ms,300000);
+  assert.match(evaluate(`recordingSummary(cfg.workflows.find(r=>r.id===${JSON.stringify(dynamic.id)}))`),/Dynamic/);
+  evaluate(`openStepEditor(${JSON.stringify(dynamic.id)});`);assert(w.document.querySelector('#dynamicDialog').open);assert(!w.document.querySelector('#editDialog').open);
+  // One generated example preserves overlap order and establishes facing first.
+  const example=JSON.parse(evaluate(`JSON.stringify((()=>{const p=JSON.parse(JSON.stringify(dynamicDraft));p.sides=[2,2];p.combos_per_side=[2,2];p.turn_chance=1;p.skills[0].chance=1;p.skills[1].chance=0;return generateDynamicSample(p,()=>0);})())`));
+  assert.equal(example.steps[0].key,'LEFT');
+  const dirs=example.steps.filter(s=>s.type==='down'&&['LEFT','RIGHT'].includes(s.key)).map(s=>s.key);assert.deepEqual(dirs,['LEFT','RIGHT','LEFT']);
+  const edges=example.steps.filter(s=>s.mods?.length).map(s=>s.type+':'+s.mods[0]);
+  assert.deepEqual(edges,Array.from({length:4},()=>['down:alt','down:ctrl','up:alt','up:ctrl']).flat());
+  assert.equal(example.steps.filter(s=>s.type==='down'&&s.key==='C').length,4);
+  assert(!example.steps.some(s=>s.key==='H'));
+  w.document.querySelector('#dynamicPreview').click();assert(w.document.querySelector('#jsonDialog').open);
+  assert.equal(w.document.querySelector('#jsonScope').value,'generated');assert(JSON.parse(jsonText.value).steps.length>1);
+  evaluate('closeJsonPreview();closeDynamicEditor();');
+  // Preview does not replace the live definition. Export/import retains it
+  // while assigning fresh timer identities to an independent copy.
+  assert.equal(snapshot().workflows.find(r=>r.id===dynamic.id).steps[0].type,'dynamic');
+  evaluate(`selectedWorkflow=${JSON.stringify(dynamic.id)};openJsonPreview('selected');`);
+  const live=JSON.parse(jsonText.value);assert.equal(live.steps[0].type,'dynamic');
+  const importedId=evaluate(`importRecordingObject(${JSON.stringify(live)}).id`);
+  assert.notEqual(snapshot().workflows.find(r=>r.id===importedId).steps[0].pattern.id,live.steps[0].pattern.id);
+  evaluate('closeJsonPreview();');
+  // Pattern cancel/discard has the same protection as the recording editor.
+  evaluate(`openDynamicEditor(${JSON.stringify(dynamic.id)});`);
+  const name=w.document.querySelector('#dynamicName');name.value='Changed';name.oninput();w.confirm=()=>false;
+  w.document.querySelector('#dynamicClose').click();assert(w.document.querySelector('#dynamicDialog').open);
+  w.confirm=()=>true;w.document.querySelector('#dynamicClose').click();assert(!w.document.querySelector('#dynamicDialog').open);
   dom.window.close();console.log('recordings and button assignment tests passed');
 }
 main().catch(e=>{dom.window.close();console.error(e);process.exitCode=1;});

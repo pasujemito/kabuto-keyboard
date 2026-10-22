@@ -63,5 +63,35 @@ int main(){
     size_t recordedSteps=0;
     for(const auto& part:roundtrip.workflows)if(part.recordingPartOf=="sample-recording")recordedSteps+=part.steps.size();
     assert(recordedSteps==989);
+    // Dynamic definitions remain compact and retain every parameter on disk.
+    std::ifstream dynamicFile("examples/jump-combat-dynamic.json");assert(dynamicFile);
+    std::string fragment((std::istreambuf_iterator<char>(dynamicFile)),std::istreambuf_iterator<char>());
+    String dynamicJson(std::string("{\"layers\":[{\"keys\":[")+fragment+"]}]}");
+    assert(saveRawJson(dynamicJson,err));assert(loadConfig(cfg));
+    const auto* pattern=cfg.layers[0].keys[0].steps[0].pattern();assert(pattern);
+    assert(pattern->jumpToAttack.min==45&&pattern->jumpToAttack.max==120);
+    assert(pattern->combosPerBatch.min==2&&pattern->batches.max==12&&pattern->turnChancePermille==800);
+    assert(pattern->skills.size()==1&&pattern->skills[0].keycode==6&&pattern->skills[0].chancePermille==100);
+    assert(saveConfig(cfg));assert(loadConfig(roundtrip));
+    pattern=roundtrip.layers[0].keys[0].steps[0].pattern();
+    assert(pattern&&pattern->skills[0].after.max==1130&&pattern->shuffleSkills);
+    auto good=readRawJson();
+    const char* badPatterns[]={
+      R"({"id":"p","jump_to_attack":[121,45],"skills":[]})",
+      R"({"id":"p","turn_chance":1.1,"skills":[]})",
+      R"({"id":"p","turn_chance":true,"skills":[]})",
+      R"({"id":"p","sides":[0,12],"skills":[]})",
+      R"({"id":"p","combo_gap":[0,90001],"skills":[]})",
+      R"({"id":"p","attack_to_jump_up":[50000,60000],"jump_up_to_attack_up":[50000,60000],"skills":[]})",
+      R"({"id":"p","skills":[{"id":"c","key":"LEFT"}]})",
+      R"({"id":"p","skills":[{"id":"c","key":"C","cooldown_ms":-1}]})",
+      R"({"id":"p","skills":[{"id":"c","key":"C","repeats":[0,2]}]})",
+      R"({"id":"p","skills":[{"id":"c","key":"C","chance":-0.1}]})",
+      R"({"id":"p","skills":[{"id":"c","key":"C"},{"id":"c","key":"H"}]})"
+    };
+    for(auto bad:badPatterns){
+      String raw(std::string("{\"layers\":[{\"keys\":[{\"steps\":[{\"type\":\"dynamic\",\"pattern\":")+bad+"}]}]}]}");
+      assert(!saveRawJson(raw,err));assert(readRawJson()==good);assert(!LittleFS.exists(MACRO_TMP_FILE));
+    }
     std::cout<<"workflow storage tests passed\n";
 }

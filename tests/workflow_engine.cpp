@@ -39,6 +39,7 @@ void HidKeyboard::releaseKey(uint8_t key) {
 void HidKeyboard::releaseModifiers(uint8_t mods) {
     if((mods&1)&&(heldMods&1))ctrlDurations.push_back(millis()-ctrlStarted);
     heldMods &= ~mods;
+    hidEvents.push_back({millis(),0,heldMods,false});
 }
 void HidKeyboard::releaseAll() { releaseModifiers(255);held.clear(); ++releases; }
 void HidKeyboard::typeString(const String&) {}
@@ -215,5 +216,51 @@ int main() {
     ctrlDurations.clear();run(engine,{loopStart,attackDown,loopDelay,ctrlUp,loopEnd});
     assert((ctrlDurations==std::vector<uint32_t>{4994,5006}));
     testRandomHook={};engine.config().randomizedDelay=false;
+    // Dynamic playback streams the preserved Alt/Ctrl overlap, with explicit
+    // sampled timings taking precedence over the configured global jitter.
+    DynamicPattern p;p.id="test-dynamic";p.batches={3,3};p.combosPerBatch={2,2};p.turnChancePermille=1000;
+    Step dynamic;dynamic.type=StepType::DYNAMIC;dynamic.setPattern(p);
+    engine.config().randomizedDelay=true;hidEvents.clear();ctrlDurations.clear();
+    run(engine,{dynamic});
+    std::vector<HidEvent> transitions;uint8_t previous=0;
+    for(auto e:hidEvents)if(e.key==0&&e.mods!=previous){transitions.push_back(e);previous=e.mods;}
+    assert(transitions.size()==3*2*4);
+    for(size_t i=0;i<transitions.size();i+=4){
+        assert(transitions[i].mods==4&&transitions[i+1].mods==5&&transitions[i+2].mods==1&&transitions[i+3].mods==0);
+        assert(transitions[i+1].at-transitions[i].at==45);
+        assert(transitions[i+2].at-transitions[i+1].at==30);
+        assert(transitions[i+3].at-transitions[i+2].at==16);
+    }
+    std::vector<uint8_t> directions;
+    for(auto e:hidEvents)if(e.down&&(e.key==80||e.key==79)){assert(!e.mods);directions.push_back(e.key);}
+    assert((directions==std::vector<uint8_t>{80,79,80,79}));
+    assert(ctrlDurations.size()==6&&std::all_of(ctrlDurations.begin(),ctrlDurations.end(),[](uint32_t v){return v==46;}));
+    p.turnChancePermille=0;dynamic.setPattern(p);hidEvents.clear();run(engine,{dynamic});
+    for(auto e:hidEvents)if(e.down&&(e.key==80||e.key==79))assert(e.key==80);
+    // Fresh counts each activation: minimum draws vs maximum draws.
+    p.batches={2,4};p.combosPerBatch={1,3};dynamic.setPattern(p);
+    ctrlDurations.clear();run(engine,{dynamic});assert(ctrlDurations.size()==2);
+    testRandomHook=[](long upper){return upper-1;};ctrlDurations.clear();run(engine,{dynamic});
+    assert(ctrlDurations.size()==12&&ctrlDurations[0]==200);testRandomHook={};
+    // Independent skills, repeat counts, and a cooldown retained over Stop/Start.
+    p.batches={3,3};p.combosPerBatch={1,1};
+    DynamicSkill c;c.id="skill-c";c.keycode=6;c.chancePermille=1000;c.cooldownMs=1000000;
+    DynamicSkill h;h.id="skill-h";h.keycode=11;h.chancePermille=1000;h.repeats={1,1};
+    p.skills={c,h};dynamic.setPattern(p);hidEvents.clear();run(engine,{dynamic});
+    auto pressCount=[&](uint8_t key){return std::count_if(hidEvents.begin(),hidEvents.end(),[&](const HidEvent& e){return e.down&&e.key==key;});};
+    assert(pressCount(6)==2&&pressCount(11)==3);
+    for(auto e:hidEvents)if(e.key==6||e.key==11)assert(!e.mods);
+    hidEvents.clear();run(engine,{dynamic});assert(pressCount(6)==0&&pressCount(11)==3);
+    p.skills[0].chancePermille=0;p.skills[1].enabled=false;dynamic.setPattern(p);hidEvents.clear();
+    engine.dynamicSkillLastRun_.clear();run(engine,{dynamic});assert(pressCount(6)==0&&pressCount(11)==0);
+    // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.
+    p.skills[0].chancePermille=1000;p.skills[0].cooldownMs=0;dynamic.setPattern(p);
+    for(uint32_t offset: {1U,105U,150U,185U,210U,720U,800U,1700U}){
+        uint32_t end=millis()+offset;testDelayHook=[&]{if(millis()>=end)engine.stopFlag_=true;};
+        run(engine,{dynamic});testDelayHook={};assert(held.empty()&&!heldMods);
+    }
+    // Dynamic timing is refused inside a parent-held chord rather than
+    // releasing/changing the parent's modifiers unexpectedly.
+    ctrlDurations.clear();run(engine,{attackDown,dynamic,ctrlUp});assert(ctrlDurations.size()==1);
     std::cout << "workflow engine tests passed\n";
 }

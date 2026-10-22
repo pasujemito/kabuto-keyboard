@@ -169,6 +169,72 @@ delay or key tap after it. **Apply changes** re-splits the recording into
 storage parts; press the header **Save** to store it on the device. Closing with
 unapplied changes asks before discarding them.
 
+## Dynamic jump-attack patterns
+
+In **Recordings**, choose **Dynamic pattern**. It creates a reusable preset
+assigned to a button exactly like a recording: Once, Toggle, Hold, sequences
+and random recording choices all work as before. Assigned items retain the
+existing unlock-to-edit protection. Existing recordings and defaults are not
+replaced automatically. An importable preset is in
+[`examples/jump-combat-dynamic.json`](examples/jump-combat-dynamic.json).
+
+The device generates fresh batches while playing, using the ranges below.
+It does not generate a large recording once and then repeat that file.
+Timings and integer counts use a symmetric triangular distribution centred
+between each minimum and maximum. This is a chosen random model, not evidence
+of human behaviour or a guarantee against repetition/detection.
+
+| Setting | Default |
+| --- | --- |
+| Alt down → Ctrl down | 45–120 ms |
+| Ctrl down → Alt up | 30–120 ms |
+| Alt up → Ctrl up | 16–80 ms |
+| Gap after each attack | 510–760 ms |
+| Direction hold | 85–180 ms |
+| Gap after direction | 16–330 ms |
+| Attacks per batch | 2–10 |
+| Batches per play | 8–12 |
+| Change facing after a batch | 80% |
+
+Every jump-attack retains that exact press/release order. Directions are tapped
+between batches, never mixed into an Alt/Ctrl chord. The initial facing is
+chosen and actually tapped **before** the first attack, unlike the supplied
+Python example which only tracked it in memory. After each batch, change to
+the opposite direction with the configured probability; otherwise tap the
+same direction. A final direction tap has no following wait. A 100% turn
+chance gives strict alternation, and 0% keeps the initial facing. Direction
+taps also move the character, so this is not position balancing or feedback.
+
+The default skill is **C**, enabled with a **10% chance after each batch**,
+tapped twice. Each tap holds for 85–110 ms and has an 880–1130 ms gap **after
+release**, including the last tap. Thus start-to-start spacing includes both
+hold and gap. Add up to eight independent skills; configure their key,
+probability, repeat-count range, hold/gap ranges and optional minimum interval.
+New additional skills start disabled until configured/enabled. Multiple skills
+can run at the same boundary; their order can be shuffled. They run only after
+all jump/attack inputs have been released.
+
+A skill's minimum interval is measured from completion of its previous burst;
+it does not guarantee execution by a deadline. The first opportunity needs no
+initial cooldown. An interrupted burst consumes its cooldown too. Timers
+survive repeated activations and Toggle/Hold passes, but config reload/reboot
+resets them. A copied/imported preset gets independent timer identities.
+
+Explicit sampled timings are not modified again by global recording jitter.
+Each wait is interruptible, and Stop releases arrows, skills, Alt and Ctrl.
+Combined Alt or Ctrl hold bounds cannot exceed 90 seconds. Parameter bounds
+and skill keys are validated before an uploaded config can replace the current
+one. Playback streams one unit at a time, preserving the compact step storage
+introduced in the recent memory improvements.
+
+**Preview example JSON** creates one illustrative static sequence using fresh
+cooldown history. It is not the next actual device run. Importing that example
+stores a static recording; exporting the dynamic preset itself retains its
+live generator definition. Very large static previews are limited to 12000
+steps; the live generator does not buffer a full run. Apply edits, then use the
+header **Save** to persist them. Install the new firmware and filesystem before
+using dynamic definitions on a device.
+
 ## JSON import and export
 
 **Import JSON** in Recordings accepts a recorded macro fragment with a `steps`

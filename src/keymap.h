@@ -62,4 +62,5 @@ uint16_t consumerFromName(const String& name);
 
 // Reverse lookups (for serializing a config back to JSON).
 String keyNameFromCode(uint8_t code);     // "A", "ENTER", "F5", "" if unknown
+String modifierNameFromMask(uint8_t mods); // "CTRL", "ALT", ... for one modifier, "" otherwise
 String consumerNameFromUsage(uint16_t u); // "VOLUP", ... "" if unknown

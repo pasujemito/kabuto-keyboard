@@ -7,7 +7,7 @@ your phone. No cables to your computer, no drivers, no reflashing to change a ke
 
 - ⌨️ **Pairs like any Bluetooth keyboard:** Windows, macOS, Linux, iOS, Android
 - 🎬 **Record & replay:** capture your keys with their real timing, then play them back
-- 🎲 **Dynamic patterns:** fresh, never-quite-the-same sequences, with handy presets
+- 🎲 **Dynamic patterns:** fresh, never-quite-the-same sequences: your keys, HP & Mana timers, skills, presets
 - 🗂️ **Layers & modes:** tap, toggle or hold, on up to 8 layers
 - 📱 **Phone-friendly editor:** built into the pad, no app to install
 - 🏠 **On your Wi-Fi too:** open `kabuto.local` from any device, PIN-protected

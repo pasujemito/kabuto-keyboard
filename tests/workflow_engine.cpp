@@ -243,6 +243,17 @@ int main() {
     ctrlDurations.clear();run(engine,{dynamic});assert(ctrlDurations.size()==2);
     testRandomHook=[](long upper){return upper-1;};ctrlDurations.clear();run(engine,{dynamic});
     assert(ctrlDurations.size()==12&&ctrlDurations[0]==200);testRandomHook={};
+    // Custom movement keys (Space jumps, X attacks, A/D turn) keep the chord order.
+    {
+        DynamicPattern q=p;q.sets={2,2};q.attacksPerSet={1,1};q.turnChancePermille=1000;q.skills.clear();
+        q.jump=dynamicKeycode(0x2C);q.attack=dynamicKeycode(0x1B);q.left=dynamicKeycode(0x04);q.right=dynamicKeycode(0x07);
+        Step custom=dynamic;custom.setPattern(q);hidEvents.clear();run(engine,{custom});
+        std::vector<std::pair<uint8_t,bool>> keys;
+        for(auto e:hidEvents){assert(!e.mods);if(e.key)keys.push_back({e.key,e.down});}
+        std::vector<std::pair<uint8_t,bool>> expected{{4,true},{4,false},{0x2C,true},{0x1B,true},{0x2C,false},{0x1B,false},
+                                                       {7,true},{7,false},{0x2C,true},{0x1B,true},{0x2C,false},{0x1B,false}};
+        assert(keys==expected);assert(held.empty()&&!heldMods);
+    }
     // Tempo drift scales only the gap after each attack, within +/-drift.
     {
         DynamicPattern q=p;q.sets={1,1};q.attacksPerSet={3,3};q.tempoDriftPermille=150;q.skills.clear();
@@ -280,6 +291,21 @@ int main() {
         }
         q.skills[0].cooldown={0,0};ranged.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();
         run(engine,{ranged});assert(pressCount(21)==3);
+    }
+    // HP/Mana potions fire on their own timers, before skills, never inside a chord.
+    {
+        DynamicPattern q=p;q.sets={3,3};q.attacksPerSet={1,1};
+        DynamicSkill hp;hp.id="hp";hp.keycode=6;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={1000000,1000000};
+        DynamicSkill mana=hp;mana.id="mana";mana.keycode=0x19;mana.cooldown={0,0};
+        DynamicSkill skill;skill.id="hp";skill.keycode=11;skill.chancePermille=1000;skill.repeats={1,1};   // a skill named like a potion keeps its own timer
+        q.potions={hp,mana};q.skills={skill};Step drinking=dynamic;drinking.setPattern(q);
+        engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{drinking});
+        assert(pressCount(6)==1&&pressCount(0x19)==3&&pressCount(11)==3);
+        std::vector<uint8_t> order;for(auto e:hidEvents)if(e.down&&(e.key==6||e.key==0x19||e.key==11))order.push_back(e.key);
+        assert(order.size()==7&&order[0]==6&&order[1]==0x19&&order[2]==11);
+        for(auto e:hidEvents)if(e.key==6||e.key==0x19)assert(!e.mods);
+        q.potions[0].enabled=false;drinking.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{drinking});
+        assert(pressCount(6)==0&&pressCount(0x19)==3);
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.
     p.skills[0].chancePermille=1000;p.skills[0].cooldown={0,0};dynamic.setPattern(p);

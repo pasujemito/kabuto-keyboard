@@ -3,6 +3,15 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.15.0
+
+- ⌨️ **Choose your keys** for jump, attack and turning: Alt, Ctrl, Shift or any
+  key, e.g. Space to jump and X to attack
+- 🧪 **HP & Mana**: HP on C and Mana on V, each on its own every X–Y seconds
+  timer with its own taps and timing, fired between sets before skills
+- 🧩 Clashing keys are refused (same jump and attack, a skill on a movement
+  key...); older patterns keep Alt, Ctrl and the arrows, with potions off
+
 ## 1.14.2
 
 - 🏠 **Stay connected** to your home Wi-Fi and open the editor at

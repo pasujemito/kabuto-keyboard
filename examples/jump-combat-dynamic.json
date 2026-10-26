@@ -41,30 +41,57 @@
         "turn_chance": 0.8,
         "tempo_drift": 0.15,
         "shuffle_skills": true,
-        "skills": [
+        "keys": {
+          "jump": "ALT",
+          "attack": "CTRL",
+          "left": "LEFT",
+          "right": "RIGHT"
+        },
+        "potions": [
           {
-            "id": "skill-c",
+            "id": "hp",
             "enabled": true,
             "key": "C",
-            "chance": 0.1,
+            "every_ms": [
+              40000,
+              70000
+            ],
             "repeats": [
-              2,
-              2
+              1,
+              1
             ],
             "hold": [
               85,
               110
             ],
             "after": [
-              880,
-              1130
+              400,
+              700
+            ]
+          },
+          {
+            "id": "mana",
+            "enabled": true,
+            "key": "V",
+            "every_ms": [
+              25000,
+              45000
             ],
-            "cooldown_ms": [
-              0,
-              0
+            "repeats": [
+              1,
+              1
+            ],
+            "hold": [
+              85,
+              110
+            ],
+            "after": [
+              400,
+              700
             ]
           }
-        ]
+        ],
+        "skills": []
       }
     }
   ]

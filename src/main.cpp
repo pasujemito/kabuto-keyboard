@@ -4,6 +4,7 @@
 #include "macro_engine.h"
 #include "storage.h"
 #include "web_server.h"
+#include "updater.h"
 
 // ---------------------------------------------------------------------------
 // Matrix scanning with per-key debounce.
@@ -131,6 +132,7 @@ void setup() {
     statusLedInit();
     Serial.println();
     Serial.printf("Kabuto %s booting\n", FIRMWARE_VERSION);
+    updaterBootCheck();   // may roll back a just-installed release that keeps failing
 
     if (!storageBegin()) {
         Serial.println("[fs] LittleFS mount failed");
@@ -147,6 +149,7 @@ void setup() {
     Keyboard.begin(DEVICE_NAME);
     Serial.printf("[ble] advertising as '%s' (%d bonds)\n", DEVICE_NAME, Keyboard.bondCount());
 
+    updaterBegin();
     webServerBegin();
     Serial.printf("[web] config portal: connect to Wi-Fi '%s' then open http://192.168.4.1\n", AP_SSID);
 

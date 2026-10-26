@@ -4,3 +4,8 @@
 .vscode/launch.json
 .vscode/ipch
 .DS_Store
+# Config backups taken from the pad before uploadfs
+backups/
+__pycache__/
+# Never commit the private key used to sign releases
+*signing-key*.pem

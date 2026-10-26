@@ -218,7 +218,7 @@ int main() {
     testRandomHook={};engine.config().randomizedDelay=false;
     // Dynamic playback streams the preserved Alt/Ctrl overlap, with explicit
     // sampled timings taking precedence over the configured global jitter.
-    DynamicPattern p;p.id="test-dynamic";p.batches={3,3};p.combosPerBatch={2,2};p.turnChancePermille=1000;
+    DynamicPattern p;p.id="test-dynamic";p.sets={3,3};p.attacksPerSet={2,2};p.turnChancePermille=1000;
     Step dynamic;dynamic.type=StepType::DYNAMIC;dynamic.setPattern(p);
     engine.config().randomizedDelay=true;hidEvents.clear();ctrlDurations.clear();
     run(engine,{dynamic});
@@ -233,18 +233,33 @@ int main() {
     }
     std::vector<uint8_t> directions;
     for(auto e:hidEvents)if(e.down&&(e.key==80||e.key==79)){assert(!e.mods);directions.push_back(e.key);}
-    assert((directions==std::vector<uint8_t>{80,79,80,79}));
+    // Initial facing plus one tap between sets; nothing after the last set.
+    assert((directions==std::vector<uint8_t>{80,79,80}));
     assert(ctrlDurations.size()==6&&std::all_of(ctrlDurations.begin(),ctrlDurations.end(),[](uint32_t v){return v==46;}));
     p.turnChancePermille=0;dynamic.setPattern(p);hidEvents.clear();run(engine,{dynamic});
     for(auto e:hidEvents)if(e.down&&(e.key==80||e.key==79))assert(e.key==80);
     // Fresh counts each activation: minimum draws vs maximum draws.
-    p.batches={2,4};p.combosPerBatch={1,3};dynamic.setPattern(p);
+    p.sets={2,4};p.attacksPerSet={1,3};dynamic.setPattern(p);
     ctrlDurations.clear();run(engine,{dynamic});assert(ctrlDurations.size()==2);
     testRandomHook=[](long upper){return upper-1;};ctrlDurations.clear();run(engine,{dynamic});
     assert(ctrlDurations.size()==12&&ctrlDurations[0]==200);testRandomHook={};
+    // Tempo drift scales only the gap after each attack, within +/-drift.
+    {
+        DynamicPattern q=p;q.sets={1,1};q.attacksPerSet={3,3};q.tempoDriftPermille=150;q.skills.clear();
+        Step drifting=dynamic;drifting.setPattern(q);
+        for(bool high:{false,true}){
+            if(high)testRandomHook=[](long upper){return upper-1;};else testRandomHook=[](long){return 0L;};
+            hidEvents.clear();run(engine,{drifting});testRandomHook={};
+            std::vector<uint32_t> ctrlUps,altDowns;uint8_t mods=0;
+            for(auto e:hidEvents)if(e.key==0&&e.mods!=mods){if(e.mods==4&&!mods)altDowns.push_back(e.at);if(!e.mods&&mods==1)ctrlUps.push_back(e.at);mods=e.mods;}
+            assert(ctrlUps.size()==3&&altDowns.size()==3);
+            // Pinned at the edge: 760 ms max gap * 1.15, or 510 ms min gap * 0.85.
+            for(size_t i=0;i+1<altDowns.size();++i)assert(altDowns[i+1]-ctrlUps[i]==(high?874U:433U));
+        }
+    }
     // Independent skills, repeat counts, and a cooldown retained over Stop/Start.
-    p.batches={3,3};p.combosPerBatch={1,1};
-    DynamicSkill c;c.id="skill-c";c.keycode=6;c.chancePermille=1000;c.cooldownMs=1000000;
+    p.sets={3,3};p.attacksPerSet={1,1};
+    DynamicSkill c;c.id="skill-c";c.keycode=6;c.chancePermille=1000;c.cooldown={1000000,1000000};
     DynamicSkill h;h.id="skill-h";h.keycode=11;h.chancePermille=1000;h.repeats={1,1};
     p.skills={c,h};dynamic.setPattern(p);hidEvents.clear();run(engine,{dynamic});
     auto pressCount=[&](uint8_t key){return std::count_if(hidEvents.begin(),hidEvents.end(),[&](const HidEvent& e){return e.down&&e.key==key;});};
@@ -252,9 +267,22 @@ int main() {
     for(auto e:hidEvents)if(e.key==6||e.key==11)assert(!e.mods);
     hidEvents.clear();run(engine,{dynamic});assert(pressCount(6)==0&&pressCount(11)==3);
     p.skills[0].chancePermille=0;p.skills[1].enabled=false;dynamic.setPattern(p);hidEvents.clear();
-    engine.dynamicSkillLastRun_.clear();run(engine,{dynamic});assert(pressCount(6)==0&&pressCount(11)==0);
+    engine.dynamicSkillTimers_.clear();run(engine,{dynamic});assert(pressCount(6)==0&&pressCount(11)==0);
+    // A ranged "use again after" is drawn per use and gates later sets until it passes.
+    {
+        DynamicPattern q=p;DynamicSkill r;r.id="skill-r";r.keycode=21;r.chancePermille=1000;r.repeats={1,1};r.cooldown={2000,4000};
+        q.skills={r};Step ranged=dynamic;ranged.setPattern(q);
+        for(bool high:{false,true}){
+            if(high)testRandomHook=[](long upper){return upper-1;};else testRandomHook=[](long){return 0L;};
+            engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{ranged});testRandomHook={};
+            assert(engine.dynamicSkillTimers_.at("test-dynamic/skill-r").wait==(high?4000U:2000U));
+            assert(pressCount(21)==1); // 3 short sets fit inside even the 2000 ms wait
+        }
+        q.skills[0].cooldown={0,0};ranged.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();
+        run(engine,{ranged});assert(pressCount(21)==3);
+    }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.
-    p.skills[0].chancePermille=1000;p.skills[0].cooldownMs=0;dynamic.setPattern(p);
+    p.skills[0].chancePermille=1000;p.skills[0].cooldown={0,0};dynamic.setPattern(p);
     for(uint32_t offset: {1U,105U,150U,185U,210U,720U,800U,1700U}){
         uint32_t end=millis()+offset;testDelayHook=[&]{if(millis()>=end)engine.stopFlag_=true;};
         run(engine,{dynamic});testDelayHook={};assert(held.empty()&&!heldMods);

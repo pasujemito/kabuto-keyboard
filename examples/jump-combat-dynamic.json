@@ -30,15 +30,16 @@
           16,
           330
         ],
-        "combos_per_side": [
+        "attacks_per_set": [
           2,
           10
         ],
-        "sides": [
+        "sets": [
           8,
           12
         ],
         "turn_chance": 0.8,
+        "tempo_drift": 0.15,
         "shuffle_skills": true,
         "skills": [
           {
@@ -58,7 +59,10 @@
               880,
               1130
             ],
-            "cooldown_ms": 0
+            "cooldown_ms": [
+              0,
+              0
+            ]
           }
         ]
       }

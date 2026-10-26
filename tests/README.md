@@ -7,6 +7,8 @@ clock/RNG; they do not simulate Bluetooth, FreeRTOS scheduling or ESP32 hardware
 ```sh
 g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/kabuto-dynamic-tests
 /tmp/kabuto-dynamic-tests
+g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/kabuto-update-tests
+/tmp/kabuto-update-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o /tmp/kabuto-selection-tests
 /tmp/kabuto-selection-tests
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/kabuto-engine-tests
@@ -17,6 +19,9 @@ g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-dev
 npm install --prefix /tmp/kabuto-ui-test --cache /tmp/kabuto-npm-cache --no-audit --no-fund jsdom@30.1.3
 NODE_PATH=/tmp/kabuto-ui-test/node_modules node tests/workflow_editor.cjs
 python3 tools/recorder.py --selftest
+python3 tools/flash_backup.py --selftest   # LittleFS part needs littlefs-python
+python3 tools/release_index.py --selftest  # needs the openssl CLI
+python3 tools/next_version.py --selftest
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It
@@ -63,8 +68,11 @@ check that uploads are committed through a temporary file that is removed on
 failure.
 
 Dynamic tests exercise the triangular sampler's endpoints, bounds and centre
-weighting; live Alt/Ctrl ordering and actual hold times; fresh batch counts;
-0/100% turn probability; independent skill repeats/chances/cooldowns;
+weighting; live Alt/Ctrl ordering and actual hold times; fresh set counts;
+0/100% turn probability; no direction tap after the last set; legacy
+`combos_per_side`/`sides` keys; independent skill repeats/chances/cooldowns; ranged "use again after" waits
+drawn per use (and older single-number intervals); tempo drift bounds and its
+effect on the gap after each attack; the Natural/Smooth/Flip presets in Chromium;
 Stop during direction, modifier and skill holds; definition persistence; and
 rejection of invalid or unsafe bounds without replacing the saved config.
 The UI tests cover the mobile settings dialog, multiple skills, invalid edits,
@@ -72,3 +80,11 @@ JSON previews, discard protection, export/import and independent timer IDs.
 Chromium checks the new dialog on a phone viewport while retaining the existing
 pad, storage, recording editor and assignment tests. Physical BLE/game behaviour
 remains outside these host tests.
+
+Update tests cover version ordering, the exact signed payload (pinned in both
+`tests/update_logic.cpp` and `tools/release_index.py`), signing with a throwaway
+key, rejecting a key that doesn't match the committed public key, carrying the
+release list forward, and the Updates panel (announcement, confirm-to-install,
+older-version warning, refusals, Wi-Fi form) in Chromium. Downloading and
+flashing over Wi-Fi, signature checks with mbedtls and rollback need hardware.
+The release workflow runs the C++ and Python tests on every release.

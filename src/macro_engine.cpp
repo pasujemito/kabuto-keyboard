@@ -223,7 +223,7 @@ bool MacroEngine::load() {
     bool ok = loadConfig(cfg_);
     utilityClockStarted_ = false;
     utilityLastRun_.clear();
-    dynamicSkillLastRun_.clear();
+    dynamicSkillTimers_.clear();
     cfg_.ensureLayer(0);
     commit();
     if (layer_ >= (int)cfg_.layers.size()) layer_ = 0;
@@ -421,36 +421,39 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 auto sample=[](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L));};
                 auto delay=[](uint32_t ms){Step step;step.type=StepType::DELAY;step.value=ms;step.maxValue=ms;return step;};
                 auto edge=[](bool down,uint8_t key,uint8_t mods){Step step;step.type=down?StepType::KEY_DOWN:StepType::KEY_UP;step.keycode=key;step.modifiers=mods;return step;};
-                auto tap=[&](uint8_t key,DynamicRange hold,DynamicRange after,bool includeAfter=true){
-                    std::vector<Step> actions{edge(true,key,0),delay(sample(hold)),edge(false,key,0)};
-                    if(includeAfter)actions.push_back(delay(sample(after)));
+                auto tap=[&](uint8_t key,DynamicRange hold,DynamicRange after){
+                    std::vector<Step> actions{edge(true,key,0),delay(sample(hold)),edge(false,key,0),delay(sample(after))};
                     executeSteps(actions,stop,state,depth+1);
                 };
                 uint8_t facing=random(2L)==0?KC_LEFT:KC_RIGHT;
-                uint32_t batches=sample(pattern->batches);
+                uint32_t sets=sample(pattern->sets);
+                const int32_t drift=pattern->tempoDriftPermille;
+                int32_t tempo=drift?(int32_t)random(2L*drift+1)-drift:0;
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 // Establish the actual initial facing before the first attack.
                 tap(facing,pattern->directionHold,pattern->directionAfter);
-                for(uint32_t batch=0;batch<batches&&!stop;++batch){
-                    uint32_t count=sample(pattern->combosPerBatch),started=millis();
+                for(uint32_t set=0;set<sets&&!stop;++set){
+                    uint32_t count=sample(pattern->attacksPerSet),started=millis();
                     Step entry=s;entry.keycode=facing;entry.value=count;
-                    char label[64];std::snprintf(label,sizeof(label),"batch %lu/%lu: %lu attacks",(unsigned long)(batch+1),(unsigned long)batches,(unsigned long)count);
-                    uint32_t batchLog=logStep(entry,pc,started,0,false,label);
+                    char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
+                    uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
+                        if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
+                        uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
                         std::vector<Step> actions{
                             edge(true,KC_NONE,KM_LALT),delay(sample(pattern->jumpToAttack)),
                             edge(true,KC_NONE,KM_LCTRL),delay(sample(pattern->attackToJumpUp)),
                             edge(false,KC_NONE,KM_LALT),delay(sample(pattern->jumpUpToAttackUp)),
-                            edge(false,KC_NONE,KM_LCTRL),delay(sample(pattern->comboGap))};
+                            edge(false,KC_NONE,KM_LCTRL),delay(gap)};
                         executeSteps(actions,stop,state,depth+1);
                     }
-                    updateLogDuration(batchLog,millis()-started,true);
+                    updateLogDuration(setLog,millis()-started,true);
                     if(stop)break;
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i){
                         const auto& skill=pattern->skills[i];
-                        auto last=dynamicSkillLastRun_.find(pattern->id+"/"+skill.id);
-                        if(skill.enabled && (last==dynamicSkillLastRun_.end() || (uint32_t)(millis()-last->second)>=skill.cooldownMs) &&
+                        auto timer=dynamicSkillTimers_.find(pattern->id+"/"+skill.id);
+                        if(skill.enabled && (timer==dynamicSkillTimers_.end() || (uint32_t)(millis()-timer->second.lastRun)>=timer->second.wait) &&
                            random(1000L)<skill.chancePermille)skills.push_back(i);
                     }
                     if(pattern->shuffleSkills)for(size_t i=skills.size();i>1;--i)std::swap(skills[i-1],skills[random((long)i)]);
@@ -462,13 +465,14 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         uint32_t id=logStep(skillEntry,pc,started,0,false,skill.id.c_str());
                         uint32_t repeats=sample(skill.repeats);
                         for(uint32_t repeat=0;repeat<repeats&&!stop;++repeat)tap(skill.keycode,skill.hold,skill.after);
-                        // Even an interrupted use consumes its cooldown.
-                        dynamicSkillLastRun_[pattern->id+"/"+skill.id]=millis();
+                        // Even an interrupted use starts its cooldown; each wait is drawn fresh.
+                        dynamicSkillTimers_[pattern->id+"/"+skill.id]={millis(),sample(skill.cooldown)};
                         updateLogDuration(id,millis()-started,true);
                     }
-                    if(stop)break;
+                    // No direction tap after the last set: it would only nudge the character.
+                    if(stop||set+1==sets)break;
                     if(random(1000L)<pattern->turnChancePermille)facing=facing==KC_LEFT?KC_RIGHT:KC_LEFT;
-                    tap(facing,pattern->directionHold,pattern->directionAfter,batch+1<batches);
+                    tap(facing,pattern->directionHold,pattern->directionAfter);
                     if(!stop)yieldTick();
                 }
                 releaseTracked();

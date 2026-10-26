@@ -76,13 +76,119 @@ your wiring matches `(row * MATRIX_COLS + col)`.
 pip install platformio
 
 # from the project root:
-pio run                       # compile firmware
-pio run -t upload             # flash firmware over USB
-pio run -t uploadfs           # upload the web UI (data/) to the device
+pio run                       # compile firmware (the web UI is built in)
+pio run -t upload             # flash firmware + web UI over USB
+pio run -t uploadfs           # optional, first install: example macros.json
 pio device monitor            # view the serial log (115200)
 ```
 
-The first `uploadfs` installs the config UI and the example `macros.json`.
+`uploadfs` is optional: it installs the example `macros.json`. Without it the
+pad starts with an empty config. After that you only need `upload`.
+
+### Keeping your patterns when you reflash
+
+Your recordings and patterns live on the pad, in its LittleFS filesystem. The
+web UI is built into the firmware (gzipped, ~33 KB), so `pio run -t upload`
+updates firmware and UI together and never touches that filesystem. Nothing is
+copied to your PC for a normal reflash. Firmware 1.13 also deletes the old copy
+of the UI that earlier versions kept in the filesystem, freeing ~110 KB for
+recordings.
+
+Only `uploadfs` (writes a whole new filesystem) and `pio run -t erase` (wipes
+all flash) can lose them. As a safety net, `tools/pio_keep_config.py` runs
+before every `uploadfs`, over the same USB cable:
+
+1. It reads the filesystem straight from the pad's flash with esptool (read
+   only, works with whatever firmware is on it).
+2. It saves a gzipped copy to `backups/macros-<date>-<time>.json.gz` and keeps
+   only the newest 5. An 80 KB config with recordings packs to ~2 KB, so the
+   folder stays tiny. It's ignored by git, so your patterns stay private.
+3. It builds the new image with that config in place of `data/macros.json`.
+
+If the pad can't be read (wrong port, cable unplugged), `uploadfs` stops instead
+of overwriting anything. A blank pad just gets `data/macros.json`. The first run
+installs `littlefs-python` into PlatformIO's Python. Options:
+
+```bash
+pio run -t backup                                    # backup only, no flashing
+KABUTO_RESTORE=backups/macros-20261026-101500.json.gz pio run -t uploadfs   # flash a backup
+KABUTO_SKIP_BACKUP=1 pio run -t uploadfs             # deliberately reset to data/macros.json
+python tools/flash_backup.py backup --port COM5      # backup without PlatformIO
+```
+
+`KABUTO_RESTORE` takes `.json.gz` or plain `.json`, and also moves your setup to
+a new board or back after `pio run -t erase`. Set environment variables in
+PowerShell with `$env:KABUTO_RESTORE="backups\..."` before the `pio` command.
+**Export JSON** in the web UI remains a quick manual backup. From a phone, it
+lands wherever that phone saves and syncs downloads.
+
+The pad can't back up to the cloud by itself: it runs its own Wi-Fi hotspot and
+has no internet connection.
+
+### Updates from GitHub releases
+
+Once set up, every push to `main` that changes the firmware is released
+automatically: built, tested, signed and published. Every pad then shows
+**Update available** in **Recordings → Updates**, and installs only when someone
+taps **Install** and confirms. The same list offers earlier versions too.
+
+**One-time setup**
+
+1. Make the repository public, or publish releases from a public repo and set
+   `UPDATE_REPO` in `src/config.h` to it. Pads download without logging in.
+2. Create a signing key pair on your PC (OpenSSL ships with Git for Windows):
+
+   ```bash
+   openssl ecparam -name prime256v1 -genkey -noout -out kabuto-signing-key.pem
+   openssl ec -in kabuto-signing-key.pem -pubout -out update_public_key.pem
+   ```
+
+   Commit `update_public_key.pem`. Put the whole contents of
+   `kabuto-signing-key.pem` in a repository secret named `UPDATE_SIGNING_KEY`
+   (GitHub → Settings → Secrets and variables → Actions). Then store the private
+   key file somewhere safe off the repo; `*signing-key*.pem` is gitignored.
+3. Flash the pad once over USB (`pio run -t upload`) so it has the public key.
+4. In **Recordings → Updates**, enter your home Wi-Fi and press **Save Wi-Fi**.
+
+**Releasing**
+
+Push to `main`. `.github/workflows/release.yml` runs when `src/`, `web/`,
+`platformio.ini`, `update_public_key.pem` or the build hooks change; edits to
+docs, tests or `data/` don't announce an update. It:
+
+1. Picks the version: `FIRMWARE_VERSION` in `src/config.h` is the base, so
+   releases go 1.14.0, 1.14.1, 1.14.2... Raise the base (e.g. to `1.15.0`) for
+   a bigger step; a base behind an existing release stops the workflow.
+2. Builds with that version baked in (local builds report the base), runs the
+   host tests (including the storage tests), and stops if anything fails.
+3. Signs the build and publishes release `vX.Y.Z` with `firmware.bin` and
+   `versions.json`, the signed list of the 20 most recent releases.
+
+Pushes queue rather than race, and **Actions → Release firmware → Run
+workflow** releases without a code change. Actions and releases are free for
+public repositories. Anyone who can push to `main` can publish a release your
+pads will trust, so keep write access to yourself (or protect `main`).
+
+**On the pad**
+
+- It checks a minute after starting and every 6 hours, joining your home Wi-Fi
+  only for the check. Its own hotspot stays on, though a phone on it may drop
+  for a moment. **Check now** checks straight away.
+- Only releases signed with your key are listed. A download is installed only
+  if its size and SHA-256 match the signed entry, so a tampered file is
+  rejected even though the connection itself isn't certificate-checked.
+- **Install** asks for confirmation and refuses while something is playing or
+  recording. The pad restarts on the new version; reconnect to its Wi-Fi and
+  reload the page. Your recordings and patterns are untouched.
+- Older versions may not understand settings added later. Your saved config
+  stays on the pad, and works again once you update.
+- If a version fails to start three times within its first minute, the pad goes
+  back to the previous one and says so in **Updates**.
+- Versions from before 1.14 have no updater: flash 1.14 or later over USB once.
+- The home Wi-Fi password is stored in the pad's settings storage (not in
+  `macros.json` or JSON exports) and is never sent back to the browser.
+- Updates need the standard two-slot flash layout (the default), and a build
+  must fit one slot: `pio run` reports that as flash usage.
 
 ## Recordings and button assignments
 
@@ -178,47 +284,87 @@ existing unlock-to-edit protection. Existing recordings and defaults are not
 replaced automatically. An importable preset is in
 [`examples/jump-combat-dynamic.json`](examples/jump-combat-dynamic.json).
 
-The device generates fresh batches while playing, using the ranges below.
+The device generates fresh sets while playing, using the ranges below. A
+**set** is a run of jump-attacks facing one way; between sets, skills may fire
+and the character may turn around.
 It does not generate a large recording once and then repeat that file.
 Timings and integer counts use a symmetric triangular distribution centred
 between each minimum and maximum. This is a chosen random model, not evidence
 of human behaviour or a guarantee against repetition/detection.
 
-| Setting | Default |
-| --- | --- |
-| Alt down → Ctrl down | 45–120 ms |
-| Ctrl down → Alt up | 30–120 ms |
-| Alt up → Ctrl up | 16–80 ms |
-| Gap after each attack | 510–760 ms |
-| Direction hold | 85–180 ms |
-| Gap after direction | 16–330 ms |
-| Attacks per batch | 2–10 |
-| Batches per play | 8–12 |
-| Change facing after a batch | 80% |
+**Start from** offers three presets for movement and rhythm (skills are left
+alone). New patterns start as Natural.
+
+| Setting | Natural | Smooth | Flip |
+| --- | --- | --- | --- |
+| Alt down → Ctrl down | 45–120 ms | 75–105 ms | 45–120 ms |
+| Ctrl down → Alt up | 30–120 ms | 60–90 ms | 30–120 ms |
+| Alt up → Ctrl up | 16–80 ms | 40–65 ms | 16–80 ms |
+| Gap after each attack | 510–760 ms | 580–680 ms | 510–700 ms |
+| Direction hold | 85–195 ms | 100–150 ms | 85–150 ms |
+| Gap after direction | 16–330 ms | 120–230 ms | 60–200 ms |
+| Attacks per set | 2–10 | 4–7 | 1–3 |
+| Sets per play | 8–12 | 8–12 | 20–30 |
+| Turn around after a set | 85% | 100% | 95% |
+| Tempo drift | 15% | 5% | 10% |
+
+Natural is fitted to a recorded 57-second jump-attack run (62 jump-attacks).
+Its timing ranges are that run's spread. Smooth keeps roughly the middle half
+of each, and Flip turns after nearly every 1–3 attacks. The recording's short
+delays fall on ~15 ms steps; that is the PC timer used for recording, not your
+hands, so the presets don't copy it.
+
+**Tempo drift** handles what independent random draws can't. In the recording,
+the gap after each attack wandered: a slow gap tended to follow a slow one
+(lag-1 correlation 0.34), and the average went from ~590 ms to ~700 ms over the
+minute. The device keeps a slowly wandering tempo, within ±drift, and scales
+each gap after an attack by it. At 15%, generated runs average a lag-1
+correlation of 0.31 and similar slow/fast stretches. The press/release timings
+inside a jump-attack showed no drift in the recording (lag-1 ≈ 0), so they stay
+independent. Patterns saved before drift existed load with 0%.
 
 Every jump-attack retains that exact press/release order. Directions are tapped
-between batches, never mixed into an Alt/Ctrl chord. The initial facing is
+between sets, never mixed into an Alt/Ctrl chord. The initial facing is
 chosen and actually tapped **before** the first attack, unlike the supplied
-Python example which only tracked it in memory. After each batch, change to
-the opposite direction with the configured probability; otherwise tap the
-same direction. A final direction tap has no following wait. A 100% turn
+Python example which only tracked it in memory. After each set except the
+last, change to the opposite direction with the configured probability;
+otherwise tap the same direction. Nothing is tapped after the last set, so the
+character doesn't take a final step. A 100% turn
 chance gives strict alternation, and 0% keeps the initial facing. Direction
 taps also move the character, so this is not position balancing or feedback.
 
-The default skill is **C**, enabled with a **10% chance after each batch**,
+The default skill is **C**, enabled with a **10% chance after each set**,
 tapped twice. Each tap holds for 85–110 ms and has an 880–1130 ms gap **after
 release**, including the last tap. Thus start-to-start spacing includes both
 hold and gap. Add up to eight independent skills; configure their key,
-probability, repeat-count range, hold/gap ranges and optional minimum interval.
+chance, number of taps (a range, up to 10), hold/gap ranges and an optional
+**use again after** range.
 New additional skills start disabled until configured/enabled. Multiple skills
 can run at the same boundary; their order can be shuffled. They run only after
 all jump/attack inputs have been released.
 
-A skill's minimum interval is measured from completion of its previous burst;
-it does not guarantee execution by a deadline. The first opportunity needs no
-initial cooldown. An interrupted burst consumes its cooldown too. Timers
+**Use again after** is a wait measured from the end of the skill's previous
+use. It is a range in seconds, and a new wait is drawn from it after every use,
+so 40–70 s gives a different gap each time. With 100% chance the skill fires at
+the first set boundary after the wait; it is not a deadline. The first
+opportunity needs no wait. An interrupted use starts its wait too. In the JSON
+it is `"cooldown_ms": [min, max]`; an older single number still loads as a
+fixed wait. Timers
 survive repeated activations and Toggle/Hold passes, but config reload/reboot
 resets them. A copied/imported preset gets independent timer identities.
+
+Common setups:
+
+| You want | Set |
+| --- | --- |
+| Attack exactly twice, then turn | Attacks per set 2–2, turn around 100% |
+| Usually turn after 1–3 attacks | Attacks per set 1–3, turn around 80% |
+| A skill that fires now and then | Chance 10–30%, use again after 0–0 |
+| A buff every 40–70 s, tapped 5–8 times | Chance 100%, taps 5–8, use again after 40–70 |
+| Rare, but never back to back | Chance 20%, use again after 20–45 |
+
+Strict settings (2–2 at 100%) repeat exactly; ranges and chances below 100%
+vary the rhythm.
 
 Explicit sampled timings are not modified again by global recording jitter.
 Each wait is interruptible, and Stop releases arrows, skills, Alt and Ctrl.
@@ -234,6 +380,10 @@ live generator definition. Very large static previews are limited to 12000
 steps; the live generator does not buffer a full run. Apply edits, then use the
 header **Save** to persist them. Install the new firmware and filesystem before
 using dynamic definitions on a device.
+
+In the JSON, sets are `"attacks_per_set"` and `"sets"`. Presets saved before
+the rename (`"combos_per_side"`/`"sides"`) still load and are saved with the
+new names.
 
 ## JSON import and export
 
@@ -293,7 +443,8 @@ python tools/recorder.py --out macros.json --loop 0 --trigger toggle
 # play; press F10 to stop.
 ```
 
-Then load the file via the web UI (**Save to device**) or `pio run -t uploadfs`.
+Then load the file via the web UI (**Save to device**) or flash it with
+`KABUTO_RESTORE=macros.json pio run -t uploadfs`.
 Bound to a key as **Toggle** with `--loop 0`, one press starts the replay and a
 second press stops it.
 
@@ -350,12 +501,20 @@ src/
   keymap.*            keycode tables + name<->code resolution
   macro_engine.*      step model, loop execution, trigger modes
   storage.*           LittleFS + JSON load/save
-  web_server.*        SoftAP + REST API + static UI host
+  web_server.*        SoftAP + REST API + built-in UI
+  updater.*           GitHub release checks, signed installs, rollback
+  update_logic.h      version/signature payload/rollback rules (host-tested)
+web/
+  index.html          config UI (gzipped into the firmware at build time)
 data/
-  index.html          config UI (uploaded with uploadfs)
-  macros.json         example macros
+  macros.json         example macros (first install via uploadfs)
 tools/
   recorder.py         PC-side keyboard recorder -> macros.json
+  flash_backup.py     read the saved config off the pad over USB
+  pio_keep_config.py  uploadfs hook: back up + keep the saved config
+  embed_web_ui.py     build hook: gzip web/index.html into the firmware
+  embed_update_key.py build hook: bake update_public_key.pem into the firmware
+  release_index.py    sign a build and add it to versions.json (release CI)
 ```
 
 ## What changed in 1.4

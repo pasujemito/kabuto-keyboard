@@ -1,7 +1,7 @@
 // Install jsdom outside the checkout; see tests/README.md.
 const {JSDOM}=require('jsdom');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'../data/index.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
 const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://kabuto.test'}),w=dom.window;
 const requests=[];let saved;
 w.confirm=()=>true;
@@ -111,25 +111,26 @@ async function main(){
   evaluate(`meta.keys.push('C','F1');`);
   w.document.querySelector('#newDynamic').click();assert(w.document.querySelector('#dynamicDialog').open);
   assert.equal(w.document.querySelector('#dynamicName').value,'Dynamic jump-attack');
-  const chance=w.document.querySelector('[aria-label="Skill 1 chance per batch (%)"]');chance.value='35';chance.oninput();
+  const chance=w.document.querySelector('[aria-label="Skill 1 chance after each set (%)"]');chance.value='35';chance.oninput();
   w.document.querySelector('#dynamicAddSkill').click();
   const h=w.document.querySelector('[aria-label="Skill 2 key"]');h.value='H';h.onchange();
   const hEnabled=w.document.querySelector('[aria-label="Enable skill 2"]');hEnabled.click();
-  const cooldown=w.document.querySelector('[aria-label="Skill 2 minimum interval (minutes)"]');cooldown.value='5';cooldown.oninput();
+  // "Use again after" is a seconds range stored in milliseconds.
+  for(const [end,value] of [['minimum','40'],['maximum','70.5']]){const f=w.document.querySelector(`[aria-label="Skill 2 use again after (seconds) ${end}"]`);f.value=value;f.oninput();}
   // Invalid fields leave the configuration unchanged and keep the draft open.
   const originalConfig=snapshot();
-  const max=w.document.querySelector('[aria-label="Attacks per batch maximum"]');max.value='1';max.oninput();
+  const max=w.document.querySelector('[aria-label="Attacks per set maximum"]');max.value='1';max.oninput();
   w.document.querySelector('#dynamicApply').click();assert.match(w.document.querySelector('#dynamicError').textContent,/ordered range/);assert.deepEqual(snapshot(),originalConfig);
   max.value='10';max.oninput();w.document.querySelector('#dynamicApply').click();assert(!w.document.querySelector('#dynamicDialog').open);
   let dynamic=snapshot().workflows.find(r=>r.steps.length===1&&r.steps[0].type==='dynamic');assert(dynamic);
   assert.equal(dynamic.steps[0].pattern.skills.length,2);assert.equal(dynamic.steps[0].pattern.skills[0].chance,.35);
-  assert.equal(dynamic.steps[0].pattern.skills[1].cooldown_ms,300000);
+  assert.deepEqual(dynamic.steps[0].pattern.skills[1].cooldown_ms,[40000,70500]);
   assert.match(evaluate(`recordingSummary(cfg.workflows.find(r=>r.id===${JSON.stringify(dynamic.id)}))`),/Dynamic/);
   evaluate(`openStepEditor(${JSON.stringify(dynamic.id)});`);assert(w.document.querySelector('#dynamicDialog').open);assert(!w.document.querySelector('#editDialog').open);
   // One generated example preserves overlap order and establishes facing first.
-  const example=JSON.parse(evaluate(`JSON.stringify((()=>{const p=JSON.parse(JSON.stringify(dynamicDraft));p.sides=[2,2];p.combos_per_side=[2,2];p.turn_chance=1;p.skills[0].chance=1;p.skills[1].chance=0;return generateDynamicSample(p,()=>0);})())`));
+  const example=JSON.parse(evaluate(`JSON.stringify((()=>{const p=JSON.parse(JSON.stringify(dynamicDraft));p.sets=[2,2];p.attacks_per_set=[2,2];p.turn_chance=1;p.skills[0].chance=1;p.skills[1].chance=0;return generateDynamicSample(p,()=>0);})())`));
   assert.equal(example.steps[0].key,'LEFT');
-  const dirs=example.steps.filter(s=>s.type==='down'&&['LEFT','RIGHT'].includes(s.key)).map(s=>s.key);assert.deepEqual(dirs,['LEFT','RIGHT','LEFT']);
+  const dirs=example.steps.filter(s=>s.type==='down'&&['LEFT','RIGHT'].includes(s.key)).map(s=>s.key);assert.deepEqual(dirs,['LEFT','RIGHT']); // no direction tap after the last set
   const edges=example.steps.filter(s=>s.mods?.length).map(s=>s.type+':'+s.mods[0]);
   assert.deepEqual(edges,Array.from({length:4},()=>['down:alt','down:ctrl','up:alt','up:ctrl']).flat());
   assert.equal(example.steps.filter(s=>s.type==='down'&&s.key==='C').length,4);
@@ -144,6 +145,12 @@ async function main(){
   const live=JSON.parse(jsonText.value);assert.equal(live.steps[0].type,'dynamic');
   const importedId=evaluate(`importRecordingObject(${JSON.stringify(live)}).id`);
   assert.notEqual(snapshot().workflows.find(r=>r.id===importedId).steps[0].pattern.id,live.steps[0].pattern.id);
+  // Presets exported before the batch -> set rename still import, under the new keys.
+  const legacy=JSON.parse(JSON.stringify(live)),old=legacy.steps[0].pattern;
+  old.combos_per_side=old.attacks_per_set;old.sides=old.sets;delete old.attacks_per_set;delete old.sets;
+  const legacyId=evaluate(`importRecordingObject(${JSON.stringify(legacy)}).id`);
+  const upgraded=snapshot().workflows.find(r=>r.id===legacyId).steps[0].pattern;
+  assert.deepEqual(upgraded.sets,old.sides);assert.deepEqual(upgraded.attacks_per_set,old.combos_per_side);assert.equal(upgraded.sides,undefined);
   evaluate('closeJsonPreview();');
   // Pattern cancel/discard has the same protection as the recording editor.
   evaluate(`openDynamicEditor(${JSON.stringify(dynamic.id)});`);

@@ -1,0 +1,92 @@
+name: Release firmware
+
+# Every push to main that changes the firmware builds, tests, signs and
+# publishes the next version (tools/next_version.py). Pads then list it under
+# Updates. Nothing is released if the build or a test fails.
+# One-time setup: README, "Updates from GitHub releases".
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'web/**'
+      - 'platformio.ini'
+      - 'update_public_key.pem'
+      - 'tools/embed_web_ui.py'
+      - 'tools/embed_update_key.py'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:     # "Run workflow" button for a release without a code change
+
+permissions:
+  contents: write
+
+# Two quick pushes release one after the other instead of racing for a number.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # tags, to pick the next version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Pick version and check signing setup
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          if [ -z "$UPDATE_SIGNING_KEY" ] || [ ! -f update_public_key.pem ]; then
+            echo "::error::Add the UPDATE_SIGNING_KEY secret and commit update_public_key.pem (see README)"; exit 1
+          fi
+          base=$(sed -n 's/^#define FIRMWARE_VERSION *"\([0-9.]*\)".*/\1/p' src/config.h)
+          version=$(python3 tools/next_version.py "$base" $(git tag -l 'v*'))
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Releasing v$version"
+
+      - name: Build firmware
+        env:
+          PLATFORMIO_BUILD_FLAGS: -DKABUTO_VERSION=${{ env.VERSION }}
+        run: |
+          pip install platformio==6.1.16
+          pio run -e esp32-s3-devkitc-1
+          # The firmware must report the version it's released as, or pads
+          # would keep offering it as an update.
+          grep -qa "Kabuto/$VERSION" .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+      - name: Host tests
+        run: |
+          set -e
+          out="$RUNNER_TEMP/tests"; mkdir -p "$out"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o "$out/dynamic" && "$out/dynamic"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o "$out/update" && "$out/update"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o "$out/selection" && "$out/selection"
+          g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o "$out/engine" && "$out/engine"
+          g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src \
+            tests/workflow_storage.cpp src/storage.cpp src/keymap.cpp -o "$out/storage" && "$out/storage"
+          python3 tools/next_version.py --selftest
+          python3 tools/release_index.py --selftest
+          python3 tools/flash_backup.py --selftest
+          python3 tools/recorder.py --selftest
+
+      - name: Sign and publish
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          key="$RUNNER_TEMP/signing-key.pem"
+          (umask 077; printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key")
+          # Carry the list of earlier releases forward (there is none before the first).
+          gh release download --pattern versions.json --dir previous || true
+          cp .pio/build/esp32-s3-devkitc-1/firmware.bin firmware.bin
+          python3 tools/release_index.py firmware.bin --version "$VERSION" --date "$(date -u +%F)" \
+            --key "$key" --public update_public_key.pem --previous previous/versions.json --out versions.json
+          rm -f "$key"
+          gh release create "v$VERSION" firmware.bin versions.json --target "$GITHUB_SHA" \
+            --title "Kabuto $VERSION" --generate-notes

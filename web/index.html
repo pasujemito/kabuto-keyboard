@@ -266,6 +266,11 @@
   .storage .meter i{display:block;height:100%;background:var(--live)}
   .storage .meter i.warn{background:var(--amber)}
   .storage .meter i.full{background:var(--stop)}
+  .update-release{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--edge)}
+  .update-release span{font-family:var(--mono);color:var(--ink)}
+  .update-release small{color:var(--muted);margin-left:6px}
+  .update-form{display:grid;gap:6px}
+  .update-form input{padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px;min-width:0}
 </style>
 </head>
 <body>
@@ -345,6 +350,7 @@
     <h2>Recordings</h2>
     <div class="recording-actions"><button class="btn primary withic" id="newRecording"><svg class="ic" aria-hidden="true"><use href="#i-record"/></svg>New recording</button><button class="btn withic" id="importRecording"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg>Import JSON</button></div>
     <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
+    <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
@@ -412,12 +418,14 @@
 <dialog class="json-dialog edit-dialog" id="dynamicDialog" aria-labelledby="dynamicTitle">
   <header><h3 id="dynamicTitle">Dynamic jump-attack</h3><button class="btn sm" id="dynamicClose">Close</button></header>
   <label>Name <input class="name" id="dynamicName" aria-label="Dynamic pattern name"></label>
-  <p class="hint">Fresh batches on every play. Alt → Ctrl → release Alt → release Ctrl stays in order. Counts and timings use center-weighted triangular sampling.</p>
+  <p class="hint">Fresh sets on every play. Alt → Ctrl → release Alt → release Ctrl stays in order. Counts and timings use center-weighted triangular sampling.</p>
+  <div class="recording-actions" id="dynamicPresets" aria-label="Pattern presets"><span class="hint">Start from:</span></div>
+  <p class="hint" id="dynamicPresetHint"></p>
   <div class="dynamic-main" id="dynamicMain"></div>
-  <p class="hint">A batch attacks while facing one side. The initial direction is tapped first. Direction taps move the character; turn probability does not guarantee position balance.</p>
+  <p class="hint">A set is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around. The starting direction is tapped first; there is no tap after the last set. Direction taps move the character; turn probability does not guarantee position balance.</p>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details open><summary>Skills</summary>
-    <p class="hint">Each enabled skill gets a chance after each batch, with no Alt/Ctrl held. A minimum interval is a cooldown after completion, not a deadline; the first use can occur after the first batch. Cooldowns persist across Stop/Start until config reload or reboot.</p>
+    <p class="hint">Each enabled skill gets a chance after each set, with no Alt/Ctrl held. "Use again after" is a wait counted from the end of each use, drawn fresh from its range every time; it is not a deadline. With 100% chance the skill fires at the first set boundary after the wait. The first use can occur after the first set. Cooldowns persist across Stop/Start until config reload or reboot.</p>
     <div id="dynamicSkills"></div><div class="recording-actions"><button class="btn sm" id="dynamicAddSkill">Add skill</button><label><input type="checkbox" id="dynamicShuffle"> Shuffle skill order when several run</label></div>
   </details>
   <p class="hint">Variable sequences can still repeat. These settings do not guarantee unique patterns or avoidance of detection.</p>
@@ -462,7 +470,7 @@ function blankKey(){return{name:"",trigger:"tap",steps:[]};}
 function currentBinding(){return selectedWorkflow===null?cfg.layers[selLayer].keys[selKey]:cfg.workflows.find(w=>w.id===selectedWorkflow);}
 function normalize(){
   if(!Array.isArray(cfg.workflows))cfg.workflows=[];
-  for(const workflow of cfg.workflows){if(!workflow.steps)workflow.steps=[];if(!workflow.kind)workflow.kind="nano";}
+  for(const workflow of cfg.workflows){if(!workflow.steps)workflow.steps=[];if(!workflow.kind)workflow.kind="nano";for(const step of workflow.steps)if(step.type==='dynamic')normalizeDynamicPattern(step.pattern);}
   if(selectedWorkflow!==null&&!cfg.workflows.some(w=>w.id===selectedWorkflow))selectedWorkflow=null;
   if(typeof cfg.randomizedDelay!=="boolean")cfg.randomizedDelay=true;
   if(!cfg.layers)cfg.layers=[];
@@ -486,6 +494,82 @@ function showLoadError(e){
   $("#loadError").hidden=false;
 }
 let storage=null;
+/* Firmware updates: the pad checks this project's GitHub releases over home
+   Wi-Fi and lists them; nothing installs until you pick a version and confirm. */
+let updateInfo=null,updateTimer=null;
+async function refreshUpdates(){
+  try{updateInfo=await getJson("/api/update");}catch(e){updateInfo=null;}
+  renderUpdates();
+  clearTimeout(updateTimer);
+  const busy=updateInfo&&['checking','downloading','restarting'].includes(updateInfo.state);
+  updateTimer=setTimeout(refreshUpdates,busy?1500:30000);
+}
+function updateStatusText(u){
+  const ago=s=>s<90?'just now':s<5400?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago';
+  switch(u.state){
+    case 'checking':return 'Checking GitHub…';
+    case 'downloading':return `Downloading v${u.installing}… ${u.progress}%`;
+    case 'restarting':return `v${u.installing} installed. The pad is restarting; reconnect to its Wi-Fi and reload this page.`;
+    case 'error':return u.error;
+    default:return u.checkedAgoS>=0?'Checked '+ago(u.checkedAgoS):'Not checked yet';
+  }
+}
+async function installUpdate(release,current){
+  const older=!release.newer;
+  const note=older?`\n\nv${release.version} is older than v${current}. Older versions may not read settings added later; your saved config stays on the pad and works again after updating.`:'';
+  if(!confirm(`Install v${release.version}?\n\nThe pad downloads it, checks its signature, then restarts. Keep it powered.${note}`))return;
+  const r=await api('/api/update/install?version='+encodeURIComponent(release.version),{method:'POST'}).catch(()=>null);
+  const body=r?await r.json().catch(()=>({})):{};
+  if(!r||!r.ok)toast(body.error||'Install failed to start',true);
+  refreshUpdates();
+}
+function renderUpdates(){
+  const panel=$('#updatePanel'),box=$('#updateStatus'),summary=$('#updateSummary');if(!panel)return;
+  box.replaceChildren();
+  const u=updateInfo,releases=u?.releases||[],newest=releases.find(r=>r.newer);
+  summary.textContent=newest?`Update available: v${newest.version}`:'Updates';
+  $('#updateBox').classList.toggle('warn',!!newest);
+  const note=text=>{const n=el('div','hint');n.textContent=text;return n;};
+  const form=$('#updateForm');
+  if(!u||!u.enabled){if(form)form.hidden=true;box.append(u?note(`v${u.current} · updates are off in this build (no update_public_key.pem).`):note('Update status unavailable.'));return;}
+  const row=el('div','srow'),a=el('span'),b=el('b');a.textContent='Installed';b.textContent='v'+u.current;row.append(a,b);box.append(row);
+  box.append(note(updateStatusText(u)));
+  if(u.rolledBack)box.append(note(`v${u.rolledBack} kept failing to start, so the pad went back to v${u.current}.`));
+  const busy=['checking','downloading','restarting'].includes(u.state);
+  for(const r of releases){
+    const line=el('div','update-release'),label=el('span'),meta=el('small');
+    label.textContent='v'+r.version;
+    meta.textContent=[r.version===u.current?'installed':r.newer?'new':'older',r.date].filter(Boolean).join(' · ');label.appendChild(meta);
+    line.appendChild(label);
+    if(r.version!==u.current){const btn=el('button','btn sm'+(r.newer?' primary':''));btn.type='button';btn.textContent='Install';btn.disabled=busy;btn.setAttribute('aria-label','Install v'+r.version);btn.onclick=()=>installUpdate(r,u.current);line.appendChild(btn);}
+    box.appendChild(line);
+  }
+  // The Wi-Fi form is built once so polling never wipes what you're typing.
+  if(!form)panel.appendChild(buildUpdateForm());
+  const f=$('#updateForm');f.hidden=false;
+  if(!f.dataset.edited)$('#updateSsid').value=u.wifi||'';
+  $('#updatePass').placeholder=u.wifi?'Password (blank keeps the saved one)':'Password';
+  $('#updateCheck').disabled=busy||!u.wifi;
+}
+function buildUpdateForm(){
+  const form=el('form','update-form');form.id='updateForm';form.setAttribute('aria-label','Home Wi-Fi for updates');
+  const ssid=el('input');ssid.id='updateSsid';ssid.placeholder='Home Wi-Fi name';ssid.setAttribute('aria-label','Home Wi-Fi name');ssid.autocomplete='off';
+  const pass=el('input');pass.id='updatePass';pass.type='password';pass.setAttribute('aria-label','Home Wi-Fi password');pass.autocomplete='off';
+  for(const input of [ssid,pass])input.oninput=()=>form.dataset.edited='1';
+  const actions=el('div','recording-actions'),save=el('button','btn sm'),check=el('button','btn sm');
+  save.type='submit';save.textContent='Save Wi-Fi';check.type='button';check.id='updateCheck';check.textContent='Check now';
+  check.onclick=async()=>{await api('/api/update/check',{method:'POST'}).catch(()=>{});setTimeout(refreshUpdates,300);};
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const body=new URLSearchParams({ssid:ssid.value.trim()});
+    if(pass.value||!updateInfo?.wifi)body.set('password',pass.value);   // blank keeps the saved password
+    const r=await api('/api/update/wifi',{method:'POST',body}).catch(()=>null);
+    if(r&&r.ok){pass.value='';delete form.dataset.edited;}
+    toast(r&&r.ok?'Wi-Fi saved — checking for updates':'Could not save Wi-Fi',!(r&&r.ok));setTimeout(refreshUpdates,300);
+  };
+  const hint=el('div','hint');hint.textContent='Only used to reach GitHub. The setup hotspot stays on; a phone on it may drop for a moment while the pad checks.';
+  actions.append(save,check);form.append(ssid,pass,actions,hint);return form;
+}
 function fmtBytes(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";}
 async function refreshStorage(){
   try{storage=await getJson("/api/storage");}catch(e){storage=null;}
@@ -498,7 +582,7 @@ function renderStorage(){
   const rows=[["Recording slots",cfg.workflows.length,64,`${cfg.workflows.length} of 64`,"Long recordings use several slots"]];
   if(storage){
     rows.push(["Config size",pending,storage.maxConfig,`${fmtBytes(pending)} of ${fmtBytes(storage.maxConfig)}`,"Largest config the device accepts on Save"]);
-    rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem, including the web UI"]);
+    rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem: recordings and patterns"]);
     rows.push(["Device memory",storage.heapSize-storage.heapFree,storage.heapSize,`${fmtBytes(storage.heapFree)} free`,`Largest free block ${fmtBytes(storage.heapLargest)}`]);
   }
   // Collapsed summary; opens itself when something is nearly full.
@@ -522,6 +606,7 @@ async function loadAll(){
   renderLayers();renderGrid();renderEditor();buildVKeyboard();updateDirty();
   renderRecordings();
   refreshStorage();
+  refreshUpdates();
   pollStatus();
   pollMacroLog();
 }
@@ -629,17 +714,38 @@ function setGridMode(m){
 }
 
 /* Dynamic jump-attack presets: compact definitions, sampled by the ESP32. */
-const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_jump_up','Attack → jump release',0,90000],['jump_up_to_attack_up','Jump release → attack release',0,90000],['combo_gap','Gap after attack',0,90000],['dir_hold','Direction hold',1,90000],['dir_after','Gap after direction',0,90000],['combos_per_side','Attacks per batch',1,100],['sides','Batches per play',1,100]];
-function defaultDynamicPattern(){return {id:freshId(),jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,180],dir_after:[16,330],combos_per_side:[2,10],sides:[8,12],turn_chance:.8,shuffle_skills:true,skills:[{id:freshId(),enabled:true,key:'C',chance:.1,repeats:[2,2],hold:[85,110],after:[880,1130],cooldown_ms:0}]};}
+const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_jump_up','Attack → jump release',0,90000],['jump_up_to_attack_up','Jump release → attack release',0,90000],['combo_gap','Gap after attack',0,90000],['dir_hold','Direction hold',1,90000],['dir_after','Gap after direction',0,90000],['attacks_per_set','Attacks per set',1,100],['sets','Sets per play',1,100]];
+// Movement and rhythm presets; skills are left as they are. Natural is fitted to
+// a recorded 57 s jump-attack run (timings ~min-max, gap drift ~15%); Smooth keeps
+// its middle half; Flip turns after nearly every 1-3 attacks.
+const DYNAMIC_PRESETS={
+  natural:{label:'Natural',hint:'Fitted to recorded play: full timing spread, the attack rhythm drifts slower/faster like a person, usually turns after a set.',
+    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,195],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.85,tempo_drift:.15}},
+  smooth:{label:'Smooth',hint:'Steady rhythm: the middle of the recorded timings, medium sets, little drift, turns after every set.',
+    values:{jump_to_attack:[75,105],attack_to_jump_up:[60,90],jump_up_to_attack_up:[40,65],combo_gap:[580,680],dir_hold:[100,150],dir_after:[120,230],attacks_per_set:[4,7],sets:[8,12],turn_chance:1,tempo_drift:.05}},
+  flip:{label:'Flip',hint:'Turns often: 1–3 attacks per set and nearly always turns, with more sets so a play lasts about as long.',
+    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,700],dir_hold:[85,150],dir_after:[60,200],attacks_per_set:[1,3],sets:[20,30],turn_chance:.95,tempo_drift:.1}},
+};
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,skills:[{id:freshId(),enabled:true,key:'C',chance:.1,repeats:[2,2],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]}]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
+// Presets made before the batch -> set rename used these keys.
+function normalizeDynamicPattern(p){
+  if(!p||typeof p!=='object')return p;
+  for(const [key,old] of [['attacks_per_set','combos_per_side'],['sets','sides']]){if(p[key]===undefined&&p[old]!==undefined)p[key]=p[old];delete p[old];}
+  if(p.tempo_drift===undefined)p.tempo_drift=0; // presets from before drift existed
+  // A single number is the older fixed skill interval.
+  for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
+  return p;
+}
 function validateDynamicPattern(p){
+  normalizeDynamicPattern(p);
   const id=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,48}$/.test(value);
   const range=(value,label,min,max)=>{if(!Array.isArray(value)||value.length!==2||value.some(n=>!Number.isInteger(n))||value[0]<min||value[1]<value[0]||value[1]>max)throw new Error(label+': enter an ordered range from '+min+' to '+max+'.');};
   const chance=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)throw new Error(label+': enter a percentage from 0 to 100.');};
   if(!p||!id(p.id))throw new Error('Invalid dynamic pattern ID.');
   DYNAMIC_RANGES.forEach(([key,label,min,max])=>range(p[key],label,min,max));
   if(p.jump_to_attack[1]+p.attack_to_jump_up[1]>90000||p.attack_to_jump_up[1]+p.jump_up_to_attack_up[1]>90000)throw new Error('Combined Alt or Ctrl hold must not exceed 90 seconds.');
-  chance(p.turn_chance,'Turn chance');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
+  chance(p.turn_chance,'Turn chance');if(typeof p.tempo_drift!=='number'||!(p.tempo_drift>=0&&p.tempo_drift<=.3))throw new Error('Tempo drift: enter a percentage from 0 to 30.');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
   if(!Array.isArray(p.skills)||p.skills.length>8)throw new Error('Use at most 8 skills.');
   const ids=new Set();
   for(const s of p.skills){
@@ -647,7 +753,7 @@ function validateDynamicPattern(p){
     if(typeof s.enabled!=='boolean')throw new Error('Choose whether the skill is enabled.');
     if(!s.key||!meta.keys.includes(s.key)||['LEFT','RIGHT'].includes(s.key))throw new Error('Choose a valid non-direction skill key.');
     chance(s.chance,'Skill chance');range(s.repeats,'Skill repeats',1,10);range(s.hold,'Skill hold',1,90000);range(s.after,'Skill gap',0,90000);
-    if(!Number.isInteger(s.cooldown_ms)||s.cooldown_ms<0||s.cooldown_ms>86400000)throw new Error('Skill minimum interval must be between 0 and 1440 minutes.');
+    try{range(s.cooldown_ms,'',0,86400000);}catch(e){throw new Error('Skill use again after: enter an ordered range from 0 to 86400 seconds.');}
   }
   return p;
 }
@@ -657,9 +763,11 @@ function dynamicNumber(label,value,min,max,step,change,displayLabel=label){
   const input=el('input');input.type='number';input.min=min;input.max=max;input.step=step;input.value=value;input.setAttribute('aria-label',label);
   input.oninput=()=>{change(input.value===''?NaN:Number(input.value));dynamicDirty=true;$('#dynamicError').textContent='';};wrapper.appendChild(input);return wrapper;
 }
-function dynamicRange(label,range,min,max){
+// scale shows stored milliseconds in larger units, e.g. 1000 for seconds.
+function dynamicRange(label,range,min,max,scale=1){
   const box=el('fieldset','dynamic-range'),legend=el('legend');legend.textContent=label;box.appendChild(legend);
-  box.append(dynamicNumber(label+' minimum',range[0],min,max,1,n=>range[0]=n,'Minimum'),dynamicNumber(label+' maximum',range[1],min,max,1,n=>range[1]=n,'Maximum'));return box;
+  const field=(i,name)=>dynamicNumber(label+' '+name.toLowerCase(),range[i]/scale,min/scale,max/scale,scale===1?1:.1,n=>range[i]=Math.round(n*scale),name);
+  box.append(field(0,'Minimum'),field(1,'Maximum'));return box;
 }
 function openDynamicEditor(id=null){
   if(!cfg){toast('Configuration not loaded yet',true);return;}
@@ -667,12 +775,21 @@ function openDynamicEditor(id=null){
   if(id&&!dynamicTarget)return;
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
+  normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';
+  renderDynamicFields();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+}
+function renderDynamicFields(){
   const main=$('#dynamicMain');main.replaceChildren();
-  for(const key of ['combos_per_side','sides']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);main.appendChild(dynamicRange(label,dynamicDraft[key],min,max));}
-  main.appendChild(dynamicNumber('Turn after batch (%)',dynamicDraft.turn_chance*100,0,100,.1,n=>dynamicDraft.turn_chance=n/100));
+  for(const key of ['attacks_per_set','sets']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);main.appendChild(dynamicRange(label,dynamicDraft[key],min,max));}
+  main.appendChild(dynamicNumber('Turn around after a set (%)',dynamicDraft.turn_chance*100,0,100,.1,n=>dynamicDraft.turn_chance=n/100));
+  main.appendChild(dynamicNumber('Tempo drift (%)',dynamicDraft.tempo_drift*100,0,30,1,n=>dynamicDraft.tempo_drift=n/100));
   const timings=$('#dynamicTimings');timings.replaceChildren();
   DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>timings.appendChild(dynamicRange(label+' (ms)',dynamicDraft[key],min,max)));
-  $('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+}
+function applyDynamicPreset(name){
+  const preset=DYNAMIC_PRESETS[name];
+  Object.assign(dynamicDraft,JSON.parse(JSON.stringify(preset.values)));dynamicDirty=true;
+  $('#dynamicPresetHint').textContent=preset.label+': '+preset.hint;$('#dynamicError').textContent='';renderDynamicFields();
 }
 function renderDynamicSkills(){
   const list=$('#dynamicSkills');list.replaceChildren();
@@ -683,9 +800,11 @@ function renderDynamicSkills(){
     meta.keys.filter(k=>k&&!['LEFT','RIGHT'].includes(k)).forEach(k=>{const o=el('option');o.value=k;o.textContent=k;key.appendChild(o);});key.value=skill.key;
     key.onchange=()=>{skill.key=key.value;dynamicDirty=true;renderDynamicSkills();};head.appendChild(key);
     const remove=el('button','btn sm');remove.type='button';remove.textContent='Remove skill';remove.onclick=()=>{dynamicDraft.skills.splice(index,1);dynamicDirty=true;renderDynamicSkills();};head.appendChild(remove);card.appendChild(head);
-    card.appendChild(dynamicNumber('Skill '+(index+1)+' chance per batch (%)',skill.chance*100,0,100,.1,n=>skill.chance=n/100));
-    const details=el('details'),summary=el('summary');summary.textContent='Repeats, timing and minimum interval';details.appendChild(summary);
-    details.append(dynamicRange('Skill '+(index+1)+' repeats',skill.repeats,1,10),dynamicRange('Skill '+(index+1)+' hold (ms)',skill.hold,1,90000),dynamicRange('Skill '+(index+1)+' gap after tap (ms)',skill.after,0,90000),dynamicNumber('Skill '+(index+1)+' minimum interval (minutes)',skill.cooldown_ms/60000,0,1440,.1,n=>skill.cooldown_ms=Math.round(n*60000)));
+    card.append(dynamicNumber('Skill '+(index+1)+' chance after each set (%)',skill.chance*100,0,100,.1,n=>skill.chance=n/100),
+      dynamicRange('Skill '+(index+1)+' taps',skill.repeats,1,10),
+      dynamicRange('Skill '+(index+1)+' use again after (seconds)',skill.cooldown_ms,0,86400000,1000));
+    const details=el('details'),summary=el('summary');summary.textContent='Tap timing';details.appendChild(summary);
+    details.append(dynamicRange('Skill '+(index+1)+' hold (ms)',skill.hold,1,90000),dynamicRange('Skill '+(index+1)+' gap after tap (ms)',skill.after,0,90000));
     card.appendChild(details);list.appendChild(card);
   });
   $('#dynamicAddSkill').disabled=dynamicDraft.skills.length>=8;
@@ -707,20 +826,26 @@ function applyDynamicPattern(){
 function generateDynamicSample(p,rng=Math.random){
   validateDynamicPattern(p);
   const r=range=>{const u=Math.max(0,Math.min(1,rng())),span=range[1]-range[0];return Math.round(u<.5?range[0]+span*Math.sqrt(u/2):range[1]-span*Math.sqrt((1-u)/2));};
-  const steps=[],last=new Map();let at=0;
-  const add=step=>{if(steps.length>=12000)throw new Error('This example exceeds 12000 steps. Reduce the preview batch counts; live playback is streamed.');steps.push(step);};
+  const steps=[],due=new Map();let at=0;
+  // Same tempo drift as the device: a mean-reverting walk in permille, within +/-drift.
+  const drift=Math.round(p.tempo_drift*1000),half=Math.trunc(drift/2),int=n=>Math.min(n-1,Math.floor(rng()*n));
+  let tempo=drift?int(2*drift+1)-drift:0;
+  const add=step=>{if(steps.length>=12000)throw new Error('This example exceeds 12000 steps. Reduce the sets or attacks per set for the preview; live playback is streamed.');steps.push(step);};
   const delay=range=>{const ms=r(range);add({type:'delay',ms});at+=ms;};
-  const tap=(key,hold,after,includeAfter=true)=>{add({type:'down',key});delay(hold);add({type:'up',key});if(includeAfter)delay(after);};
-  let facing=rng()<.5?'LEFT':'RIGHT';const batches=r(p.sides);tap(facing,p.dir_hold,p.dir_after);
-  for(let batch=0;batch<batches;batch++){
-    const units=r(p.combos_per_side);
+  const tap=(key,hold,after)=>{add({type:'down',key});delay(hold);add({type:'up',key});delay(after);};
+  let facing=rng()<.5?'LEFT':'RIGHT';const sets=r(p.sets);tap(facing,p.dir_hold,p.dir_after);
+  for(let set=0;set<sets;set++){
+    const units=r(p.attacks_per_set);
     for(let unit=0;unit<units;unit++){
-      add({type:'down',mods:['alt']});delay(p.jump_to_attack);add({type:'down',mods:['ctrl']});delay(p.attack_to_jump_up);add({type:'up',mods:['alt']});delay(p.jump_up_to_attack_up);add({type:'up',mods:['ctrl']});delay(p.combo_gap);
+      if(drift)tempo=Math.max(-drift,Math.min(drift,Math.trunc(tempo*9/10)+int(2*half+1)-half));
+      const gap=Math.floor(r(p.combo_gap)*(1000+tempo)/1000);
+      add({type:'down',mods:['alt']});delay(p.jump_to_attack);add({type:'down',mods:['ctrl']});delay(p.attack_to_jump_up);add({type:'up',mods:['alt']});delay(p.jump_up_to_attack_up);add({type:'up',mods:['ctrl']});add({type:'delay',ms:gap});at+=gap;
     }
-    const skills=p.skills.filter(s=>s.enabled&&(!last.has(s.id)||at-last.get(s.id)>=s.cooldown_ms)&&rng()<s.chance);
+    const skills=p.skills.filter(s=>s.enabled&&(!due.has(s.id)||at>=due.get(s.id))&&rng()<s.chance);
     if(p.shuffle_skills)for(let i=skills.length;i>1;i--){const j=Math.min(i-1,Math.floor(rng()*i));[skills[i-1],skills[j]]=[skills[j],skills[i-1]];}
-    for(const s of skills){const repeats=r(s.repeats);for(let n=0;n<repeats;n++)tap(s.key,s.hold,s.after);last.set(s.id,at);}
-    if(rng()<p.turn_chance)facing=facing==='LEFT'?'RIGHT':'LEFT';tap(facing,p.dir_hold,p.dir_after,batch+1<batches);
+    for(const s of skills){const repeats=r(s.repeats);for(let n=0;n<repeats;n++)tap(s.key,s.hold,s.after);due.set(s.id,at+r(s.cooldown_ms));}
+    if(set+1===sets)break; // no direction tap after the last set
+    if(rng()<p.turn_chance)facing=facing==='LEFT'?'RIGHT':'LEFT';tap(facing,p.dir_hold,p.dir_after);
   }
   return {name:($('#dynamicName').value.trim()||'Dynamic jump-attack')+' — example',trigger:'tap',steps};
 }
@@ -739,7 +864,7 @@ function recordingSteps(recording,seen=new Set()){
   });
 }
 function recordingSummary(recording){
-  if(isDynamicRecording(recording)){const p=recording.steps[0].pattern;return `Dynamic · ${p.combos_per_side.join('–')} attacks × ${p.sides.join('–')} batches`;}
+  if(isDynamicRecording(recording)){const p=recording.steps[0].pattern;return `Dynamic · ${p.attacks_per_set.join('–')} attacks × ${p.sets.join('–')} sets`;}
   const steps=recordingSteps(recording),ms=steps.reduce((n,s)=>n+stepMs(s),0);
   return steps.length+' steps · '+(ms/1000).toFixed(1)+' s';
 }
@@ -1403,7 +1528,7 @@ function refreshJsonPreview(){
     payload=currentBinding();
     if(selectedWorkflow!==null&&payload.recording)payload={name:payload.name,trigger:"tap",steps:recordingSteps(payload)};
     name=payload.name||payload.id||("key-"+(selKey+1));
-    hint=selectedWorkflow!==null&&isDynamicRecording(currentBinding())?"Live generator definition. The device samples new batches on each playback; exporting it does not freeze a generated run.":selectedWorkflow!==null&&currentBinding().recording?"Complete captured recording with its original fixed timings. Download it to import into Recordings later.":"Button or existing custom macro definition, including unsaved edits. Export Full configuration to include referenced recordings.";
+    hint=selectedWorkflow!==null&&isDynamicRecording(currentBinding())?"Live generator definition. The device samples new sets on each playback; exporting it does not freeze a generated run.":selectedWorkflow!==null&&currentBinding().recording?"Complete captured recording with its original fixed timings. Download it to import into Recordings later.":"Button or existing custom macro definition, including unsaved edits. Export Full configuration to include referenced recordings.";
   }
   $("#jsonText").value=JSON.stringify(payload,null,2)+"\n";
   $("#jsonHint").textContent=hint;
@@ -1554,11 +1679,12 @@ async function pollStatus(){
 }
 
 $("#newDynamic").onclick=()=>openDynamicEditor();
+for(const [name,preset] of Object.entries(DYNAMIC_PRESETS)){const b=el('button','btn sm');b.type='button';b.textContent=preset.label;b.onclick=()=>applyDynamicPreset(name);$('#dynamicPresets').appendChild(b);}
 $("#dynamicName").oninput=()=>dynamicDirty=true;
 $("#dynamicClose").onclick=closeDynamicEditor;
 $("#dynamicDialog").addEventListener("cancel",event=>{event.preventDefault();closeDynamicEditor();});
 $("#dynamicShuffle").onchange=()=>{dynamicDraft.shuffle_skills=$("#dynamicShuffle").checked;dynamicDirty=true;};
-$("#dynamicAddSkill").onclick=()=>{if(dynamicDraft.skills.length>=8)return;dynamicDraft.skills.push({id:freshId(),enabled:false,key:'C',chance:.1,repeats:[1,1],hold:[85,110],after:[880,1130],cooldown_ms:0});dynamicDirty=true;renderDynamicSkills();};
+$("#dynamicAddSkill").onclick=()=>{if(dynamicDraft.skills.length>=8)return;dynamicDraft.skills.push({id:freshId(),enabled:false,key:'C',chance:.1,repeats:[1,1],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]});dynamicDirty=true;renderDynamicSkills();};
 $("#dynamicApply").onclick=applyDynamicPattern;
 $("#dynamicPreview").onclick=()=>{try{generatedPreview=generateDynamicSample(dynamicDraft);openJsonPreview('generated');}catch(e){$('#dynamicError').textContent=e.message;}};
 $("#newRecording").onclick=newRecording;

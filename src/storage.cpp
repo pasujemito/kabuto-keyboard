@@ -5,9 +5,11 @@
 #include <set>
 
 bool storageBegin() {
-    if (LittleFS.begin(false)) return true;
     // First boot: format then mount.
-    return LittleFS.begin(true);
+    if (!LittleFS.begin(false) && !LittleFS.begin(true)) return false;
+    // The UI is now built into the firmware; free the copy older uploadfs left.
+    if (LittleFS.exists("/index.html")) LittleFS.remove("/index.html");
+    return true;
 }
 
 // --- parsing ---------------------------------------------------------------
@@ -41,6 +43,10 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     };
     p.id = o["id"] | "";
     if (!validId(p.id)) return false;
+    // Presets saved before the batch -> set rename keep loading.
+    auto legacy = [](JsonObjectConst object, const char* name, const char* oldName) {
+        return object[name].isNull() ? object[oldName] : object[name];
+    };
     auto range = [](JsonVariantConst v, DynamicRange& out, uint32_t low, uint32_t high) {
         if (v.isNull()) return true;
         if (!v.is<JsonArrayConst>() || v.size()!=2 || !v[0].is<uint32_t>() || !v[1].is<uint32_t>()) return false;
@@ -60,8 +66,9 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         !range(o["combo_gap"],p.comboGap,0,90000) ||
         !range(o["dir_hold"],p.directionHold,1,90000) ||
         !range(o["dir_after"],p.directionAfter,0,90000) ||
-        !range(o["combos_per_side"],p.combosPerBatch,1,100) ||
-        !range(o["sides"],p.batches,1,100) || !chance(o["turn_chance"],p.turnChancePermille)) return false;
+        !range(legacy(o,"attacks_per_set","combos_per_side"),p.attacksPerSet,1,100) ||
+        !range(legacy(o,"sets","sides"),p.sets,1,100) || !chance(o["turn_chance"],p.turnChancePermille) ||
+        !chance(o["tempo_drift"],p.tempoDriftPermille) || p.tempoDriftPermille>300) return false;
     if (p.jumpToAttack.max+p.attackToJumpUp.max>90000 || p.attackToJumpUp.max+p.jumpUpToAttackUp.max>90000) return false;
     if (!o["shuffle_skills"].isNull() && !o["shuffle_skills"].is<bool>()) return false;
     p.shuffleSkills = o["shuffle_skills"] | true;
@@ -76,9 +83,10 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         skill.enabled=s["enabled"] | true;
         if (!chance(s["chance"],skill.chancePermille) || !range(s["repeats"],skill.repeats,1,10) ||
             !range(s["hold"],skill.hold,1,90000) || !range(s["after"],skill.after,0,90000)) return false;
-        if (!s["cooldown_ms"].isNull() && !s["cooldown_ms"].is<uint32_t>()) return false;
-        skill.cooldownMs=s["cooldown_ms"] | 0U;
-        if (skill.cooldownMs>86400000U) return false;
+        // A single number is the older fixed interval; a [min,max] range is drawn after each use.
+        if (s["cooldown_ms"].is<uint32_t>()) skill.cooldown={s["cooldown_ms"].as<uint32_t>(),s["cooldown_ms"].as<uint32_t>()};
+        else if (!range(s["cooldown_ms"],skill.cooldown,0,86400000)) return false;
+        if (skill.cooldown.max>86400000U) return false;
         p.skills.push_back(std::move(skill));
     }
     return true;
@@ -333,10 +341,10 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"jump_to_attack",p->jumpToAttack);range(d,"attack_to_jump_up",p->attackToJumpUp);
             range(d,"jump_up_to_attack_up",p->jumpUpToAttackUp);range(d,"combo_gap",p->comboGap);
             range(d,"dir_hold",p->directionHold);range(d,"dir_after",p->directionAfter);
-            range(d,"combos_per_side",p->combosPerBatch);range(d,"sides",p->batches);
-            d["turn_chance"]=p->turnChancePermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
+            range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
+            d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             JsonArray skills=d["skills"].to<JsonArray>();
-            for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;k["cooldown_ms"]=skill.cooldownMs;range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
+            for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;
         }
         case StepType::KEY:

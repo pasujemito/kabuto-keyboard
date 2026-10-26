@@ -4,10 +4,12 @@
 #include "macro_engine.h"
 #include "hid_keyboard.h"
 #include "keymap.h"
+#include "updater.h"
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include "web_ui.h"   // generated from web/index.html by tools/embed_web_ui.py
 
 static AsyncWebServer server(80);
 static volatile bool recorderActive_ = false;
@@ -21,6 +23,14 @@ bool webServerRecorderActive() {
 extern volatile uint32_t g_keyMask;
 extern volatile int      g_lastKeyDown;
 extern volatile uint32_t g_keyDownCount;
+
+// The UI is built into the firmware, so flashing never needs to touch LittleFS.
+static void sendWebUi(AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html", WEB_UI_GZ, WEB_UI_GZ_LEN);
+    r->addHeader("Content-Encoding", "gzip");
+    r->addHeader("Cache-Control", "no-cache");   // pick up a new UI after reflashing
+    req->send(r);
+}
 
 static void sendJson(AsyncWebServerRequest* req, int code, const String& body) {
     AsyncWebServerResponse* r = req->beginResponse(code, "application/json", body);
@@ -47,6 +57,13 @@ static void handleStorage(AsyncWebServerRequest* req) {
     d["heapSize"]    = ESP.getHeapSize();
     d["heapFree"]    = ESP.getFreeHeap();
     d["heapLargest"] = ESP.getMaxAllocHeap();
+    String out; serializeJson(d, out);
+    sendJson(req, 200, out);
+}
+
+static void handleUpdateStatus(AsyncWebServerRequest* req) {
+    JsonDocument d;
+    updaterWriteStatus(d);
     String out; serializeJson(d, out);
     sendJson(req, 200, out);
 }
@@ -163,12 +180,7 @@ void webServerBegin() {
     WiFi.softAP(AP_SSID, AP_PASSWORD, AP_CHANNEL);
     delay(100);
 
-    // Static SPA from LittleFS; API requests must reach their route handlers.
-    server.serveStatic("/", LittleFS, "/")
-        .setDefaultFile("index.html")
-        .setFilter([](AsyncWebServerRequest* req) {
-            return !req->url().startsWith("/api/");
-        });
+    server.on("/", HTTP_GET, sendWebUi);
 
     server.on("/api/meta",   HTTP_GET, handleMeta);
     server.on("/api/status", HTTP_GET, handleStatus);
@@ -179,6 +191,25 @@ void webServerBegin() {
         sendJson(req, 200, "{\"ok\":true}");
     });
     server.on("/api/log", HTTP_GET, handleMacroLog);
+    server.on("/api/update", HTTP_GET, handleUpdateStatus);
+    // Home Wi-Fi for update checks, sent as a form body; the password is
+    // kept when the field is left out.
+    server.on("/api/update/wifi", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (!req->hasParam("ssid", true)) { sendJson(req, 400, "{\"ok\":false,\"error\":\"ssid required\"}"); return; }
+        String password = req->hasParam("password", true) ? req->getParam("password", true)->value() : String();
+        updaterSetWifi(req->getParam("ssid", true)->value(), req->hasParam("password", true) ? &password : nullptr);
+        sendJson(req, 200, "{\"ok\":true}");
+    });
+    server.on("/api/update/check", HTTP_POST, [](AsyncWebServerRequest* req) {
+        updaterRequestCheck();
+        sendJson(req, 200, "{\"ok\":true}");
+    });
+    server.on("/api/update/install", HTTP_POST, [](AsyncWebServerRequest* req) {
+        String err = updaterRequestInstall(req->hasParam("version") ? req->getParam("version")->value() : String());
+        JsonDocument d; d["ok"] = !err.length(); if (err.length()) d["error"] = err;
+        String out; serializeJson(d, out);
+        sendJson(req, err.length() ? 409 : 200, out);
+    });
     server.on("/api/log/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
         Macros.clearLog();
         sendJson(req, 200, "{\"ok\":true}");
@@ -290,9 +321,9 @@ void webServerBegin() {
         });
 
     server.onNotFound([](AsyncWebServerRequest* req) {
-        // SPA fallback
-        if (LittleFS.exists("/index.html"))
-            req->send(LittleFS, "/index.html", "text/html");
+        // SPA fallback; unknown API routes still get a 404.
+        if (req->method() == HTTP_GET && !req->url().startsWith("/api/"))
+            sendWebUi(req);
         else
             req->send(404, "text/plain", "not found");
     });

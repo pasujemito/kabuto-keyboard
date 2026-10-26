@@ -78,11 +78,41 @@ pip install platformio
 # from the project root:
 pio run                       # compile firmware
 pio run -t upload             # flash firmware over USB
-pio run -t uploadfs           # upload the web UI (data/) to the device
+pio run -t uploadfs           # upload the web UI (data/), keeping your saved config
+pio run -t backup             # copy the saved config into backups/
 pio device monitor            # view the serial log (115200)
 ```
 
 The first `uploadfs` installs the config UI and the example `macros.json`.
+
+### Keeping your patterns when you reflash
+
+`pio run -t upload` (firmware only) never touches saved recordings and patterns.
+`uploadfs` writes a whole new filesystem, so on its own it would replace them
+with `data/macros.json`. To prevent that, `tools/pio_keep_config.py` runs before
+every `uploadfs`, over the same USB cable you flash with:
+
+1. It reads the filesystem straight from the pad's flash with esptool (read
+   only, works with whatever firmware is on it).
+2. It saves `/macros.json` to `backups/macros-<date>-<time>.json` (ignored by
+   git, so your patterns stay on your PC).
+3. It builds the new image with that config in place of `data/macros.json`.
+
+If the pad can't be read (wrong port, cable unplugged), `uploadfs` stops instead
+of overwriting anything. A blank pad just gets `data/macros.json`. The first run
+installs `littlefs-python` into PlatformIO's Python. Options:
+
+```bash
+pio run -t backup                                    # backup only, no flashing
+KABUTO_RESTORE=backups/macros-20261026-101500.json pio run -t uploadfs   # flash a backup
+KABUTO_SKIP_BACKUP=1 pio run -t uploadfs             # deliberately reset to data/macros.json
+python tools/flash_backup.py backup --port COM5      # backup without PlatformIO
+```
+
+`KABUTO_RESTORE` also moves your setup to a new board or back after
+`pio run -t erase`. Set environment variables in PowerShell with
+`$env:KABUTO_RESTORE="backups\..."` before the `pio` command. **Export JSON** in the
+web UI remains a quick manual backup.
 
 ## Recordings and button assignments
 
@@ -178,7 +208,9 @@ existing unlock-to-edit protection. Existing recordings and defaults are not
 replaced automatically. An importable preset is in
 [`examples/jump-combat-dynamic.json`](examples/jump-combat-dynamic.json).
 
-The device generates fresh batches while playing, using the ranges below.
+The device generates fresh sets while playing, using the ranges below. A
+**set** is a run of jump-attacks facing one way; between sets, skills may fire
+and the character may turn around.
 It does not generate a large recording once and then repeat that file.
 Timings and integer counts use a symmetric triangular distribution centred
 between each minimum and maximum. This is a chosen random model, not evidence
@@ -192,20 +224,21 @@ of human behaviour or a guarantee against repetition/detection.
 | Gap after each attack | 510–760 ms |
 | Direction hold | 85–180 ms |
 | Gap after direction | 16–330 ms |
-| Attacks per batch | 2–10 |
-| Batches per play | 8–12 |
-| Change facing after a batch | 80% |
+| Attacks per set | 2–10 |
+| Sets per play | 8–12 |
+| Turn around after a set | 80% |
 
 Every jump-attack retains that exact press/release order. Directions are tapped
-between batches, never mixed into an Alt/Ctrl chord. The initial facing is
+between sets, never mixed into an Alt/Ctrl chord. The initial facing is
 chosen and actually tapped **before** the first attack, unlike the supplied
-Python example which only tracked it in memory. After each batch, change to
-the opposite direction with the configured probability; otherwise tap the
-same direction. A final direction tap has no following wait. A 100% turn
+Python example which only tracked it in memory. After each set except the
+last, change to the opposite direction with the configured probability;
+otherwise tap the same direction. Nothing is tapped after the last set, so the
+character doesn't take a final step. A 100% turn
 chance gives strict alternation, and 0% keeps the initial facing. Direction
 taps also move the character, so this is not position balancing or feedback.
 
-The default skill is **C**, enabled with a **10% chance after each batch**,
+The default skill is **C**, enabled with a **10% chance after each set**,
 tapped twice. Each tap holds for 85–110 ms and has an 880–1130 ms gap **after
 release**, including the last tap. Thus start-to-start spacing includes both
 hold and gap. Add up to eight independent skills; configure their key,
@@ -234,6 +267,10 @@ live generator definition. Very large static previews are limited to 12000
 steps; the live generator does not buffer a full run. Apply edits, then use the
 header **Save** to persist them. Install the new firmware and filesystem before
 using dynamic definitions on a device.
+
+In the JSON, sets are `"attacks_per_set"` and `"sets"`. Presets saved before
+the rename (`"combos_per_side"`/`"sides"`) still load and are saved with the
+new names.
 
 ## JSON import and export
 
@@ -293,7 +330,8 @@ python tools/recorder.py --out macros.json --loop 0 --trigger toggle
 # play; press F10 to stop.
 ```
 
-Then load the file via the web UI (**Save to device**) or `pio run -t uploadfs`.
+Then load the file via the web UI (**Save to device**) or flash it with
+`KABUTO_RESTORE=macros.json pio run -t uploadfs`.
 Bound to a key as **Toggle** with `--loop 0`, one press starts the replay and a
 second press stops it.
 
@@ -356,6 +394,8 @@ data/
   macros.json         example macros
 tools/
   recorder.py         PC-side keyboard recorder -> macros.json
+  flash_backup.py     read the saved config off the pad over USB
+  pio_keep_config.py  uploadfs hook: back up + keep the saved config
 ```
 
 ## What changed in 1.4

@@ -2,15 +2,15 @@
 #
 # uploadfs replaces the whole filesystem, including /macros.json. Before the
 # image is built, this reads the current config off the pad over USB, keeps a
-# timestamped copy in backups/, and builds the image with that config in place
+# timestamped gzipped copy in backups/ (newest 5 kept), and builds the image with that config in place
 # of data/macros.json. Firmware-only uploads (`-t upload`) never touch the
 # filesystem, so they need none of this.
 #
 #   pio run -t backup                         just save a copy in backups/
-#   KABUTO_RESTORE=backups/x.json pio run -t uploadfs   flash that file instead
+#   KABUTO_RESTORE=backups/x.json.gz pio run -t uploadfs   flash that file instead
 #   KABUTO_SKIP_BACKUP=1 pio run -t uploadfs  flash data/macros.json (wipes yours)
 Import("env")
-import json, os, shutil, sys
+import os, shutil, sys
 
 sys.path.insert(0, os.path.join(env.subst("$PROJECT_DIR"), "tools"))
 import flash_backup
@@ -54,9 +54,7 @@ env.AddCustomTarget("backup", None, backup_action, title="Back up config",
 if "uploadfs" in COMMAND_LINE_TARGETS and not os.environ.get("KABUTO_SKIP_BACKUP"):
     restore = os.environ.get("KABUTO_RESTORE")
     if restore:
-        with open(restore, "rb") as f:
-            config = f.read()
-        json.loads(config.decode("utf-8"))   # refuse to flash a broken file
+        config = flash_backup.load_backup(restore)   # refuses a broken file
         print("Kabuto: flashing config from", restore)
         stage_data_dir(config)
     else:

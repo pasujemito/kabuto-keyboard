@@ -76,26 +76,33 @@ your wiring matches `(row * MATRIX_COLS + col)`.
 pip install platformio
 
 # from the project root:
-pio run                       # compile firmware
-pio run -t upload             # flash firmware over USB
-pio run -t uploadfs           # upload the web UI (data/), keeping your saved config
-pio run -t backup             # copy the saved config into backups/
+pio run                       # compile firmware (the web UI is built in)
+pio run -t upload             # flash firmware + web UI over USB
+pio run -t uploadfs           # optional, first install: example macros.json
 pio device monitor            # view the serial log (115200)
 ```
 
-The first `uploadfs` installs the config UI and the example `macros.json`.
+`uploadfs` is optional: it installs the example `macros.json`. Without it the
+pad starts with an empty config. After that you only need `upload`.
 
 ### Keeping your patterns when you reflash
 
-`pio run -t upload` (firmware only) never touches saved recordings and patterns.
-`uploadfs` writes a whole new filesystem, so on its own it would replace them
-with `data/macros.json`. To prevent that, `tools/pio_keep_config.py` runs before
-every `uploadfs`, over the same USB cable you flash with:
+Your recordings and patterns live on the pad, in its LittleFS filesystem. The
+web UI is built into the firmware (gzipped, ~33 KB), so `pio run -t upload`
+updates firmware and UI together and never touches that filesystem. Nothing is
+copied to your PC for a normal reflash. Firmware 1.13 also deletes the old copy
+of the UI that earlier versions kept in the filesystem, freeing ~110 KB for
+recordings.
+
+Only `uploadfs` (writes a whole new filesystem) and `pio run -t erase` (wipes
+all flash) can lose them. As a safety net, `tools/pio_keep_config.py` runs
+before every `uploadfs`, over the same USB cable:
 
 1. It reads the filesystem straight from the pad's flash with esptool (read
    only, works with whatever firmware is on it).
-2. It saves `/macros.json` to `backups/macros-<date>-<time>.json` (ignored by
-   git, so your patterns stay on your PC).
+2. It saves a gzipped copy to `backups/macros-<date>-<time>.json.gz` and keeps
+   only the newest 5. An 80 KB config with recordings packs to ~2 KB, so the
+   folder stays tiny. It's ignored by git, so your patterns stay private.
 3. It builds the new image with that config in place of `data/macros.json`.
 
 If the pad can't be read (wrong port, cable unplugged), `uploadfs` stops instead
@@ -104,15 +111,19 @@ installs `littlefs-python` into PlatformIO's Python. Options:
 
 ```bash
 pio run -t backup                                    # backup only, no flashing
-KABUTO_RESTORE=backups/macros-20261026-101500.json pio run -t uploadfs   # flash a backup
+KABUTO_RESTORE=backups/macros-20261026-101500.json.gz pio run -t uploadfs   # flash a backup
 KABUTO_SKIP_BACKUP=1 pio run -t uploadfs             # deliberately reset to data/macros.json
 python tools/flash_backup.py backup --port COM5      # backup without PlatformIO
 ```
 
-`KABUTO_RESTORE` also moves your setup to a new board or back after
-`pio run -t erase`. Set environment variables in PowerShell with
-`$env:KABUTO_RESTORE="backups\..."` before the `pio` command. **Export JSON** in the
-web UI remains a quick manual backup.
+`KABUTO_RESTORE` takes `.json.gz` or plain `.json`, and also moves your setup to
+a new board or back after `pio run -t erase`. Set environment variables in
+PowerShell with `$env:KABUTO_RESTORE="backups\..."` before the `pio` command.
+**Export JSON** in the web UI remains a quick manual backup. From a phone, it
+lands wherever that phone saves and syncs downloads.
+
+The pad can't back up to the cloud by itself: it runs its own Wi-Fi hotspot and
+has no internet connection.
 
 ## Recordings and button assignments
 
@@ -425,14 +436,16 @@ src/
   keymap.*            keycode tables + name<->code resolution
   macro_engine.*      step model, loop execution, trigger modes
   storage.*           LittleFS + JSON load/save
-  web_server.*        SoftAP + REST API + static UI host
+  web_server.*        SoftAP + REST API + built-in UI
+web/
+  index.html          config UI (gzipped into the firmware at build time)
 data/
-  index.html          config UI (uploaded with uploadfs)
-  macros.json         example macros
+  macros.json         example macros (first install via uploadfs)
 tools/
   recorder.py         PC-side keyboard recorder -> macros.json
   flash_backup.py     read the saved config off the pad over USB
   pio_keep_config.py  uploadfs hook: back up + keep the saved config
+  embed_web_ui.py     build hook: gzip web/index.html into the firmware
 ```
 
 ## What changed in 1.4

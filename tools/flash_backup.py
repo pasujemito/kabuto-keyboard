@@ -19,12 +19,13 @@ Usage:
 Run the self-test (no pad needed):
     python tools/flash_backup.py --selftest
 """
-import argparse, json, os, struct, subprocess, sys, tempfile, time
+import argparse, glob, gzip, json, os, struct, subprocess, sys, tempfile, time
 
 PARTITION_TABLE_OFFSET = 0x8000
 PARTITION_TABLE_SIZE = 0xC00
 FS_BLOCK_SIZE = 4096                   # matches PlatformIO's mklittlefs image
 CONFIG_NAME = "macros.json"            # MACRO_FILE in src/config.h
+KEEP_BACKUPS = 5                       # newest gzipped copies kept (~2-20 KB each)
 
 def find_fs_partition(table):
     """Return (offset, size) of the data partition holding LittleFS."""
@@ -69,14 +70,26 @@ def fetch_config(esptool, chip="esp32s3", port=None, baud=460800):
         raise RuntimeError("no LittleFS partition in the pad's partition table")
     return extract_config(read_flash(esptool, chip, port, baud, *part))
 
-def save_backup(config, backup_dir):
-    """Write a timestamped copy and return its path. Raises if it isn't JSON."""
+def save_backup(config, backup_dir, keep=KEEP_BACKUPS):
+    """Write a timestamped gzipped copy, keep only the newest `keep`, and
+    return its path. Raises if it isn't JSON."""
     json.loads(config.decode("utf-8"))
     os.makedirs(backup_dir, exist_ok=True)
-    path = os.path.join(backup_dir, time.strftime("macros-%Y%m%d-%H%M%S.json"))
+    path = os.path.join(backup_dir, time.strftime("macros-%Y%m%d-%H%M%S.json.gz"))
     with open(path, "wb") as f:
-        f.write(config)
+        f.write(gzip.compress(config, 9))
+    for old in sorted(glob.glob(os.path.join(backup_dir, "macros-*.json*")))[:-keep]:
+        os.remove(old)
     return path
+
+def load_backup(path):
+    """Read a backup (.json.gz or plain .json). Raises if it isn't JSON."""
+    with open(path, "rb") as f:
+        config = f.read()
+    if path.endswith(".gz"):
+        config = gzip.decompress(config)
+    json.loads(config.decode("utf-8"))
+    return config
 
 def selftest():
     row = lambda t, s, off, size, label: struct.pack("<HBBII16sI", 0x50AA, t, s, off, size, label, 0)
@@ -87,7 +100,12 @@ def selftest():
     assert find_fs_partition(b"\xff" * 64) is None
     with tempfile.TemporaryDirectory() as tmp:
         path = save_backup(b'{"layers":[]}', tmp)
-        assert os.path.basename(path).startswith("macros-")
+        assert os.path.basename(path).startswith("macros-") and load_backup(path) == b'{"layers":[]}'
+        for i in range(7):             # only the newest KEEP_BACKUPS stay
+            open(os.path.join(tmp, "macros-2000010%d-000000.json" % i), "w").write("{}")
+        newest = save_backup(b"{}", tmp)
+        kept = sorted(os.listdir(tmp))
+        assert len(kept) == KEEP_BACKUPS and kept[-1] == os.path.basename(newest)
         try:
             save_backup(b"not json", tmp); raise AssertionError("invalid JSON was saved")
         except ValueError:

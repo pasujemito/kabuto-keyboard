@@ -5,9 +5,11 @@
 #include <set>
 
 bool storageBegin() {
-    if (LittleFS.begin(false)) return true;
     // First boot: format then mount.
-    return LittleFS.begin(true);
+    if (!LittleFS.begin(false) && !LittleFS.begin(true)) return false;
+    // The UI is now built into the firmware; free the copy older uploadfs left.
+    if (LittleFS.exists("/index.html")) LittleFS.remove("/index.html");
+    return true;
 }
 
 // --- parsing ---------------------------------------------------------------

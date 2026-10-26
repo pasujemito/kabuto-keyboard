@@ -6,7 +6,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  try{
   const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];let truncateConfig=true;
   page.on('pageerror',e=>errors.push(e.message));
-  const html=fs.readFileSync(path.join(__dirname,'../data/index.html'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
   await page.route('**/*',async route=>{
    const url=new URL(route.request().url());

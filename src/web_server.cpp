@@ -8,6 +8,7 @@
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include "web_ui.h"   // generated from web/index.html by tools/embed_web_ui.py
 
 static AsyncWebServer server(80);
 static volatile bool recorderActive_ = false;
@@ -21,6 +22,14 @@ bool webServerRecorderActive() {
 extern volatile uint32_t g_keyMask;
 extern volatile int      g_lastKeyDown;
 extern volatile uint32_t g_keyDownCount;
+
+// The UI is built into the firmware, so flashing never needs to touch LittleFS.
+static void sendWebUi(AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html", WEB_UI_GZ, WEB_UI_GZ_LEN);
+    r->addHeader("Content-Encoding", "gzip");
+    r->addHeader("Cache-Control", "no-cache");   // pick up a new UI after reflashing
+    req->send(r);
+}
 
 static void sendJson(AsyncWebServerRequest* req, int code, const String& body) {
     AsyncWebServerResponse* r = req->beginResponse(code, "application/json", body);
@@ -163,12 +172,7 @@ void webServerBegin() {
     WiFi.softAP(AP_SSID, AP_PASSWORD, AP_CHANNEL);
     delay(100);
 
-    // Static SPA from LittleFS; API requests must reach their route handlers.
-    server.serveStatic("/", LittleFS, "/")
-        .setDefaultFile("index.html")
-        .setFilter([](AsyncWebServerRequest* req) {
-            return !req->url().startsWith("/api/");
-        });
+    server.on("/", HTTP_GET, sendWebUi);
 
     server.on("/api/meta",   HTTP_GET, handleMeta);
     server.on("/api/status", HTTP_GET, handleStatus);
@@ -290,9 +294,9 @@ void webServerBegin() {
         });
 
     server.onNotFound([](AsyncWebServerRequest* req) {
-        // SPA fallback
-        if (LittleFS.exists("/index.html"))
-            req->send(LittleFS, "/index.html", "text/html");
+        // SPA fallback; unknown API routes still get a 404.
+        if (req->method() == HTTP_GET && !req->url().startsWith("/api/"))
+            sendWebUi(req);
         else
             req->send(404, "text/plain", "not found");
     });

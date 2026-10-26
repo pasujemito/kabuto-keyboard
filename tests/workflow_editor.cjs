@@ -1,7 +1,7 @@
 // Install jsdom outside the checkout; see tests/README.md.
 const {JSDOM}=require('jsdom');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
-const html=fs.readFileSync(path.join(__dirname,'../data/index.html'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
 const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://kabuto.test'}),w=dom.window;
 const requests=[];let saved;
 w.confirm=()=>true;

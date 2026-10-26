@@ -6,3 +6,4 @@
 .DS_Store
 # Config backups taken from the pad before uploadfs
 backups/
+__pycache__/

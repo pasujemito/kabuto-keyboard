@@ -3,7 +3,7 @@ name: Release firmware
 # Every push to main that changes the firmware builds, tests, signs and
 # publishes the next version (tools/next_version.py). Pads then list it under
 # Updates. Nothing is released if the build or a test fails.
-# One-time setup: README, "Updates from GitHub releases".
+# One-time setup: docs/GUIDE.md, "Updates from GitHub releases".
 on:
   push:
     branches: [main]
@@ -42,7 +42,7 @@ jobs:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           if [ -z "$UPDATE_SIGNING_KEY" ] || [ ! -f update_public_key.pem ]; then
-            echo "::error::Add the UPDATE_SIGNING_KEY secret and commit update_public_key.pem (see README)"; exit 1
+            echo "::error::Add the UPDATE_SIGNING_KEY secret and commit update_public_key.pem (see docs/GUIDE.md)"; exit 1
           fi
           base=$(sed -n 's/^#define FIRMWARE_VERSION *"\([0-9.]*\)".*/\1/p' src/config.h)
           version=$(python3 tools/next_version.py "$base" $(git tag -l 'v*'))

@@ -1,0 +1,76 @@
+# 🤖 AGENTS.md
+
+Context for contributors and AI coding agents. Users read the
+[README](README.md); the full manual is [docs/GUIDE.md](docs/GUIDE.md).
+
+## What this is
+
+Kabuto is an ESP32-S3 Bluetooth (BLE HID) macro pad: a 2 × 3 key matrix,
+macros edited from a phone over the pad's own Wi-Fi hotspot, and signed
+firmware updates from this repo's GitHub releases.
+
+## Map
+
+| Path | What |
+| --- | --- |
+| `src/main.cpp` | setup/loop, key matrix scan, status LED |
+| `src/macro_engine.*` | step model and playback (incl. dynamic patterns) |
+| `src/dynamic_pattern.h` | pattern struct, triangular sampler, tempo drift (pure) |
+| `src/storage.*` | LittleFS + JSON parse/validate/save of `/macros.json` |
+| `src/web_server.*` | REST API; serves the gzipped UI from firmware |
+| `src/updater.*` | GitHub release checks, signed installs, rollback |
+| `src/update_logic.h` | version/payload/rollback rules (pure) |
+| `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
+| `web/index.html` | the whole web UI, one file, embedded at build time |
+| `data/macros.json` | example config, only flashed by `uploadfs` |
+| `tools/` | build hooks, backup, release signing, recorder |
+| `tests/` | host tests (C++ with Arduino stubs, Node/Chromium) |
+
+## Build and test
+
+```bash
+pio run                     # build; prints flash use (app slot is 3.3 MB)
+pio run -t upload           # flash firmware + UI; never touches saved patterns
+```
+
+Host tests (no hardware) are listed in [tests/README.md](tests/README.md). The
+quick set:
+
+```bash
+g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/t && /tmp/t
+g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/t && /tmp/t
+g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/t && /tmp/t
+python3 tools/next_version.py --selftest && python3 tools/release_index.py --selftest
+```
+
+Storage tests need ArduinoJson from `.pio/libdeps` (after one `pio run`). The
+release workflow runs all C++ and Python tests.
+
+## Conventions
+
+- Match the surrounding code: the engine and UI are dense one-liners, the
+  tools are plain readable Python.
+- Put decisions in pure headers (`*_logic.h`, `dynamic_pattern.h`) so host
+  tests can cover them.
+- Config is validated twice, on the device (`storage.cpp`) and in the UI
+  (`validateDynamicPattern` etc.). Change both together.
+- Renaming a JSON key: keep reading the old one (see `legacy()` in
+  `storage.cpp`, `normalizeDynamicPattern` in the UI). Saved patterns on pads
+  must keep loading.
+- Nothing may wipe `/macros.json` silently: `uploadfs` goes through
+  `tools/pio_keep_config.py`, and firmware updates never touch LittleFS.
+- The signed payload `version\nsize\nsha256\n` is pinned in both
+  `tests/update_logic.cpp` and `tools/release_index.py`. Change both or neither.
+- Never commit private keys (`*signing-key*.pem` is gitignored). Only
+  `update_public_key.pem` belongs in the repo.
+- Keep the README light. Details go in `docs/GUIDE.md`, changes in
+  `CHANGELOG.md`.
+
+## Releasing
+
+Every push to `main` touching `src/`, `web/`, `platformio.ini`, the public key
+or the build hooks runs `.github/workflows/release.yml`: picks the next version
+(`tools/next_version.py`: base from `src/config.h`, patch counted up), builds,
+tests, signs with the `UPDATE_SIGNING_KEY` secret and publishes `firmware.bin` +
+`versions.json`. To release, add a `CHANGELOG.md` entry; raise the base in
+`src/config.h` for a minor or major step.

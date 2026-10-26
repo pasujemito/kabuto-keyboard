@@ -3,6 +3,12 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.14.2
+
+- 📶 Home Wi-Fi errors say why: network not found (Kabuto only sees 2.4 GHz),
+  wrong password, refused by the router or no answer, and suggest the right
+  name when only the capitals differ
+
 ## 1.14.1
 
 - 📚 Lighter README; the full manual moved to [docs/GUIDE.md](docs/GUIDE.md)

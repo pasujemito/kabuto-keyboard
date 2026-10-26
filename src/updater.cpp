@@ -29,6 +29,7 @@ const uint32_t CHECK_EVERY_MS = 6UL * 60 * 60 * 1000;
 const char* PREFS = "update";                        // NVS namespace; not part of macros.json
 
 SemaphoreHandle_t lock_ = nullptr;
+volatile uint8_t joinReason_ = 0;   // last station disconnect reason, from the Wi-Fi event task
 // Guarded by lock_.
 std::vector<Release> releases_;
 String state_ = "idle", error_, rolledBack_;
@@ -71,12 +72,21 @@ bool connectWifi(String& err) {
     // AP+STA: the setup hotspot stays up, but it follows the router's channel,
     // so a phone on it may drop for a moment while the pad joins.
     WiFi.mode(WIFI_AP_STA);
+    joinReason_ = 0;
     WiFi.begin(ssid.c_str(), pass.c_str());
     for (uint32_t start = millis(); millis() - start < 20000;) {
         if (WiFi.status() == WL_CONNECTED) return true;
         vTaskDelay(pdMS_TO_TICKS(250));
     }
-    err = "Couldn't join " + ssid;
+    uint8_t reason = joinReason_;
+    err = "Couldn't join \"" + ssid + "\": " + wifiJoinProblem(reason).c_str();
+    if (reason == 201) {
+        // A visible network whose name differs only in capitals is the usual typo.
+        WiFi.disconnect();
+        for (int i = 0, n = WiFi.scanNetworks(); i < n; ++i)
+            if (WiFi.SSID(i) != ssid && WiFi.SSID(i).equalsIgnoreCase(ssid)) { err += ". Did you mean \"" + WiFi.SSID(i) + "\"?"; break; }
+        WiFi.scanDelete();
+    }
     return false;
 }
 
@@ -255,6 +265,8 @@ void updaterBegin() {
     lock_ = xSemaphoreCreateMutex();
     { Preferences p; p.begin(PREFS, true); rolledBack_ = p.getString("badVer", ""); p.end(); }
     if (!UPDATE_PUBLIC_KEY[0]) state_ = "off";
+    WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) { joinReason_ = info.wifi_sta_disconnected.reason; },
+                 ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
     xTaskCreatePinnedToCore(updaterTask, "updater", 12288, nullptr, 1, nullptr, 0);
 }
 

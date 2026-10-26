@@ -171,7 +171,8 @@ pads will trust, so keep write access to yourself (or protect `main`).
 **On the pad**
 
 - It checks a minute after starting and every 6 hours, joining your home Wi-Fi
-  only for the check. Its own hotspot stays on, though a phone on it may drop
+  only for the check. It can only join **2.4 GHz** networks; if your router
+  has separate 2.4 and 5 GHz names, use the 2.4 GHz one. A failed join says why. Its own hotspot stays on, though a phone on it may drop
   for a moment. **Check now** checks straight away.
 - Only releases signed with your key are listed. A download is installed only
   if its size and SHA-256 match the signed entry, so a tampered file is

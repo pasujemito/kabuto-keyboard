@@ -35,6 +35,18 @@ inline std::string manifestPayload(const std::string& version, uint32_t size, co
     return version + "\n" + std::to_string(size) + "\n" + sha256Hex + "\n";
 }
 
+// Why joining home Wi-Fi failed, from the ESP32 station disconnect reason
+// (0 when none arrived before the timeout).
+inline std::string wifiJoinProblem(uint8_t reason) {
+    switch (reason) {
+        case 201: return "network not found. Kabuto only sees 2.4 GHz Wi-Fi, and the name is case-sensitive";
+        case 2: case 15: case 202: case 204: return "the password looks wrong";
+        case 203: return "the router refused it (device limit or MAC filter?)";
+        case 0: return "no answer in time (weak signal?)";
+        default: return "Wi-Fi error " + std::to_string(reason);
+    }
+}
+
 // Installs only start when you confirm one, and never mid-playback or recording:
 // the pad restarts at the end, which would cut a macro off.
 inline bool canInstallNow(bool macroRunning, bool recording) {

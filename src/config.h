@@ -54,6 +54,10 @@ static const int COL_PINS[MATRIX_COLS] = {6, 7, 15};
 // .github/workflows/release.yml). Change it if you publish releases elsewhere.
 #define UPDATE_REPO        "pasujemito/kabuto-keyboard"
 
+// --- Home Wi-Fi ------------------------------------------------------------
+// With "stay connected" on, the editor is at http://kabuto.local on your network.
+#define MDNS_NAME          "kabuto"
+
 // --- Config portal --------------------------------------------------------
 #define AP_SSID            "Kabuto-Setup"
 #define AP_PASSWORD        "macropad123"   // >= 8 chars; change before real use

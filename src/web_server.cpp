@@ -5,13 +5,37 @@
 #include "hid_keyboard.h"
 #include "keymap.h"
 #include "updater.h"
+#include "home_wifi.h"
+#include "access.h"
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <utility>
 #include "web_ui.h"   // generated from web/index.html by tools/embed_web_ui.py
 
 static AsyncWebServer server(80);
+
+// The setup hotspot has its own Wi-Fi password, so its clients need no PIN.
+// Anyone reaching the pad over your home network must log in with the PIN.
+// Both ends must be on the hotspot's /24: the ESP32 accepts packets for any of
+// its addresses on any interface, so a home-network device routing to
+// 192.168.4.1 through the station link must not pass as a hotspot client.
+static bool viaHotspot(AsyncWebServerRequest* req) {
+    if (!req->client()) return false;
+    IPAddress ap = WiFi.softAPIP(), local = req->client()->localIP(), remote = req->client()->remoteIP();
+    return local == ap && remote[0] == ap[0] && remote[1] == ap[1] && remote[2] == ap[2];
+}
+static bool apiAllowed(AsyncWebServerRequest* req) {
+    return viaHotspot(req) ||
+           (req->hasHeader("Cookie") && accessSessionValid(req->getHeader("Cookie")->value()));
+}
+// Every /api route goes through here. The filter runs once the headers are in,
+// so a refused request's body never reaches its handler (see onNotFound).
+template <typename... Args> static AsyncWebHandler& api(Args&&... args) {
+    return server.on(std::forward<Args>(args)...).setFilter(apiAllowed);
+}
+
 static volatile bool recorderActive_ = false;
 static volatile uint32_t recorderHeartbeatMs_ = 0;
 
@@ -180,45 +204,74 @@ void webServerBegin() {
     WiFi.softAP(AP_SSID, AP_PASSWORD, AP_CHANNEL);
     delay(100);
 
-    server.on("/", HTTP_GET, sendWebUi);
+    server.on("/", HTTP_GET, sendWebUi);   // the page itself holds no secrets
+    server.on("/api/login", HTTP_POST, [](AsyncWebServerRequest* req) {
+        String err, token = accessLogin(req->hasParam("pin", true) ? req->getParam("pin", true)->value() : String(), err);
+        JsonDocument d; d["ok"] = token.length() > 0; if (err.length()) d["error"] = err;
+        String out; serializeJson(d, out);
+        AsyncWebServerResponse* r = req->beginResponse(token.length() ? 200 : 401, "application/json", out);
+        r->addHeader("Cache-Control", "no-store");
+        if (token.length()) r->addHeader("Set-Cookie", String(ACCESS_COOKIE "=") + token + "; Path=/; HttpOnly; SameSite=Strict");
+        req->send(r);
+    });
 
-    server.on("/api/meta",   HTTP_GET, handleMeta);
-    server.on("/api/status", HTTP_GET, handleStatus);
-    server.on("/api/storage", HTTP_GET, handleStorage);
-    server.on("/api/recording", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/meta",   HTTP_GET, handleMeta);
+    api("/api/status", HTTP_GET, handleStatus);
+    api("/api/storage", HTTP_GET, handleStorage);
+    api("/api/recording", HTTP_POST, [](AsyncWebServerRequest* req) {
         recorderActive_ = req->hasParam("active") && req->getParam("active")->value() == "1";
         recorderHeartbeatMs_ = millis();
         sendJson(req, 200, "{\"ok\":true}");
     });
-    server.on("/api/log", HTTP_GET, handleMacroLog);
-    server.on("/api/update", HTTP_GET, handleUpdateStatus);
-    // Home Wi-Fi for update checks, sent as a form body; the password is
-    // kept when the field is left out.
-    server.on("/api/update/wifi", HTTP_POST, [](AsyncWebServerRequest* req) {
-        if (!req->hasParam("ssid", true)) { sendJson(req, 400, "{\"ok\":false,\"error\":\"ssid required\"}"); return; }
-        String password = req->hasParam("password", true) ? req->getParam("password", true)->value() : String();
-        updaterSetWifi(req->getParam("ssid", true)->value(), req->hasParam("password", true) ? &password : nullptr);
+    api("/api/log", HTTP_GET, handleMacroLog);
+    api("/api/update", HTTP_GET, handleUpdateStatus);
+    api("/api/network", HTTP_GET, [](AsyncWebServerRequest* req) {
+        JsonDocument d;
+        homeWifiWriteStatus(d);
+        d["pinSet"] = accessPinSet();
+        d["viaHotspot"] = viaHotspot(req);
+        String out; serializeJson(d, out);
+        sendJson(req, 200, out);
+    });
+    // Home Wi-Fi settings as a form body. A left-out password or PIN keeps the
+    // saved one; staying connected needs a PIN so the network can't use the pad.
+    api("/api/network", HTTP_POST, [](AsyncWebServerRequest* req) {
+        auto field = [&](const char* name) { return req->hasParam(name, true) ? req->getParam(name, true)->value() : String(); };
+        String ssid = field("ssid"), password = field("password"), pin = field("pin");
+        bool stay = field("stay") == "1";
+        const char* err = nullptr;
+        if (pin.length() && !accessSetPin(pin)) err = "The PIN needs 6 to 32 characters";
+        else if (stay && !ssid.length()) err = "Add your Wi-Fi name to stay connected";
+        else if (stay && !accessPinSet()) err = "Set a PIN to stay connected";
+        if (err) {
+            JsonDocument d; d["ok"] = false; d["error"] = err;
+            String out; serializeJson(d, out);
+            sendJson(req, 400, out);
+            return;
+        }
+        homeWifiSave(ssid, req->hasParam("password", true) ? &password : nullptr, stay);
+        if (ssid.length()) updaterRequestCheck();
         sendJson(req, 200, "{\"ok\":true}");
     });
-    server.on("/api/update/check", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/update/check", HTTP_POST, [](AsyncWebServerRequest* req) {
         updaterRequestCheck();
         sendJson(req, 200, "{\"ok\":true}");
     });
-    server.on("/api/update/install", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/update/install", HTTP_POST, [](AsyncWebServerRequest* req) {
         String err = updaterRequestInstall(req->hasParam("version") ? req->getParam("version")->value() : String());
         JsonDocument d; d["ok"] = !err.length(); if (err.length()) d["error"] = err;
         String out; serializeJson(d, out);
         sendJson(req, err.length() ? 409 : 200, out);
     });
-    server.on("/api/log/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/log/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
         Macros.clearLog();
         sendJson(req, 200, "{\"ok\":true}");
     });
-    server.on("/api/config", HTTP_GET, handleGetConfig);
+    api("/api/config", HTTP_GET, handleGetConfig);
 
     // Save full config JSON (body = JSON). The body is streamed to a temp file
     // instead of RAM, then validated and swapped in; the engine reloads after.
-    server.on("/api/config", HTTP_POST,
+    api("/api/config", HTTP_POST,
         [](AsyncWebServerRequest* req) {},
         nullptr,
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
@@ -252,7 +305,7 @@ void webServerBegin() {
         });
 
     // Trigger a macro for testing: /api/test?layer=0&key=2
-    server.on("/api/test", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/test", HTTP_POST, [](AsyncWebServerRequest* req) {
         int layer = req->hasParam("layer") ? req->getParam("layer")->value().toInt() : Macros.activeLayer();
         int key   = req->hasParam("key")   ? req->getParam("key")->value().toInt()   : -1;
         if (!Keyboard.isConnected()) { sendJson(req, 409, "{\"ok\":false,\"error\":\"not connected to a host\"}"); return; }
@@ -263,7 +316,7 @@ void webServerBegin() {
 
     // Run-mode press/release from the grid: drives a pad key with its real
     // trigger behaviour (tap once / toggle / hold).
-    server.on("/api/press", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/press", HTTP_POST, [](AsyncWebServerRequest* req) {
         int layer = req->hasParam("layer") ? req->getParam("layer")->value().toInt() : Macros.activeLayer();
         int key   = req->hasParam("key")   ? req->getParam("key")->value().toInt()   : -1;
         if (!Keyboard.isConnected()) { sendJson(req, 409, "{\"ok\":false,\"error\":\"not connected to a host\"}"); return; }
@@ -271,7 +324,7 @@ void webServerBegin() {
         Macros.post(EngineCmd::KEYDOWN, key, layer);
         sendJson(req, 200, "{\"ok\":true}");
     });
-    server.on("/api/release", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/release", HTTP_POST, [](AsyncWebServerRequest* req) {
         int layer = req->hasParam("layer") ? req->getParam("layer")->value().toInt() : Macros.activeLayer();
         int key   = req->hasParam("key")   ? req->getParam("key")->value().toInt()   : -1;
         if (key < 0 || key >= KEY_COUNT) { sendJson(req, 400, "{\"ok\":false,\"error\":\"bad key\"}"); return; }
@@ -279,19 +332,19 @@ void webServerBegin() {
         sendJson(req, 200, "{\"ok\":true}");
     });
 
-    server.on("/api/stop", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/stop", HTTP_POST, [](AsyncWebServerRequest* req) {
         Macros.post(EngineCmd::STOP);
         sendJson(req, 200, "{\"ok\":true}");
     });
 
-    server.on("/api/layer", HTTP_POST, [](AsyncWebServerRequest* req) {
+    api("/api/layer", HTTP_POST, [](AsyncWebServerRequest* req) {
         int layer = req->hasParam("n") ? req->getParam("n")->value().toInt() : 0;
         Macros.post(EngineCmd::LAYER, layer);
         sendJson(req, 200, "{\"ok\":true}");
     });
 
     // Live passthrough while recording: forwards captured keys to the host.
-    server.on("/api/live/batch", HTTP_POST,
+    api("/api/live/batch", HTTP_POST,
         [](AsyncWebServerRequest* req) {},
         nullptr,
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
@@ -321,11 +374,14 @@ void webServerBegin() {
         });
 
     server.onNotFound([](AsyncWebServerRequest* req) {
-        // SPA fallback; unknown API routes still get a 404.
-        if (req->method() == HTTP_GET && !req->url().startsWith("/api/"))
-            sendWebUi(req);
-        else
+        // SPA fallback. API routes refused by apiAllowed land here too.
+        if (!req->url().startsWith("/api/")) {
+            if (req->method() == HTTP_GET) sendWebUi(req); else req->send(404, "text/plain", "not found");
+        } else if (!apiAllowed(req)) {
+            sendJson(req, 401, "{\"ok\":false,\"error\":\"PIN required\"}");
+        } else {
             req->send(404, "text/plain", "not found");
+        }
     });
 
     server.begin();

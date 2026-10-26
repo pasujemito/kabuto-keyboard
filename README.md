@@ -10,6 +10,7 @@ your phone. No cables to your computer, no drivers, no reflashing to change a ke
 - 🎲 **Dynamic patterns:** fresh, never-quite-the-same sequences, with handy presets
 - 🗂️ **Layers & modes:** tap, toggle or hold, on up to 8 layers
 - 📱 **Phone-friendly editor:** built into the pad, no app to install
+- 🏠 **On your Wi-Fi too:** open `kabuto.local` from any device, PIN-protected
 - 🔄 **Updates from GitHub:** tap Install, done; roll back any time
 - 💾 **Your patterns stay put:** reflashing never wipes them
 

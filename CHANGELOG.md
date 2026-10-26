@@ -5,9 +5,11 @@ and show up in the pad's **Updates** panel.
 
 ## 1.14.2
 
-- 📶 Home Wi-Fi errors say why: network not found (Kabuto only sees 2.4 GHz),
-  wrong password, refused by the router or no answer, and suggest the right
-  name when only the capitals differ
+- 🏠 **Stay connected** to your home Wi-Fi and open the editor at
+  **http://kabuto.local** from any device on it, protected by an access PIN
+- 📶 Home Wi-Fi has its own panel, and errors say why: network not found
+  (Kabuto only sees 2.4 GHz), wrong password, refused by the router or no
+  answer, with the right name suggested when only the capitals differ
 
 ## 1.14.1
 

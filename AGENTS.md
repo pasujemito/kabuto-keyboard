@@ -19,6 +19,9 @@ firmware updates from this repo's GitHub releases.
 | `src/storage.*` | LittleFS + JSON parse/validate/save of `/macros.json` |
 | `src/web_server.*` | REST API; serves the gzipped UI from firmware |
 | `src/updater.*` | GitHub release checks, signed installs, rollback |
+| `src/home_wifi.*` | home Wi-Fi station, stay connected, `kabuto.local` |
+| `src/access.*` | access PIN (salted hash) and login sessions |
+| `src/access_logic.h` | PIN rules, login lockout, cookie parsing (pure) |
 | `src/update_logic.h` | version/payload/rollback rules (pure) |
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
@@ -39,6 +42,7 @@ quick set:
 ```bash
 g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/t && /tmp/t
 g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/t && /tmp/t
+g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o /tmp/t && /tmp/t
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/t && /tmp/t
 python3 tools/next_version.py --selftest && python3 tools/release_index.py --selftest
 ```
@@ -61,6 +65,9 @@ release workflow runs all C++ and Python tests.
   `tools/pio_keep_config.py`, and firmware updates never touch LittleFS.
 - The signed payload `version\nsize\nsha256\n` is pinned in both
   `tests/update_logic.cpp` and `tools/release_index.py`. Change both or neither.
+- Every `/api` route is registered with `api()` in `web_server.cpp`, which
+  requires the PIN session over the home network. Only `/api/login` and the
+  page itself are open; hotspot clients need no PIN.
 - Never commit private keys (`*signing-key*.pem` is gitignored). Only
   `update_public_key.pem` belongs in the repo.
 - Keep the README light. Details go in `docs/GUIDE.md`, changes in

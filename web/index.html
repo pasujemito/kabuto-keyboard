@@ -350,6 +350,7 @@
     <h2>Recordings</h2>
     <div class="recording-actions"><button class="btn primary withic" id="newRecording"><svg class="ic" aria-hidden="true"><use href="#i-record"/></svg>New recording</button><button class="btn withic" id="importRecording"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg>Import JSON</button></div>
     <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
+    <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
     <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
@@ -401,6 +402,15 @@
   </div>
 </div>
 
+<dialog class="json-dialog" id="pinDialog" aria-labelledby="pinTitle">
+  <form id="pinForm" class="update-form">
+    <h3 id="pinTitle">🔒 Enter PIN</h3>
+    <p class="hint">You're on your home network, so Kabuto asks for its access PIN.</p>
+    <input type="password" id="pinInput" aria-label="Enter access PIN" autocomplete="current-password">
+    <p role="alert" id="pinError"></p>
+    <div class="json-actions"><button class="btn primary" type="submit">Unlock</button></div>
+  </form>
+</dialog>
 <dialog class="json-dialog" id="jsonDialog" aria-labelledby="jsonTitle">
   <header><h3 id="jsonTitle">JSON preview</h3><button class="btn sm" id="jsonClose" aria-label="Close JSON preview">Close</button></header>
   <label>Preview <select id="jsonScope" aria-label="JSON export scope"></select></label>
@@ -462,7 +472,30 @@ function segRadio(label,options,value,on){
   return g;
 }
 
-async function api(p,o){return fetch(p,o);}
+// Over the home network the API answers 401 until you log in with the PIN;
+// every waiting request shares one prompt and is retried after unlocking.
+let pinPrompt=null;
+async function api(p,o){
+  const r=await fetch(p,o);
+  if(r.status!==401)return r;
+  await askPin();
+  return fetch(p,o);
+}
+function askPin(){
+  if(pinPrompt)return pinPrompt;
+  return pinPrompt=new Promise(resolve=>{
+    const dialog=$('#pinDialog'),input=$('#pinInput');
+    $('#pinError').textContent='';input.value='';
+    $('#pinForm').onsubmit=async e=>{
+      e.preventDefault();
+      const r=await fetch('/api/login',{method:'POST',body:new URLSearchParams({pin:input.value})}).catch(()=>null);
+      if(r&&r.ok){dialog.close();pinPrompt=null;resolve();return;}
+      const body=r?await r.json().catch(()=>({})):{};
+      $('#pinError').textContent=body.error||'Could not reach Kabuto';input.select();
+    };
+    dialog.showModal();input.focus();
+  });
+}
 function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="toast",1900);}
 function esc(s){return(s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function blankKey(){return{name:"",trigger:"tap",steps:[]};}
@@ -502,7 +535,7 @@ async function refreshUpdates(){
   renderUpdates();
   clearTimeout(updateTimer);
   const busy=updateInfo&&['checking','downloading','restarting'].includes(updateInfo.state);
-  updateTimer=setTimeout(refreshUpdates,busy?1500:30000);
+  updateTimer=setTimeout(()=>{refreshUpdates();if(!busy)refreshNetwork();},busy?1500:30000);
 }
 function updateStatusText(u){
   const ago=s=>s<90?'just now':s<5400?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago';
@@ -530,8 +563,8 @@ function renderUpdates(){
   summary.textContent=newest?`Update available: v${newest.version}`:'Updates';
   $('#updateBox').classList.toggle('warn',!!newest);
   const note=text=>{const n=el('div','hint');n.textContent=text;return n;};
-  const form=$('#updateForm');
-  if(!u||!u.enabled){if(form)form.hidden=true;box.append(u?note(`v${u.current} · updates are off in this build (no update_public_key.pem).`):note('Update status unavailable.'));return;}
+  const check=$('#updateCheck');
+  if(!u||!u.enabled){if(check)check.hidden=true;box.append(u?note(`v${u.current} · updates are off in this build (no update_public_key.pem).`):note('Update status unavailable.'));return;}
   const row=el('div','srow'),a=el('span'),b=el('b');a.textContent='Installed';b.textContent='v'+u.current;row.append(a,b);box.append(row);
   box.append(note(updateStatusText(u)));
   if(u.rolledBack)box.append(note(`v${u.rolledBack} kept failing to start, so the pad went back to v${u.current}.`));
@@ -544,31 +577,68 @@ function renderUpdates(){
     if(r.version!==u.current){const btn=el('button','btn sm'+(r.newer?' primary':''));btn.type='button';btn.textContent='Install';btn.disabled=busy;btn.setAttribute('aria-label','Install v'+r.version);btn.onclick=()=>installUpdate(r,u.current);line.appendChild(btn);}
     box.appendChild(line);
   }
-  // The Wi-Fi form is built once so polling never wipes what you're typing.
-  if(!form)panel.appendChild(buildUpdateForm());
-  const f=$('#updateForm');f.hidden=false;
-  if(!f.dataset.edited)$('#updateSsid').value=u.wifi||'';
-  $('#updatePass').placeholder=u.wifi?'Password (blank keeps the saved one)':'Password';
-  $('#updateCheck').disabled=busy||!u.wifi;
+  if(!u.wifi)box.append(note('Add your home Wi-Fi above to check for updates.'));
+  if(!$('#updateCheck')){
+    const check=el('button','btn sm');check.type='button';check.id='updateCheck';check.textContent='Check now';
+    check.onclick=async()=>{await api('/api/update/check',{method:'POST'}).catch(()=>{});setTimeout(refreshUpdates,300);};
+    panel.appendChild(check);
+  }
+  $('#updateCheck').hidden=false;$('#updateCheck').disabled=busy||!u.wifi;
 }
-function buildUpdateForm(){
-  const form=el('form','update-form');form.id='updateForm';form.setAttribute('aria-label','Home Wi-Fi for updates');
-  const ssid=el('input');ssid.id='updateSsid';ssid.placeholder='Home Wi-Fi name';ssid.setAttribute('aria-label','Home Wi-Fi name');ssid.autocomplete='off';
-  const pass=el('input');pass.id='updatePass';pass.type='password';pass.setAttribute('aria-label','Home Wi-Fi password');pass.autocomplete='off';
-  for(const input of [ssid,pass])input.oninput=()=>form.dataset.edited='1';
-  const actions=el('div','recording-actions'),save=el('button','btn sm'),check=el('button','btn sm');
-  save.type='submit';save.textContent='Save Wi-Fi';check.type='button';check.id='updateCheck';check.textContent='Check now';
-  check.onclick=async()=>{await api('/api/update/check',{method:'POST'}).catch(()=>{});setTimeout(refreshUpdates,300);};
+
+/* Home Wi-Fi: joined briefly for update checks, or kept on so the editor opens
+   at kabuto.local on your network (PIN-protected). The hotspot works either way. */
+let networkInfo=null;
+async function refreshNetwork(){
+  try{networkInfo=await getJson('/api/network');}catch(e){networkInfo=null;}
+  renderNetwork();
+}
+function renderNetwork(){
+  const panel=$('#networkPanel'),box=$('#networkStatus');if(!panel)return;
+  box.replaceChildren();
+  const n=networkInfo,note=text=>{const d=el('div','hint');d.textContent=text;return d;};
+  const host=(n?.address||'').replace('http://','')||'kabuto.local';
+  $('#networkSummary').textContent=n?.stay&&n.connected?'Home Wi-Fi · '+host:'Home Wi-Fi';
+  if(!n){box.append(note('Wi-Fi status unavailable.'));return;}
+  box.append(note(
+    n.connected?`Connected to ${n.ssid} as ${n.ip}`+(n.stay?`. Open ${host} from any device on it.`:'.'):
+    n.error?n.error:
+    !n.ssid?'Not set up yet. Add your home Wi-Fi to get updates.':
+    n.stay?`Joining ${n.ssid}…`:`Saved: ${n.ssid}. Joined only to check for updates.`));
+  if(n.connected&&n.error)box.append(note(n.error));
+  if(!$('#networkForm'))panel.appendChild(buildNetworkForm());
+  const form=$('#networkForm');
+  if(!form.dataset.edited){$('#netSsid').value=n.ssid||'';$('#netStay').checked=!!n.stay;}
+  $('#netPass').placeholder=n.ssid?'Password (blank keeps the saved one)':'Password';
+  $('#netPin').placeholder=n.pinSet?'Access PIN (blank keeps it)':'Access PIN, 6+ characters';
+}
+function buildNetworkForm(){
+  const form=el('form','update-form');form.id='networkForm';form.setAttribute('aria-label','Home Wi-Fi settings');
+  const input=(id,label,type='text',auto='off')=>{const i=el('input');i.id=id;i.type=type;i.setAttribute('aria-label',label);i.autocomplete=auto;i.oninput=()=>form.dataset.edited='1';return i;};
+  const ssid=input('netSsid','Home Wi-Fi name'),pass=input('netPass','Home Wi-Fi password','password'),pin=input('netPin','Access PIN','password','new-password');
+  ssid.placeholder='Wi-Fi name (2.4 GHz)';
+  const stayLabel=el('label'),stay=el('input');stay.type='checkbox';stay.id='netStay';stay.onchange=()=>form.dataset.edited='1';
+  stayLabel.append(stay,' Stay connected, so this editor opens at kabuto.local on your Wi-Fi');
+  const save=el('button','btn sm');save.type='submit';save.textContent='Save Wi-Fi';
+  const hint=el('div','hint');hint.textContent='The PIN is asked for over your home network only, not on the Kabuto-Setup hotspot. Staying connected shares the radio with Bluetooth, which can add a little timing jitter.';
   form.onsubmit=async e=>{
     e.preventDefault();
-    const body=new URLSearchParams({ssid:ssid.value.trim()});
-    if(pass.value||!updateInfo?.wifi)body.set('password',pass.value);   // blank keeps the saved password
-    const r=await api('/api/update/wifi',{method:'POST',body}).catch(()=>null);
-    if(r&&r.ok){pass.value='';delete form.dataset.edited;}
-    toast(r&&r.ok?'Wi-Fi saved — checking for updates':'Could not save Wi-Fi',!(r&&r.ok));setTimeout(refreshUpdates,300);
+    const n=networkInfo||{},name=ssid.value.trim();
+    const problem=stay.checked&&!name?'Add your Wi-Fi name to stay connected':
+      pin.value&&pin.value.length<6?'The PIN needs at least 6 characters':
+      stay.checked&&!n.pinSet&&!pin.value?'Set a PIN to stay connected':'';
+    if(problem){toast(problem,true);return;}
+    if(n.stay&&!stay.checked&&n.viaHotspot===false&&!confirm('You opened this page over your home network. Turning off "Stay connected" disconnects it; use the Kabuto-Setup hotspot afterwards.'))return;
+    const body=new URLSearchParams({ssid:name,stay:stay.checked?'1':'0'});
+    if(pass.value||!n.ssid)body.set('password',pass.value);   // blank keeps the saved password
+    if(pin.value)body.set('pin',pin.value);
+    const r=await api('/api/network',{method:'POST',body}).catch(()=>null);
+    const result=r?await r.json().catch(()=>({})):{};
+    if(r&&r.ok){pass.value='';pin.value='';delete form.dataset.edited;toast('Wi-Fi saved');}
+    else toast(result.error||'Could not save Wi-Fi',true);
+    setTimeout(()=>{refreshNetwork();refreshUpdates();},300);
   };
-  const hint=el('div','hint');hint.textContent='Only used to reach GitHub. The setup hotspot stays on; a phone on it may drop for a moment while the pad checks.';
-  actions.append(save,check);form.append(ssid,pass,actions,hint);return form;
+  form.append(ssid,pass,stayLabel,pin,save,hint);return form;
 }
 function fmtBytes(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";}
 async function refreshStorage(){
@@ -607,6 +677,7 @@ async function loadAll(){
   renderRecordings();
   refreshStorage();
   refreshUpdates();
+  refreshNetwork();
   pollStatus();
   pollMacroLog();
 }
@@ -1678,6 +1749,7 @@ async function pollStatus(){
   setTimeout(pollStatus,700);
 }
 
+$("#pinDialog").addEventListener("cancel",event=>event.preventDefault());
 $("#newDynamic").onclick=()=>openDynamicEditor();
 for(const [name,preset] of Object.entries(DYNAMIC_PRESETS)){const b=el('button','btn sm');b.type='button';b.textContent=preset.label;b.onclick=()=>applyDynamicPreset(name);$('#dynamicPresets').appendChild(b);}
 $("#dynamicName").oninput=()=>dynamicDirty=true;

@@ -9,6 +9,8 @@ g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/kabuto-dy
 /tmp/kabuto-dynamic-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/kabuto-update-tests
 /tmp/kabuto-update-tests
+g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o /tmp/kabuto-access-tests
+/tmp/kabuto-access-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o /tmp/kabuto-selection-tests
 /tmp/kabuto-selection-tests
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/kabuto-engine-tests

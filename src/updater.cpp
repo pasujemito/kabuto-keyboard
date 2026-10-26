@@ -4,6 +4,7 @@
 #include "update_key.h"   // generated from update_public_key.pem by tools/embed_update_key.py
 #include "macro_engine.h"
 #include "web_server.h"
+#include "home_wifi.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -29,7 +30,6 @@ const uint32_t CHECK_EVERY_MS = 6UL * 60 * 60 * 1000;
 const char* PREFS = "update";                        // NVS namespace; not part of macros.json
 
 SemaphoreHandle_t lock_ = nullptr;
-volatile uint8_t joinReason_ = 0;   // last station disconnect reason, from the Wi-Fi event task
 // Guarded by lock_.
 std::vector<Release> releases_;
 String state_ = "idle", error_, rolledBack_;
@@ -61,38 +61,6 @@ bool verifySignature(const std::string& payload, const char* signatureB64) {
               mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, hash, sizeof(hash), sig, sigLen) == 0;
     mbedtls_pk_free(&pk);
     return ok;
-}
-
-bool connectWifi(String& err) {
-    Preferences p; p.begin(PREFS, true);
-    String ssid = p.getString("ssid", ""), pass = p.getString("pass", "");
-    p.end();
-    if (!ssid.length()) { err = "Add your home Wi-Fi to check for updates"; return false; }
-    if (WiFi.status() == WL_CONNECTED) return true;
-    // AP+STA: the setup hotspot stays up, but it follows the router's channel,
-    // so a phone on it may drop for a moment while the pad joins.
-    WiFi.mode(WIFI_AP_STA);
-    joinReason_ = 0;
-    WiFi.begin(ssid.c_str(), pass.c_str());
-    for (uint32_t start = millis(); millis() - start < 20000;) {
-        if (WiFi.status() == WL_CONNECTED) return true;
-        vTaskDelay(pdMS_TO_TICKS(250));
-    }
-    uint8_t reason = joinReason_;
-    err = "Couldn't join \"" + ssid + "\": " + wifiJoinProblem(reason).c_str();
-    if (reason == 201) {
-        // A visible network whose name differs only in capitals is the usual typo.
-        WiFi.disconnect();
-        for (int i = 0, n = WiFi.scanNetworks(); i < n; ++i)
-            if (WiFi.SSID(i) != ssid && WiFi.SSID(i).equalsIgnoreCase(ssid)) { err += ". Did you mean \"" + WiFi.SSID(i) + "\"?"; break; }
-        WiFi.scanDelete();
-    }
-    return false;
-}
-
-void disconnectWifi() {
-    WiFi.disconnect(true);   // STA off; the setup hotspot keeps running
-    WiFi.mode(WIFI_AP);
 }
 
 bool beginGet(HTTPClient& http, WiFiClientSecure& client, const String& url, String& err) {
@@ -183,8 +151,8 @@ void runCheck() {
     setState("checking");
     String err;
     std::vector<Release> found;
-    bool ok = connectWifi(err) && fetchReleases(found, err);
-    disconnectWifi();
+    bool ok = homeWifiAcquire(err) && fetchReleases(found, err);
+    homeWifiRelease();
     Lock l;
     checked_ = true; lastCheckMs_ = millis();
     if (ok) releases_ = found;
@@ -201,8 +169,8 @@ void runInstall(const std::string& version) {
     if (target.version.empty()) { setState("error", "That version is no longer listed"); Lock l; installing_.clear(); return; }
     setState("downloading");
     String err;
-    bool ok = connectWifi(err) && download(target, err);
-    disconnectWifi();
+    bool ok = homeWifiAcquire(err) && download(target, err);
+    homeWifiRelease();
     if (!ok) { setState("error", err); Lock l; installing_.clear(); return; }
     setState("restarting");
     Serial.printf("[update] installed %s, restarting\n", version.c_str());
@@ -215,6 +183,7 @@ void updaterTask(void*) {
     { Preferences p; p.begin(PREFS, true); trial = p.getBool("trial", false); p.end(); }
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
+        homeWifiTick();   // this task owns the Wi-Fi station, see home_wifi.h
         if (trial && millis() >= UPDATE_HEALTHY_AFTER_MS) {
             // Ran long enough: this version is good, and any rollback notice is stale.
             Preferences p; p.begin(PREFS, false);
@@ -265,15 +234,12 @@ void updaterBegin() {
     lock_ = xSemaphoreCreateMutex();
     { Preferences p; p.begin(PREFS, true); rolledBack_ = p.getString("badVer", ""); p.end(); }
     if (!UPDATE_PUBLIC_KEY[0]) state_ = "off";
-    WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) { joinReason_ = info.wifi_sta_disconnected.reason; },
-                 ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    homeWifiBegin();
     xTaskCreatePinnedToCore(updaterTask, "updater", 12288, nullptr, 1, nullptr, 0);
 }
 
 void updaterWriteStatus(JsonDocument& d) {
-    Preferences p; p.begin(PREFS, true);
-    String ssid = p.getString("ssid", "");
-    p.end();
+    String ssid = homeWifiSsid();
     Lock l;
     d["current"] = FIRMWARE_VERSION;
     d["repo"] = UPDATE_REPO;
@@ -292,14 +258,6 @@ void updaterWriteStatus(JsonDocument& d) {
         o["date"] = r.date.c_str();
         o["newer"] = isNewerVersion(r.version, FIRMWARE_VERSION);
     }
-}
-
-void updaterSetWifi(const String& ssid, const String* password) {
-    Preferences p; p.begin(PREFS, false);
-    p.putString("ssid", ssid);
-    if (password) p.putString("pass", *password);
-    p.end();
-    updaterRequestCheck();
 }
 
 void updaterRequestCheck() {

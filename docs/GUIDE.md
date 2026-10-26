@@ -124,6 +124,30 @@ lands wherever that phone saves and syncs downloads.
 The pad can't back up to the cloud by itself: it runs its own Wi-Fi hotspot and
 has no internet connection.
 
+### Home Wi-Fi and kabuto.local
+
+In **Recordings → Home Wi-Fi**, save your network. Kabuto can only join
+**2.4 GHz** Wi-Fi; if your router has separate 2.4 and 5 GHz names, use the
+2.4 GHz one. A failed join says why (not found, wrong password, refused, or no
+answer). By default the pad joins only to check for updates.
+
+Tick **Stay connected** and the editor is also at **http://kabuto.local** (or
+the address shown in the panel) from any device on that Wi-Fi:
+
+- It needs an **access PIN** (6+ characters), asked for once per browser over
+  your home network. The Kabuto-Setup hotspot never asks: it has its own Wi-Fi
+  password. Forgot the PIN? Set a new one from the hotspot.
+- Changing the PIN or restarting the pad logs every browser out. After 5 wrong
+  PINs, logins pause for 30 s, doubling up to 15 minutes.
+- `kabuto.local` works on macOS, iOS, Windows 10+ and most Linux; if a browser
+  (some Android ones) can't find it, use the IP address instead.
+- Wi-Fi and Bluetooth share one radio, so staying connected can add a little
+  timing jitter. Turn it off for the most precise playback.
+- The hotspot stays on as a fallback, on your router's channel.
+- The Wi-Fi password and a salted hash of the PIN are kept in the pad's
+  settings storage, never in `macros.json` or exports, and never sent back to
+  the browser.
+
 ### Updates from GitHub releases
 
 Once set up, every push to `main` that changes the firmware is released
@@ -147,7 +171,7 @@ taps **Install** and confirms. The same list offers earlier versions too.
    (GitHub → Settings → Secrets and variables → Actions). Then store the private
    key file somewhere safe off the repo; `*signing-key*.pem` is gitignored.
 3. Flash the pad once over USB (`pio run -t upload`) so it has the public key.
-4. In **Recordings → Updates**, enter your home Wi-Fi and press **Save Wi-Fi**.
+4. In **Recordings → Home Wi-Fi**, enter your home Wi-Fi and press **Save Wi-Fi**.
 
 **Releasing**
 
@@ -171,9 +195,8 @@ pads will trust, so keep write access to yourself (or protect `main`).
 **On the pad**
 
 - It checks a minute after starting and every 6 hours, joining your home Wi-Fi
-  only for the check. It can only join **2.4 GHz** networks; if your router
-  has separate 2.4 and 5 GHz names, use the 2.4 GHz one. A failed join says why. Its own hotspot stays on, though a phone on it may drop
-  for a moment. **Check now** checks straight away.
+  only for the check unless it stays connected (see above). Its own hotspot
+  stays on, though a phone on it may drop for a moment. **Check now** checks straight away.
 - Only releases signed with your key are listed. A download is installed only
   if its size and SHA-256 match the signed entry, so a tampered file is
   rejected even though the connection itself isn't certificate-checked.
@@ -185,8 +208,6 @@ pads will trust, so keep write access to yourself (or protect `main`).
 - If a version fails to start three times within its first minute, the pad goes
   back to the previous one and says so in **Updates**.
 - Versions from before 1.14 have no updater: flash 1.14 or later over USB once.
-- The home Wi-Fi password is stored in the pad's settings storage (not in
-  `macros.json` or JSON exports) and is never sent back to the browser.
 - Updates need the standard two-slot flash layout (the default), and a build
   must fit one slot: `pio run` reports that as flash usage.
 

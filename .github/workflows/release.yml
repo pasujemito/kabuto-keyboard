@@ -65,6 +65,7 @@ jobs:
           out="$RUNNER_TEMP/tests"; mkdir -p "$out"
           g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o "$out/dynamic" && "$out/dynamic"
           g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o "$out/update" && "$out/update"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o "$out/access" && "$out/access"
           g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o "$out/selection" && "$out/selection"
           g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o "$out/engine" && "$out/engine"
           g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src \

@@ -71,10 +71,21 @@ int main(){
     const auto* pattern=cfg.layers[0].keys[0].steps[0].pattern();assert(pattern);
     assert(pattern->jumpToAttack.min==45&&pattern->jumpToAttack.max==120);
     assert(pattern->attacksPerSet.min==2&&pattern->sets.max==12&&pattern->turnChancePermille==800);
-    assert(pattern->skills.size()==1&&pattern->skills[0].keycode==6&&pattern->skills[0].chancePermille==100);
+    assert(pattern->skills.empty()&&pattern->potions.size()==2&&pattern->potions[0].id=="hp"&&pattern->potions[0].keycode==6);
+    assert(pattern->potions[0].chancePermille==1000&&pattern->potions[0].cooldown.min==40000&&pattern->potions[1].keycode==0x19);
+    assert(pattern->jump.mods==0x04&&pattern->attack.mods==0x01&&pattern->left.keycode==0x50);
     assert(saveConfig(cfg));assert(loadConfig(roundtrip));
     pattern=roundtrip.layers[0].keys[0].steps[0].pattern();
-    assert(pattern&&pattern->skills[0].after.max==1130&&pattern->shuffleSkills);
+    assert(pattern&&pattern->potions[1].cooldown.max==45000&&pattern->potions[0].after.max==700&&pattern->shuffleSkills);
+    // Custom movement keys survive a round trip; potions and skills keep separate shapes.
+    String customKeys(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"k","keys":{"jump":"SPACE","attack":"X","left":"A","right":"D"},)"
+                      R"("potions":[{"id":"mana","key":"V","every_ms":[1000,2000]}],"skills":[{"id":"s","key":"Q","chance":0.5,"cooldown_ms":3000}]}}]}]}]})");
+    assert(saveRawJson(customKeys,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
+    pattern=roundtrip.layers[0].keys[0].steps[0].pattern();
+    assert(pattern->jump.keycode==0x2C&&!pattern->jump.mods&&pattern->attack.keycode==0x1B&&pattern->left.keycode==0x04&&pattern->right.keycode==0x07);
+    assert(pattern->potions.size()==1&&pattern->potions[0].id=="mana"&&pattern->potions[0].cooldown.max==2000&&pattern->potions[0].chancePermille==1000);
+    assert(pattern->skills[0].keycode==0x14&&pattern->skills[0].cooldown.min==3000&&pattern->skills[0].chancePermille==500);
+    {std::string saved=readRawJson();assert(saved.find("\"jump\":\"SPACE\"")!=std::string::npos&&saved.find("\"every_ms\"")!=std::string::npos);}
     // Presets saved with the old batch keys keep their values and are rewritten with the new names.
     String legacyJson(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"old","combos_per_side":[3,4],"sides":[5,6],"skills":[]}}]}]}]})");
     assert(saveRawJson(legacyJson,err));assert(loadConfig(cfg));
@@ -83,6 +94,7 @@ int main(){
     assert(saveConfig(cfg));
     {std::string saved=readRawJson();assert(saved.find("\"attacks_per_set\"")!=std::string::npos&&saved.find("sides")==std::string::npos);}
     assert(pattern->tempoDriftPermille==0); // absent in older presets: no drift
+    assert(pattern->jump.mods==0x04&&pattern->right.keycode==0x4F&&pattern->potions.empty());   // ...and the original keys
     String drifting(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"d","tempo_drift":0.15,"skills":[]}}]}]}]})");
     assert(saveRawJson(drifting,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
     assert(roundtrip.layers[0].keys[0].steps[0].pattern()->tempoDriftPermille==150);
@@ -110,7 +122,16 @@ int main(){
       R"({"id":"p","skills":[{"id":"c","key":"C","cooldown_ms":[0,86400001]}]})",
       R"({"id":"p","skills":[{"id":"c","key":"C","repeats":[0,2]}]})",
       R"({"id":"p","skills":[{"id":"c","key":"C","chance":-0.1}]})",
-      R"({"id":"p","skills":[{"id":"c","key":"C"},{"id":"c","key":"H"}]})"
+      R"({"id":"p","skills":[{"id":"c","key":"C"},{"id":"c","key":"H"}]})",
+      R"({"id":"p","keys":{"jump":"CTRL"},"skills":[]})",
+      R"({"id":"p","keys":{"left":"ALT"},"skills":[]})",
+      R"({"id":"p","keys":{"jump":"NOPE"},"skills":[]})",
+      R"({"id":"p","keys":"ALT","skills":[]})",
+      R"({"id":"p","keys":{"jump":"SPACE"},"skills":[{"id":"s","key":"SPACE"}]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"LEFT"}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"elixir","key":"C"}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C"},{"id":"hp","key":"V"}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","every_ms":[70000,40000]}],"skills":[]})"
     };
     for(auto bad:badPatterns){
       String raw(std::string("{\"layers\":[{\"keys\":[{\"steps\":[{\"type\":\"dynamic\",\"pattern\":")+bad+"}]}]}]}");

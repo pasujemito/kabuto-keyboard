@@ -111,6 +111,9 @@ async function main(){
   evaluate(`meta.keys.push('C','F1');`);
   w.document.querySelector('#newDynamic').click();assert(w.document.querySelector('#dynamicDialog').open);
   assert.equal(w.document.querySelector('#dynamicName').value,'Dynamic jump-attack');
+  // New patterns bring HP and Mana but no skill; add one first.
+  assert.equal(w.document.querySelector('[aria-label="HP key"]').value,'C');assert(!w.document.querySelector('[aria-label="Skill 1 key"]'));
+  w.document.querySelector('#dynamicAddSkill').click();
   const chance=w.document.querySelector('[aria-label="Skill 1 chance after each set (%)"]');chance.value='35';chance.oninput();
   w.document.querySelector('#dynamicAddSkill').click();
   const h=w.document.querySelector('[aria-label="Skill 2 key"]');h.value='H';h.onchange();
@@ -128,7 +131,7 @@ async function main(){
   assert.match(evaluate(`recordingSummary(cfg.workflows.find(r=>r.id===${JSON.stringify(dynamic.id)}))`),/Dynamic/);
   evaluate(`openStepEditor(${JSON.stringify(dynamic.id)});`);assert(w.document.querySelector('#dynamicDialog').open);assert(!w.document.querySelector('#editDialog').open);
   // One generated example preserves overlap order and establishes facing first.
-  const example=JSON.parse(evaluate(`JSON.stringify((()=>{const p=JSON.parse(JSON.stringify(dynamicDraft));p.sets=[2,2];p.attacks_per_set=[2,2];p.turn_chance=1;p.skills[0].chance=1;p.skills[1].chance=0;return generateDynamicSample(p,()=>0);})())`));
+  const example=JSON.parse(evaluate(`JSON.stringify((()=>{const p=JSON.parse(JSON.stringify(dynamicDraft));p.sets=[2,2];p.attacks_per_set=[2,2];p.turn_chance=1;p.potions.forEach(x=>x.enabled=false);Object.assign(p.skills[0],{key:'C',enabled:true,chance:1,repeats:[2,2]});p.skills[1].chance=0;return generateDynamicSample(p,()=>0);})())`));
   assert.equal(example.steps[0].key,'LEFT');
   const dirs=example.steps.filter(s=>s.type==='down'&&['LEFT','RIGHT'].includes(s.key)).map(s=>s.key);assert.deepEqual(dirs,['LEFT','RIGHT']); // no direction tap after the last set
   const edges=example.steps.filter(s=>s.mods?.length).map(s=>s.type+':'+s.mods[0]);

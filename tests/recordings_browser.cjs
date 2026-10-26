@@ -33,7 +33,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    }
    if(url.pathname==='/api/update')return route.fulfill({contentType:'application/json',body:JSON.stringify(updateState)});
    if(url.pathname==='/api/config'&&truncateConfig)return route.fulfill({contentType:'application/json',body:JSON.stringify(config).slice(0,20000)});
-   const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','C','W','H','F1','LEFT','RIGHT','Z'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:url.pathname==='/api/storage'?{fsTotal:1441792,fsUsed:180224,configBytes:80719,maxConfig:262144,heapSize:327680,heapFree:122880,heapLargest:73728}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
+   const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','C','W','H','F1','LEFT','RIGHT','Z','V','X','SPACE','D'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:url.pathname==='/api/storage'?{fsTotal:1441792,fsUsed:180224,configBytes:80719,maxConfig:262144,heapSize:327680,heapFree:122880,heapLargest:73728}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   };
   await page.route('**/*',handler);
@@ -105,8 +105,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'Dynamic pattern',exact:true}).click();
   await page.locator('#dynamicDialog[open]').waitFor();
   await page.getByLabel('Dynamic pattern name').fill('Jump combat varied');
-  // New patterns start Natural; presets change movement/rhythm and keep skills.
+  // New patterns start Natural with HP on C and Mana on V, and no skill yet.
   assert.equal(await page.getByLabel('Tempo drift (%)',{exact:true}).inputValue(),'15');
+  assert(await page.getByLabel('Enable HP',{exact:true}).isChecked());
+  assert.equal(await page.getByLabel('HP key',{exact:true}).inputValue(),'C');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
+  assert.equal(await page.getByLabel('HP every (seconds) minimum',{exact:true}).inputValue(),'40');
+  assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
+  await page.getByRole('button',{name:'Add skill',exact:true}).click();
+  assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
+  // Presets change movement/rhythm and keep skills.
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('35');
   await page.getByRole('button',{name:'Flip',exact:true}).click();
   assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'3');
@@ -117,6 +124,14 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('Gap after attack (ms) minimum',{exact:true}).inputValue(),'580');
   await page.getByRole('button',{name:'Natural',exact:true}).click();
   assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'10');
+  // Movement keys: Space jumps, X attacks; clashes are refused, and skills can't pick them.
+  await page.locator('#dynamicKeysSummary').click();
+  await page.getByLabel('Jump key',{exact:true}).selectOption('SPACE');await page.getByLabel('Attack key',{exact:true}).selectOption('SPACE');
+  await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Jump and attack need different keys.');
+  await page.getByLabel('Attack key',{exact:true}).selectOption('X');
+  assert.equal(await page.locator('#dynamicKeysSummary').textContent(),'Keys · jump SPACE, attack X, turn LEFT/RIGHT');
+  assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).locator('option[value="SPACE"]').count(),0);
   await page.getByLabel('Turn around after a set (%)',{exact:true}).fill('75');
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('20');
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
@@ -127,6 +142,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'Preview example JSON',exact:true}).click();
   await page.locator('#jsonDialog[open]').waitFor();
   const generated=JSON.parse(await page.locator('#jsonText').inputValue());assert(generated.steps.length>1&&generated.steps[0].key);
+  assert(generated.steps.some(s=>s.key==='SPACE')&&generated.steps.some(s=>s.key==='X')&&!generated.steps.some(s=>s.mods?.length));
+  assert(generated.steps.some(s=>s.type==='down'&&s.key==='C')&&generated.steps.some(s=>s.type==='down'&&s.key==='V'));   // HP and Mana fire
   await page.locator('#jsonClose').click();
   await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicDialog[open]').count(),0);
@@ -134,6 +151,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await dynamicCard.getByRole('button',{name:'Edit',exact:true}).click();
   assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'75');
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
+  assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   await page.locator('#dynamicClose').click();
   // Updates: a newer release is announced; installing needs a confirmation.
   await page.locator('#tabRecordings').click();

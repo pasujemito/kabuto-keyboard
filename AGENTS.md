@@ -57,7 +57,8 @@ release workflow runs all C++ and Python tests.
 - Put decisions in pure headers (`*_logic.h`, `dynamic_pattern.h`) so host
   tests can cover them.
 - Config is validated twice, on the device (`storage.cpp`) and in the UI
-  (`validateDynamicPattern` etc.). Change both together.
+  (`validateDynamicPattern` etc.). Change both together. Key clashes live in
+  `dynamicKeyProblem` (`dynamic_pattern.h`), mirrored in the UI.
 - Renaming a JSON key: keep reading the old one (see `legacy()` in
   `storage.cpp`, `normalizeDynamicPattern` in the UI). Saved patterns on pads
   must keep loading.

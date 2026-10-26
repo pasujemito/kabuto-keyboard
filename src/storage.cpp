@@ -72,24 +72,52 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (p.jumpToAttack.max+p.attackToJumpUp.max>90000 || p.attackToJumpUp.max+p.jumpUpToAttackUp.max>90000) return false;
     if (!o["shuffle_skills"].isNull() && !o["shuffle_skills"].is<bool>()) return false;
     p.shuffleSkills = o["shuffle_skills"] | true;
-    if (!o["skills"].is<JsonArrayConst>() || o["skills"].size()>8) return false;
-    std::set<std::string> ids;
-    for (JsonObjectConst s : o["skills"].as<JsonArrayConst>()) {
-        DynamicSkill skill;skill.id=s["id"] | "";
-        if (!validId(skill.id) || !ids.insert(skill.id).second) return false;
+    // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
+    // keys keep the defaults, so older patterns play exactly as before.
+    auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
+        if (v.isNull()) return true;
+        if (!v.is<const char*>()) return false;
+        String name = v.as<const char*>();
+        if (uint8_t mods = modifierFromName(name)) { out = dynamicModifier(mods); return true; }
+        out = dynamicKeycode(keycodeFromName(name));
+        return !out.empty();
+    };
+    JsonObjectConst keys = o["keys"].as<JsonObjectConst>();
+    if (!o["keys"].isNull() && keys.isNull()) return false;
+    if (!movementKey(keys["jump"],p.jump) || !movementKey(keys["attack"],p.attack) ||
+        !movementKey(keys["left"],p.left) || !movementKey(keys["right"],p.right)) return false;
+    // Skills and HP/Mana potions share one shape. A potion always fires once
+    // its wait ("every_ms") is over; a skill also rolls its chance.
+    auto parseSkill = [&](JsonObjectConst s, DynamicSkill& skill, bool potion) {
+        skill.id=s["id"] | "";
         skill.keycode=keycodeFromName(String(s["key"] | ""));
-        if (!skill.keycode || skill.keycode==KC_LEFT || skill.keycode==KC_RIGHT) return false;
+        if (!skill.keycode) return false;
         if (!s["enabled"].isNull() && !s["enabled"].is<bool>()) return false;
         skill.enabled=s["enabled"] | true;
-        if (!chance(s["chance"],skill.chancePermille) || !range(s["repeats"],skill.repeats,1,10) ||
-            !range(s["hold"],skill.hold,1,90000) || !range(s["after"],skill.after,0,90000)) return false;
+        if (potion) skill.chancePermille=1000;
+        else if (!chance(s["chance"],skill.chancePermille)) return false;
+        if (!range(s["repeats"],skill.repeats,1,10) || !range(s["hold"],skill.hold,1,90000) || !range(s["after"],skill.after,0,90000)) return false;
+        JsonVariantConst wait = s[potion ? "every_ms" : "cooldown_ms"];
         // A single number is the older fixed interval; a [min,max] range is drawn after each use.
-        if (s["cooldown_ms"].is<uint32_t>()) skill.cooldown={s["cooldown_ms"].as<uint32_t>(),s["cooldown_ms"].as<uint32_t>()};
-        else if (!range(s["cooldown_ms"],skill.cooldown,0,86400000)) return false;
-        if (skill.cooldown.max>86400000U) return false;
+        if (!potion && wait.is<uint32_t>()) skill.cooldown={wait.as<uint32_t>(),wait.as<uint32_t>()};
+        else if (!range(wait,skill.cooldown,0,86400000)) return false;
+        return skill.cooldown.max<=86400000U;
+    };
+    if (!o["potions"].isNull() && (!o["potions"].is<JsonArrayConst>() || o["potions"].size()>2)) return false;
+    std::set<std::string> ids;
+    for (JsonObjectConst s : o["potions"].as<JsonArrayConst>()) {
+        DynamicSkill potion;
+        if (!parseSkill(s,potion,true) || (potion.id!="hp" && potion.id!="mana") || !ids.insert(potion.id).second) return false;
+        p.potions.push_back(std::move(potion));
+    }
+    if (!o["skills"].is<JsonArrayConst>() || o["skills"].size()>8) return false;
+    ids.clear();
+    for (JsonObjectConst s : o["skills"].as<JsonArrayConst>()) {
+        DynamicSkill skill;
+        if (!parseSkill(s,skill,false) || !validId(skill.id) || !ids.insert(skill.id).second) return false;
         p.skills.push_back(std::move(skill));
     }
-    return true;
+    return dynamicKeyProblem(p).empty();
 }
 
 static bool parseStep(JsonObjectConst o, Step& step) {
@@ -343,6 +371,11 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"dir_hold",p->directionHold);range(d,"dir_after",p->directionAfter);
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
+            auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
+            JsonObject keys=d["keys"].to<JsonObject>();
+            keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);
+            JsonArray potions=d["potions"].to<JsonArray>();
+            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
             JsonArray skills=d["skills"].to<JsonArray>();
             for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;

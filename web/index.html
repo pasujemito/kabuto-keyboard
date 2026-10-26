@@ -428,14 +428,22 @@
 <dialog class="json-dialog edit-dialog" id="dynamicDialog" aria-labelledby="dynamicTitle">
   <header><h3 id="dynamicTitle">Dynamic jump-attack</h3><button class="btn sm" id="dynamicClose">Close</button></header>
   <label>Name <input class="name" id="dynamicName" aria-label="Dynamic pattern name"></label>
-  <p class="hint">Fresh sets on every play. Alt → Ctrl → release Alt → release Ctrl stays in order. Counts and timings use center-weighted triangular sampling.</p>
+  <p class="hint">Fresh sets on every play. Jump → attack → release jump → release attack stays in order. Counts and timings use center-weighted triangular sampling.</p>
   <div class="recording-actions" id="dynamicPresets" aria-label="Pattern presets"><span class="hint">Start from:</span></div>
   <p class="hint" id="dynamicPresetHint"></p>
   <div class="dynamic-main" id="dynamicMain"></div>
   <p class="hint">A set is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around. The starting direction is tapped first; there is no tap after the last set. Direction taps move the character; turn probability does not guarantee position balance.</p>
+  <details><summary id="dynamicKeysSummary">Keys</summary>
+    <div class="dynamic-main" id="dynamicKeys"></div>
+    <p class="hint">Jump and attack can be Alt, Ctrl, Shift or any key. They overlap as a chord; turns are tapped between sets.</p>
+  </details>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
+  <details open><summary>HP &amp; Mana</summary>
+    <p class="hint">Each fires on its own timer, between sets and before skills. Kabuto can't see your bars, so it drinks on time, not when you're low.</p>
+    <div id="dynamicPotions"></div>
+  </details>
   <details open><summary>Skills</summary>
-    <p class="hint">Each enabled skill gets a chance after each set, with no Alt/Ctrl held. "Use again after" is a wait counted from the end of each use, drawn fresh from its range every time; it is not a deadline. With 100% chance the skill fires at the first set boundary after the wait. The first use can occur after the first set. Cooldowns persist across Stop/Start until config reload or reboot.</p>
+    <p class="hint">Each enabled skill gets a chance after each set (after HP and Mana), with no movement key held. "Use again after" is a wait counted from the end of each use, drawn fresh from its range every time; it is not a deadline. With 100% chance the skill fires at the first set boundary after the wait. The first use can occur after the first set. Cooldowns persist across Stop/Start until config reload or reboot.</p>
     <div id="dynamicSkills"></div><div class="recording-actions"><button class="btn sm" id="dynamicAddSkill">Add skill</button><label><input type="checkbox" id="dynamicShuffle"> Shuffle skill order when several run</label></div>
   </details>
   <p class="hint">Variable sequences can still repeat. These settings do not guarantee unique patterns or avoidance of detection.</p>
@@ -797,13 +805,26 @@ const DYNAMIC_PRESETS={
   flip:{label:'Flip',hint:'Turns often: 1–3 attacks per set and nearly always turns, with more sets so a play lasts about as long.',
     values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,700],dir_hold:[85,150],dir_after:[60,200],attacks_per_set:[1,3],sets:[20,30],turn_chance:.95,tempo_drift:.1}},
 };
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,skills:[{id:freshId(),enabled:true,key:'C',chance:.1,repeats:[2,2],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]}]};}
+// Movement keys: a modifier (Alt/Ctrl/Shift...) or any key name from the device.
+const DYNAMIC_MODIFIERS=['ALT','CTRL','SHIFT','GUI','RCTRL','RSHIFT','RALT','RGUI'];
+const DYNAMIC_KEY_SLOTS=[['jump','Jump'],['attack','Attack'],['left','Turn left'],['right','Turn right']];
+const DYNAMIC_DEFAULT_KEYS={jump:'ALT',attack:'CTRL',left:'LEFT',right:'RIGHT'};
+const POTION_LABELS={hp:'HP',mana:'Mana'};
+function defaultPotion(id,enabled=true){
+  return {id,enabled,key:id==='hp'?'C':'V',every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
+}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
   if(!p||typeof p!=='object')return p;
   for(const [key,old] of [['attacks_per_set','combos_per_side'],['sets','sides']]){if(p[key]===undefined&&p[old]!==undefined)p[key]=p[old];delete p[old];}
   if(p.tempo_drift===undefined)p.tempo_drift=0; // presets from before drift existed
+  // Older patterns: the original keys, and HP/Mana present but off.
+  if(!p.keys||typeof p.keys!=='object')p.keys={};
+  for(const [slot,name] of Object.entries(DYNAMIC_DEFAULT_KEYS))if(!p.keys[slot])p.keys[slot]=name;
+  if(!Array.isArray(p.potions))p.potions=[];
+  p.potions=['hp','mana'].map(id=>p.potions.find(x=>x?.id===id)||defaultPotion(id,false));
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -815,14 +836,29 @@ function validateDynamicPattern(p){
   const chance=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)throw new Error(label+': enter a percentage from 0 to 100.');};
   if(!p||!id(p.id))throw new Error('Invalid dynamic pattern ID.');
   DYNAMIC_RANGES.forEach(([key,label,min,max])=>range(p[key],label,min,max));
-  if(p.jump_to_attack[1]+p.attack_to_jump_up[1]>90000||p.attack_to_jump_up[1]+p.jump_up_to_attack_up[1]>90000)throw new Error('Combined Alt or Ctrl hold must not exceed 90 seconds.');
+  if(p.jump_to_attack[1]+p.attack_to_jump_up[1]>90000||p.attack_to_jump_up[1]+p.jump_up_to_attack_up[1]>90000)throw new Error('Combined jump or attack hold must not exceed 90 seconds.');
+  // Same key rules as the device (dynamicKeyProblem in dynamic_pattern.h).
+  const k=p.keys||{},keyOk=name=>typeof name==='string'&&(DYNAMIC_MODIFIERS.includes(name)||meta.keys.includes(name));
+  for(const [slot,label] of DYNAMIC_KEY_SLOTS)if(!keyOk(k[slot]))throw new Error(label+': choose a key.');
+  if(k.jump===k.attack)throw new Error('Jump and attack need different keys.');
+  if(k.left===k.right)throw new Error('Turn left and turn right need different keys.');
+  if([k.left,k.right].some(x=>x===k.jump||x===k.attack))throw new Error('Turn keys must differ from jump and attack.');
+  const movement=new Set([k.jump,k.attack,k.left,k.right]);
+  const tapKey=(name,label)=>{if(!name||!meta.keys.includes(name))throw new Error(label+': choose a key.');if(movement.has(name))throw new Error(label+" can't use a movement key.");};
+  if(!Array.isArray(p.potions)||p.potions.length>2||new Set(p.potions.map(x=>x.id)).size!==p.potions.length||p.potions.some(x=>!POTION_LABELS[x.id]))throw new Error('Use one HP and one Mana entry.');
+  for(const x of p.potions){
+    const label=POTION_LABELS[x.id];
+    if(typeof x.enabled!=='boolean')throw new Error('Choose whether '+label+' is on.');
+    tapKey(x.key,label+' key');range(x.repeats,label+' taps',1,10);range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
+    try{range(x.every_ms,'',0,86400000);}catch(e){throw new Error(label+' every: enter an ordered range from 0 to 86400 seconds.');}
+  }
   chance(p.turn_chance,'Turn chance');if(typeof p.tempo_drift!=='number'||!(p.tempo_drift>=0&&p.tempo_drift<=.3))throw new Error('Tempo drift: enter a percentage from 0 to 30.');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
   if(!Array.isArray(p.skills)||p.skills.length>8)throw new Error('Use at most 8 skills.');
   const ids=new Set();
   for(const s of p.skills){
     if(!id(s.id)||ids.has(s.id))throw new Error('Skill IDs must be unique.');ids.add(s.id);
     if(typeof s.enabled!=='boolean')throw new Error('Choose whether the skill is enabled.');
-    if(!s.key||!meta.keys.includes(s.key)||['LEFT','RIGHT'].includes(s.key))throw new Error('Choose a valid non-direction skill key.');
+    tapKey(s.key,'Skill key');
     chance(s.chance,'Skill chance');range(s.repeats,'Skill repeats',1,10);range(s.hold,'Skill hold',1,90000);range(s.after,'Skill gap',0,90000);
     try{range(s.cooldown_ms,'',0,86400000);}catch(e){throw new Error('Skill use again after: enter an ordered range from 0 to 86400 seconds.');}
   }
@@ -847,7 +883,36 @@ function openDynamicEditor(id=null){
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
   normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';
-  renderDynamicFields();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+  renderDynamicFields();renderDynamicKeys();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+}
+function dynamicKeySelect(label,value,options,change){
+  const select=el('select');select.setAttribute('aria-label',label);
+  for(const k of value&&!options.includes(value)?[value,...options]:options){const o=el('option');o.value=k;o.textContent=k;select.appendChild(o);}
+  select.value=value;select.onchange=()=>{change(select.value);dynamicDirty=true;$('#dynamicError').textContent='';};return select;
+}
+// Keys skills and potions may use: anything that isn't a movement key.
+function dynamicTapKeys(){const movement=new Set(Object.values(dynamicDraft.keys));return meta.keys.filter(k=>k&&!movement.has(k));}
+function renderDynamicKeys(){
+  const box=$('#dynamicKeys'),keys=dynamicDraft.keys;box.replaceChildren();
+  for(const [slot,label] of DYNAMIC_KEY_SLOTS){
+    const field=el('label','dynamic-field');field.append(label);
+    field.appendChild(dynamicKeySelect(label+' key',keys[slot],[...DYNAMIC_MODIFIERS.slice(0,3),...meta.keys.filter(Boolean)],v=>{keys[slot]=v;renderDynamicKeys();renderDynamicPotions();renderDynamicSkills();}));
+    box.appendChild(field);
+  }
+  $('#dynamicKeysSummary').textContent=`Keys · jump ${keys.jump}, attack ${keys.attack}, turn ${keys.left}/${keys.right}`;
+}
+function renderDynamicPotions(){
+  const list=$('#dynamicPotions');list.replaceChildren();
+  for(const potion of dynamicDraft.potions){
+    const label=POTION_LABELS[potion.id],card=el('div','dynamic-skill'),head=el('div','recording-actions');
+    const on=el('label'),check=el('input');check.type='checkbox';check.checked=potion.enabled;check.setAttribute('aria-label','Enable '+label);
+    check.onchange=()=>{potion.enabled=check.checked;dynamicDirty=true;};on.append(check,' '+label);head.appendChild(on);
+    head.appendChild(dynamicKeySelect(label+' key',potion.key,dynamicTapKeys(),v=>potion.key=v));card.appendChild(head);
+    card.append(dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),dynamicRange(label+' taps',potion.repeats,1,10));
+    const details=el('details'),summary=el('summary');summary.textContent='Tap timing';details.appendChild(summary);
+    details.append(dynamicRange(label+' hold (ms)',potion.hold,1,90000),dynamicRange(label+' gap after tap (ms)',potion.after,0,90000));
+    card.appendChild(details);list.appendChild(card);
+  }
 }
 function renderDynamicFields(){
   const main=$('#dynamicMain');main.replaceChildren();
@@ -868,7 +933,7 @@ function renderDynamicSkills(){
     const card=el('div','dynamic-skill'),head=el('div','recording-actions');
     const enabled=el('label'),check=el('input');check.type='checkbox';check.checked=skill.enabled;check.setAttribute('aria-label','Enable skill '+(index+1));check.onchange=()=>{skill.enabled=check.checked;dynamicDirty=true;};enabled.append(check,' Enabled');head.appendChild(enabled);
     const key=el('select');key.setAttribute('aria-label','Skill '+(index+1)+' key');
-    meta.keys.filter(k=>k&&!['LEFT','RIGHT'].includes(k)).forEach(k=>{const o=el('option');o.value=k;o.textContent=k;key.appendChild(o);});key.value=skill.key;
+    (skill.key&&!dynamicTapKeys().includes(skill.key)?[skill.key,...dynamicTapKeys()]:dynamicTapKeys()).forEach(k=>{const o=el('option');o.value=k;o.textContent=k;key.appendChild(o);});key.value=skill.key;
     key.onchange=()=>{skill.key=key.value;dynamicDirty=true;renderDynamicSkills();};head.appendChild(key);
     const remove=el('button','btn sm');remove.type='button';remove.textContent='Remove skill';remove.onclick=()=>{dynamicDraft.skills.splice(index,1);dynamicDirty=true;renderDynamicSkills();};head.appendChild(remove);card.appendChild(head);
     card.append(dynamicNumber('Skill '+(index+1)+' chance after each set (%)',skill.chance*100,0,100,.1,n=>skill.chance=n/100),
@@ -903,20 +968,25 @@ function generateDynamicSample(p,rng=Math.random){
   let tempo=drift?int(2*drift+1)-drift:0;
   const add=step=>{if(steps.length>=12000)throw new Error('This example exceeds 12000 steps. Reduce the sets or attacks per set for the preview; live playback is streamed.');steps.push(step);};
   const delay=range=>{const ms=r(range);add({type:'delay',ms});at+=ms;};
-  const tap=(key,hold,after)=>{add({type:'down',key});delay(hold);add({type:'up',key});delay(after);};
-  let facing=rng()<.5?'LEFT':'RIGHT';const sets=r(p.sets);tap(facing,p.dir_hold,p.dir_after);
+  const k=p.keys,press=(down,name)=>add(DYNAMIC_MODIFIERS.includes(name)?{type:down?'down':'up',mods:[name.toLowerCase()]}:{type:down?'down':'up',key:name});
+  const tap=(name,hold,after)=>{press(true,name);delay(hold);press(false,name);delay(after);};
+  let left=rng()<.5;const sets=r(p.sets);tap(left?k.left:k.right,p.dir_hold,p.dir_after);
   for(let set=0;set<sets;set++){
     const units=r(p.attacks_per_set);
     for(let unit=0;unit<units;unit++){
       if(drift)tempo=Math.max(-drift,Math.min(drift,Math.trunc(tempo*9/10)+int(2*half+1)-half));
       const gap=Math.floor(r(p.combo_gap)*(1000+tempo)/1000);
-      add({type:'down',mods:['alt']});delay(p.jump_to_attack);add({type:'down',mods:['ctrl']});delay(p.attack_to_jump_up);add({type:'up',mods:['alt']});delay(p.jump_up_to_attack_up);add({type:'up',mods:['ctrl']});add({type:'delay',ms:gap});at+=gap;
+      press(true,k.jump);delay(p.jump_to_attack);press(true,k.attack);delay(p.attack_to_jump_up);press(false,k.jump);delay(p.jump_up_to_attack_up);press(false,k.attack);add({type:'delay',ms:gap});at+=gap;
+    }
+    for(const x of p.potions){
+      const id='potion:'+x.id;
+      if(x.enabled&&(!due.has(id)||at>=due.get(id))){const n=r(x.repeats);for(let i=0;i<n;i++)tap(x.key,x.hold,x.after);due.set(id,at+r(x.every_ms));}
     }
     const skills=p.skills.filter(s=>s.enabled&&(!due.has(s.id)||at>=due.get(s.id))&&rng()<s.chance);
     if(p.shuffle_skills)for(let i=skills.length;i>1;i--){const j=Math.min(i-1,Math.floor(rng()*i));[skills[i-1],skills[j]]=[skills[j],skills[i-1]];}
     for(const s of skills){const repeats=r(s.repeats);for(let n=0;n<repeats;n++)tap(s.key,s.hold,s.after);due.set(s.id,at+r(s.cooldown_ms));}
     if(set+1===sets)break; // no direction tap after the last set
-    if(rng()<p.turn_chance)facing=facing==='LEFT'?'RIGHT':'LEFT';tap(facing,p.dir_hold,p.dir_after);
+    if(rng()<p.turn_chance)left=!left;tap(left?k.left:k.right,p.dir_hold,p.dir_after);
   }
   return {name:($('#dynamicName').value.trim()||'Dynamic jump-attack')+' — example',trigger:'tap',steps};
 }
@@ -1756,7 +1826,12 @@ $("#dynamicName").oninput=()=>dynamicDirty=true;
 $("#dynamicClose").onclick=closeDynamicEditor;
 $("#dynamicDialog").addEventListener("cancel",event=>{event.preventDefault();closeDynamicEditor();});
 $("#dynamicShuffle").onchange=()=>{dynamicDraft.shuffle_skills=$("#dynamicShuffle").checked;dynamicDirty=true;};
-$("#dynamicAddSkill").onclick=()=>{if(dynamicDraft.skills.length>=8)return;dynamicDraft.skills.push({id:freshId(),enabled:false,key:'C',chance:.1,repeats:[1,1],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]});dynamicDirty=true;renderDynamicSkills();};
+$("#dynamicAddSkill").onclick=()=>{
+  if(dynamicDraft.skills.length>=8)return;
+  // Start on a key nothing else in the pattern presses yet.
+  const used=new Set([...dynamicDraft.potions,...dynamicDraft.skills].map(x=>x.key)),free=dynamicTapKeys();
+  dynamicDraft.skills.push({id:freshId(),enabled:false,key:free.find(k=>!used.has(k))||free[0],chance:.1,repeats:[1,1],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]});dynamicDirty=true;renderDynamicSkills();
+};
 $("#dynamicApply").onclick=applyDynamicPattern;
 $("#dynamicPreview").onclick=()=>{try{generatedPreview=generateDynamicSample(dynamicDraft);openJsonPreview('generated');}catch(e){$('#dynamicError').textContent=e.message;}};
 $("#newRecording").onclick=newRecording;

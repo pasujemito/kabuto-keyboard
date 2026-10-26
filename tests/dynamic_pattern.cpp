@@ -18,5 +18,15 @@ int main(){
     assert(tempoDriftStep(100,150,0)==90&&tempoDriftStep(-100,150,0)==-90);
     assert(tempoDriftStep(150,150,75)==150&&tempoDriftStep(-150,150,-75)==-150);
     assert(tempoDriftStep(0,0,0)==0);
+    // Movement keys default to the original Alt/Ctrl/arrows and must not clash.
+    DynamicPattern p;assert(dynamicKeyProblem(p).empty());
+    assert(p.jump.mods==0x04&&p.attack.mods==0x01&&p.left.keycode==0x50&&p.right.keycode==0x4F);
+    DynamicPattern q=p;q.attack=q.jump;assert(dynamicKeyProblem(q)=="jump and attack need different keys");
+    q=p;q.right=q.left;assert(!dynamicKeyProblem(q).empty());
+    q=p;q.left=q.attack;assert(dynamicKeyProblem(q)=="turn keys must differ from jump and attack");
+    q=p;q.jump=dynamicKeycode(0x2C);q.attack=dynamicKeycode(0x1B);assert(dynamicKeyProblem(q).empty());   // Space jumps, X attacks
+    DynamicSkill s;s.keycode=0x1B;q.potions={s};assert(dynamicKeyProblem(q)=="skills and potions can't use a movement key");
+    q.potions.clear();s.keycode=0x50;q.skills={s};assert(!dynamicKeyProblem(q).empty());   // a turn key
+    q=p;q.left=DynamicKey();assert(dynamicKeyProblem(q)=="choose all four movement keys");
     std::cout<<"dynamic sampling tests passed\n";
 }

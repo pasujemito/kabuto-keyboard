@@ -98,6 +98,20 @@ String keyNameFromCode(uint8_t code) {
     return "";
 }
 
+String modifierNameFromMask(uint8_t mods) {
+    switch (mods) {
+        case KM_LCTRL:  return "CTRL";
+        case KM_LSHIFT: return "SHIFT";
+        case KM_LALT:   return "ALT";
+        case KM_LGUI:   return "GUI";
+        case KM_RCTRL:  return "RCTRL";
+        case KM_RSHIFT: return "RSHIFT";
+        case KM_RALT:   return "RALT";
+        case KM_RGUI:   return "RGUI";
+        default:        return "";
+    }
+}
+
 String consumerNameFromUsage(uint16_t u) {
     switch (u) {
         case CC_PLAYPAUSE: return "PLAY";

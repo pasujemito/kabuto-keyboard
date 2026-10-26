@@ -354,13 +354,27 @@ character doesn't take a final step. A 100% turn
 chance gives strict alternation, and 0% keeps the initial facing. Direction
 taps also move the character, so this is not position balancing or feedback.
 
-The default skill is **C**, enabled with a **10% chance after each set**,
-tapped twice. Each tap holds for 85–110 ms and has an 880–1130 ms gap **after
-release**, including the last tap. Thus start-to-start spacing includes both
-hold and gap. Add up to eight independent skills; configure their key,
-chance, number of taps (a range, up to 10), hold/gap ranges and an optional
-**use again after** range.
-New additional skills start disabled until configured/enabled. Multiple skills
+**Keys.** Jump, attack, turn left and turn right default to Alt, Ctrl, ← and →.
+Change them under **Keys**: jump and attack can be a modifier (Alt, Ctrl,
+Shift) or any key, e.g. Space to jump and X to attack. Jump and attack must
+differ, the two turn keys must differ from each other and from jump/attack,
+and skills and potions can't use a movement key. Patterns saved before keys
+were configurable keep Alt, Ctrl and the arrows.
+
+**HP & Mana.** New patterns drink **HP on C every 40–70 s** and **Mana on V
+every 25–45 s**, one tap each (hold 85–110 ms, then 400–700 ms). Each potion
+has its own key, on/off switch, **every X–Y seconds** range, number of taps
+and tap timing. A potion fires at the first gap between sets once its timer is
+up, before any skills, and the next wait is drawn fresh each time. The first
+drink comes after the first set. Kabuto can't see your health or mana bars, so
+potions run on time, not when you're low. Patterns saved before potions
+existed have both switched off.
+
+**Skills.** Add up to eight independent skills; configure their key, chance
+after each set, number of taps (a range, up to 10), hold/gap ranges and an
+optional **use again after** range. Each tap holds, then waits its gap **after
+release**, including the last tap, so start-to-start spacing includes both.
+New skills start disabled, on a key nothing else in the pattern uses. Multiple skills
 can run at the same boundary; their order can be shuffled. They run only after
 all jump/attack inputs have been released.
 
@@ -382,6 +396,8 @@ Common setups:
 | Usually turn after 1–3 attacks | Attacks per set 1–3, turn around 80% |
 | A skill that fires now and then | Chance 10–30%, use again after 0–0 |
 | A buff every 40–70 s, tapped 5–8 times | Chance 100%, taps 5–8, use again after 40–70 |
+| HP every 30–50 s, two quick taps | HP every 30–50, taps 2–2 |
+| Jump on Space, attack on X | Keys: jump SPACE, attack X |
 | Rare, but never back to back | Chance 20%, use again after 20–45 |
 
 Strict settings (2–2 at 100%) repeat exactly; ranges and chances below 100%

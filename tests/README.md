@@ -17,6 +17,7 @@ g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-dev
 npm install --prefix /tmp/kabuto-ui-test --cache /tmp/kabuto-npm-cache --no-audit --no-fund jsdom@30.1.3
 NODE_PATH=/tmp/kabuto-ui-test/node_modules node tests/workflow_editor.cjs
 python3 tools/recorder.py --selftest
+python3 tools/flash_backup.py --selftest   # LittleFS part needs littlefs-python
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It
@@ -63,8 +64,9 @@ check that uploads are committed through a temporary file that is removed on
 failure.
 
 Dynamic tests exercise the triangular sampler's endpoints, bounds and centre
-weighting; live Alt/Ctrl ordering and actual hold times; fresh batch counts;
-0/100% turn probability; independent skill repeats/chances/cooldowns;
+weighting; live Alt/Ctrl ordering and actual hold times; fresh set counts;
+0/100% turn probability; no direction tap after the last set; legacy
+`combos_per_side`/`sides` keys; independent skill repeats/chances/cooldowns;
 Stop during direction, modifier and skill holds; definition persistence; and
 rejection of invalid or unsafe bounds without replacing the saved config.
 The UI tests cover the mobile settings dialog, multiple skills, invalid edits,

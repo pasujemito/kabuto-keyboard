@@ -23,8 +23,8 @@ struct DynamicPattern {
     DynamicRange comboGap{510,760};
     DynamicRange directionHold{85,180};
     DynamicRange directionAfter{16,330};
-    DynamicRange combosPerBatch{2,10};
-    DynamicRange batches{8,12};
+    DynamicRange attacksPerSet{2,10}; // jump-attacks while facing one way
+    DynamicRange sets{8,12};          // sets per play; skills/turns happen between sets
     uint16_t turnChancePermille = 800;
     bool shuffleSkills = true;
     std::vector<DynamicSkill> skills;

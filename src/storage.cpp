@@ -41,6 +41,10 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     };
     p.id = o["id"] | "";
     if (!validId(p.id)) return false;
+    // Presets saved before the batch -> set rename keep loading.
+    auto legacy = [](JsonObjectConst object, const char* name, const char* oldName) {
+        return object[name].isNull() ? object[oldName] : object[name];
+    };
     auto range = [](JsonVariantConst v, DynamicRange& out, uint32_t low, uint32_t high) {
         if (v.isNull()) return true;
         if (!v.is<JsonArrayConst>() || v.size()!=2 || !v[0].is<uint32_t>() || !v[1].is<uint32_t>()) return false;
@@ -60,8 +64,8 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         !range(o["combo_gap"],p.comboGap,0,90000) ||
         !range(o["dir_hold"],p.directionHold,1,90000) ||
         !range(o["dir_after"],p.directionAfter,0,90000) ||
-        !range(o["combos_per_side"],p.combosPerBatch,1,100) ||
-        !range(o["sides"],p.batches,1,100) || !chance(o["turn_chance"],p.turnChancePermille)) return false;
+        !range(legacy(o,"attacks_per_set","combos_per_side"),p.attacksPerSet,1,100) ||
+        !range(legacy(o,"sets","sides"),p.sets,1,100) || !chance(o["turn_chance"],p.turnChancePermille)) return false;
     if (p.jumpToAttack.max+p.attackToJumpUp.max>90000 || p.attackToJumpUp.max+p.jumpUpToAttackUp.max>90000) return false;
     if (!o["shuffle_skills"].isNull() && !o["shuffle_skills"].is<bool>()) return false;
     p.shuffleSkills = o["shuffle_skills"] | true;
@@ -333,7 +337,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"jump_to_attack",p->jumpToAttack);range(d,"attack_to_jump_up",p->attackToJumpUp);
             range(d,"jump_up_to_attack_up",p->jumpUpToAttackUp);range(d,"combo_gap",p->comboGap);
             range(d,"dir_hold",p->directionHold);range(d,"dir_after",p->directionAfter);
-            range(d,"combos_per_side",p->combosPerBatch);range(d,"sides",p->batches);
+            range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             JsonArray skills=d["skills"].to<JsonArray>();
             for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;k["cooldown_ms"]=skill.cooldownMs;range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}

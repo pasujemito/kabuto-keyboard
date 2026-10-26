@@ -412,12 +412,12 @@
 <dialog class="json-dialog edit-dialog" id="dynamicDialog" aria-labelledby="dynamicTitle">
   <header><h3 id="dynamicTitle">Dynamic jump-attack</h3><button class="btn sm" id="dynamicClose">Close</button></header>
   <label>Name <input class="name" id="dynamicName" aria-label="Dynamic pattern name"></label>
-  <p class="hint">Fresh batches on every play. Alt → Ctrl → release Alt → release Ctrl stays in order. Counts and timings use center-weighted triangular sampling.</p>
+  <p class="hint">Fresh sets on every play. Alt → Ctrl → release Alt → release Ctrl stays in order. Counts and timings use center-weighted triangular sampling.</p>
   <div class="dynamic-main" id="dynamicMain"></div>
-  <p class="hint">A batch attacks while facing one side. The initial direction is tapped first. Direction taps move the character; turn probability does not guarantee position balance.</p>
+  <p class="hint">A set is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around. The starting direction is tapped first; there is no tap after the last set. Direction taps move the character; turn probability does not guarantee position balance.</p>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details open><summary>Skills</summary>
-    <p class="hint">Each enabled skill gets a chance after each batch, with no Alt/Ctrl held. A minimum interval is a cooldown after completion, not a deadline; the first use can occur after the first batch. Cooldowns persist across Stop/Start until config reload or reboot.</p>
+    <p class="hint">Each enabled skill gets a chance after each set, with no Alt/Ctrl held. A minimum interval is a cooldown after completion, not a deadline; the first use can occur after the first set. Cooldowns persist across Stop/Start until config reload or reboot.</p>
     <div id="dynamicSkills"></div><div class="recording-actions"><button class="btn sm" id="dynamicAddSkill">Add skill</button><label><input type="checkbox" id="dynamicShuffle"> Shuffle skill order when several run</label></div>
   </details>
   <p class="hint">Variable sequences can still repeat. These settings do not guarantee unique patterns or avoidance of detection.</p>
@@ -462,7 +462,7 @@ function blankKey(){return{name:"",trigger:"tap",steps:[]};}
 function currentBinding(){return selectedWorkflow===null?cfg.layers[selLayer].keys[selKey]:cfg.workflows.find(w=>w.id===selectedWorkflow);}
 function normalize(){
   if(!Array.isArray(cfg.workflows))cfg.workflows=[];
-  for(const workflow of cfg.workflows){if(!workflow.steps)workflow.steps=[];if(!workflow.kind)workflow.kind="nano";}
+  for(const workflow of cfg.workflows){if(!workflow.steps)workflow.steps=[];if(!workflow.kind)workflow.kind="nano";for(const step of workflow.steps)if(step.type==='dynamic')normalizeDynamicPattern(step.pattern);}
   if(selectedWorkflow!==null&&!cfg.workflows.some(w=>w.id===selectedWorkflow))selectedWorkflow=null;
   if(typeof cfg.randomizedDelay!=="boolean")cfg.randomizedDelay=true;
   if(!cfg.layers)cfg.layers=[];
@@ -629,10 +629,17 @@ function setGridMode(m){
 }
 
 /* Dynamic jump-attack presets: compact definitions, sampled by the ESP32. */
-const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_jump_up','Attack → jump release',0,90000],['jump_up_to_attack_up','Jump release → attack release',0,90000],['combo_gap','Gap after attack',0,90000],['dir_hold','Direction hold',1,90000],['dir_after','Gap after direction',0,90000],['combos_per_side','Attacks per batch',1,100],['sides','Batches per play',1,100]];
-function defaultDynamicPattern(){return {id:freshId(),jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,180],dir_after:[16,330],combos_per_side:[2,10],sides:[8,12],turn_chance:.8,shuffle_skills:true,skills:[{id:freshId(),enabled:true,key:'C',chance:.1,repeats:[2,2],hold:[85,110],after:[880,1130],cooldown_ms:0}]};}
+const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_jump_up','Attack → jump release',0,90000],['jump_up_to_attack_up','Jump release → attack release',0,90000],['combo_gap','Gap after attack',0,90000],['dir_hold','Direction hold',1,90000],['dir_after','Gap after direction',0,90000],['attacks_per_set','Attacks per set',1,100],['sets','Sets per play',1,100]];
+function defaultDynamicPattern(){return {id:freshId(),jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,180],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.8,shuffle_skills:true,skills:[{id:freshId(),enabled:true,key:'C',chance:.1,repeats:[2,2],hold:[85,110],after:[880,1130],cooldown_ms:0}]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
+// Presets made before the batch -> set rename used these keys.
+function normalizeDynamicPattern(p){
+  if(!p||typeof p!=='object')return p;
+  for(const [key,old] of [['attacks_per_set','combos_per_side'],['sets','sides']]){if(p[key]===undefined&&p[old]!==undefined)p[key]=p[old];delete p[old];}
+  return p;
+}
 function validateDynamicPattern(p){
+  normalizeDynamicPattern(p);
   const id=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,48}$/.test(value);
   const range=(value,label,min,max)=>{if(!Array.isArray(value)||value.length!==2||value.some(n=>!Number.isInteger(n))||value[0]<min||value[1]<value[0]||value[1]>max)throw new Error(label+': enter an ordered range from '+min+' to '+max+'.');};
   const chance=(value,label)=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)throw new Error(label+': enter a percentage from 0 to 100.');};
@@ -668,8 +675,8 @@ function openDynamicEditor(id=null){
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
   const main=$('#dynamicMain');main.replaceChildren();
-  for(const key of ['combos_per_side','sides']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);main.appendChild(dynamicRange(label,dynamicDraft[key],min,max));}
-  main.appendChild(dynamicNumber('Turn after batch (%)',dynamicDraft.turn_chance*100,0,100,.1,n=>dynamicDraft.turn_chance=n/100));
+  for(const key of ['attacks_per_set','sets']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);main.appendChild(dynamicRange(label,dynamicDraft[key],min,max));}
+  main.appendChild(dynamicNumber('Turn around after a set (%)',dynamicDraft.turn_chance*100,0,100,.1,n=>dynamicDraft.turn_chance=n/100));
   const timings=$('#dynamicTimings');timings.replaceChildren();
   DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>timings.appendChild(dynamicRange(label+' (ms)',dynamicDraft[key],min,max)));
   $('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
@@ -683,7 +690,7 @@ function renderDynamicSkills(){
     meta.keys.filter(k=>k&&!['LEFT','RIGHT'].includes(k)).forEach(k=>{const o=el('option');o.value=k;o.textContent=k;key.appendChild(o);});key.value=skill.key;
     key.onchange=()=>{skill.key=key.value;dynamicDirty=true;renderDynamicSkills();};head.appendChild(key);
     const remove=el('button','btn sm');remove.type='button';remove.textContent='Remove skill';remove.onclick=()=>{dynamicDraft.skills.splice(index,1);dynamicDirty=true;renderDynamicSkills();};head.appendChild(remove);card.appendChild(head);
-    card.appendChild(dynamicNumber('Skill '+(index+1)+' chance per batch (%)',skill.chance*100,0,100,.1,n=>skill.chance=n/100));
+    card.appendChild(dynamicNumber('Skill '+(index+1)+' chance after each set (%)',skill.chance*100,0,100,.1,n=>skill.chance=n/100));
     const details=el('details'),summary=el('summary');summary.textContent='Repeats, timing and minimum interval';details.appendChild(summary);
     details.append(dynamicRange('Skill '+(index+1)+' repeats',skill.repeats,1,10),dynamicRange('Skill '+(index+1)+' hold (ms)',skill.hold,1,90000),dynamicRange('Skill '+(index+1)+' gap after tap (ms)',skill.after,0,90000),dynamicNumber('Skill '+(index+1)+' minimum interval (minutes)',skill.cooldown_ms/60000,0,1440,.1,n=>skill.cooldown_ms=Math.round(n*60000)));
     card.appendChild(details);list.appendChild(card);
@@ -708,19 +715,20 @@ function generateDynamicSample(p,rng=Math.random){
   validateDynamicPattern(p);
   const r=range=>{const u=Math.max(0,Math.min(1,rng())),span=range[1]-range[0];return Math.round(u<.5?range[0]+span*Math.sqrt(u/2):range[1]-span*Math.sqrt((1-u)/2));};
   const steps=[],last=new Map();let at=0;
-  const add=step=>{if(steps.length>=12000)throw new Error('This example exceeds 12000 steps. Reduce the preview batch counts; live playback is streamed.');steps.push(step);};
+  const add=step=>{if(steps.length>=12000)throw new Error('This example exceeds 12000 steps. Reduce the sets or attacks per set for the preview; live playback is streamed.');steps.push(step);};
   const delay=range=>{const ms=r(range);add({type:'delay',ms});at+=ms;};
-  const tap=(key,hold,after,includeAfter=true)=>{add({type:'down',key});delay(hold);add({type:'up',key});if(includeAfter)delay(after);};
-  let facing=rng()<.5?'LEFT':'RIGHT';const batches=r(p.sides);tap(facing,p.dir_hold,p.dir_after);
-  for(let batch=0;batch<batches;batch++){
-    const units=r(p.combos_per_side);
+  const tap=(key,hold,after)=>{add({type:'down',key});delay(hold);add({type:'up',key});delay(after);};
+  let facing=rng()<.5?'LEFT':'RIGHT';const sets=r(p.sets);tap(facing,p.dir_hold,p.dir_after);
+  for(let set=0;set<sets;set++){
+    const units=r(p.attacks_per_set);
     for(let unit=0;unit<units;unit++){
       add({type:'down',mods:['alt']});delay(p.jump_to_attack);add({type:'down',mods:['ctrl']});delay(p.attack_to_jump_up);add({type:'up',mods:['alt']});delay(p.jump_up_to_attack_up);add({type:'up',mods:['ctrl']});delay(p.combo_gap);
     }
     const skills=p.skills.filter(s=>s.enabled&&(!last.has(s.id)||at-last.get(s.id)>=s.cooldown_ms)&&rng()<s.chance);
     if(p.shuffle_skills)for(let i=skills.length;i>1;i--){const j=Math.min(i-1,Math.floor(rng()*i));[skills[i-1],skills[j]]=[skills[j],skills[i-1]];}
     for(const s of skills){const repeats=r(s.repeats);for(let n=0;n<repeats;n++)tap(s.key,s.hold,s.after);last.set(s.id,at);}
-    if(rng()<p.turn_chance)facing=facing==='LEFT'?'RIGHT':'LEFT';tap(facing,p.dir_hold,p.dir_after,batch+1<batches);
+    if(set+1===sets)break; // no direction tap after the last set
+    if(rng()<p.turn_chance)facing=facing==='LEFT'?'RIGHT':'LEFT';tap(facing,p.dir_hold,p.dir_after);
   }
   return {name:($('#dynamicName').value.trim()||'Dynamic jump-attack')+' — example',trigger:'tap',steps};
 }
@@ -739,7 +747,7 @@ function recordingSteps(recording,seen=new Set()){
   });
 }
 function recordingSummary(recording){
-  if(isDynamicRecording(recording)){const p=recording.steps[0].pattern;return `Dynamic · ${p.combos_per_side.join('–')} attacks × ${p.sides.join('–')} batches`;}
+  if(isDynamicRecording(recording)){const p=recording.steps[0].pattern;return `Dynamic · ${p.attacks_per_set.join('–')} attacks × ${p.sets.join('–')} sets`;}
   const steps=recordingSteps(recording),ms=steps.reduce((n,s)=>n+stepMs(s),0);
   return steps.length+' steps · '+(ms/1000).toFixed(1)+' s';
 }
@@ -1403,7 +1411,7 @@ function refreshJsonPreview(){
     payload=currentBinding();
     if(selectedWorkflow!==null&&payload.recording)payload={name:payload.name,trigger:"tap",steps:recordingSteps(payload)};
     name=payload.name||payload.id||("key-"+(selKey+1));
-    hint=selectedWorkflow!==null&&isDynamicRecording(currentBinding())?"Live generator definition. The device samples new batches on each playback; exporting it does not freeze a generated run.":selectedWorkflow!==null&&currentBinding().recording?"Complete captured recording with its original fixed timings. Download it to import into Recordings later.":"Button or existing custom macro definition, including unsaved edits. Export Full configuration to include referenced recordings.";
+    hint=selectedWorkflow!==null&&isDynamicRecording(currentBinding())?"Live generator definition. The device samples new sets on each playback; exporting it does not freeze a generated run.":selectedWorkflow!==null&&currentBinding().recording?"Complete captured recording with its original fixed timings. Download it to import into Recordings later.":"Button or existing custom macro definition, including unsaved edits. Export Full configuration to include referenced recordings.";
   }
   $("#jsonText").value=JSON.stringify(payload,null,2)+"\n";
   $("#jsonHint").textContent=hint;

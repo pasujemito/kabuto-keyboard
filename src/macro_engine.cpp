@@ -421,21 +421,20 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 auto sample=[](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L));};
                 auto delay=[](uint32_t ms){Step step;step.type=StepType::DELAY;step.value=ms;step.maxValue=ms;return step;};
                 auto edge=[](bool down,uint8_t key,uint8_t mods){Step step;step.type=down?StepType::KEY_DOWN:StepType::KEY_UP;step.keycode=key;step.modifiers=mods;return step;};
-                auto tap=[&](uint8_t key,DynamicRange hold,DynamicRange after,bool includeAfter=true){
-                    std::vector<Step> actions{edge(true,key,0),delay(sample(hold)),edge(false,key,0)};
-                    if(includeAfter)actions.push_back(delay(sample(after)));
+                auto tap=[&](uint8_t key,DynamicRange hold,DynamicRange after){
+                    std::vector<Step> actions{edge(true,key,0),delay(sample(hold)),edge(false,key,0),delay(sample(after))};
                     executeSteps(actions,stop,state,depth+1);
                 };
                 uint8_t facing=random(2L)==0?KC_LEFT:KC_RIGHT;
-                uint32_t batches=sample(pattern->batches);
+                uint32_t sets=sample(pattern->sets);
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 // Establish the actual initial facing before the first attack.
                 tap(facing,pattern->directionHold,pattern->directionAfter);
-                for(uint32_t batch=0;batch<batches&&!stop;++batch){
-                    uint32_t count=sample(pattern->combosPerBatch),started=millis();
+                for(uint32_t set=0;set<sets&&!stop;++set){
+                    uint32_t count=sample(pattern->attacksPerSet),started=millis();
                     Step entry=s;entry.keycode=facing;entry.value=count;
-                    char label[64];std::snprintf(label,sizeof(label),"batch %lu/%lu: %lu attacks",(unsigned long)(batch+1),(unsigned long)batches,(unsigned long)count);
-                    uint32_t batchLog=logStep(entry,pc,started,0,false,label);
+                    char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
+                    uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
                         std::vector<Step> actions{
                             edge(true,KC_NONE,KM_LALT),delay(sample(pattern->jumpToAttack)),
@@ -444,7 +443,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                             edge(false,KC_NONE,KM_LCTRL),delay(sample(pattern->comboGap))};
                         executeSteps(actions,stop,state,depth+1);
                     }
-                    updateLogDuration(batchLog,millis()-started,true);
+                    updateLogDuration(setLog,millis()-started,true);
                     if(stop)break;
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i){
@@ -466,9 +465,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         dynamicSkillLastRun_[pattern->id+"/"+skill.id]=millis();
                         updateLogDuration(id,millis()-started,true);
                     }
-                    if(stop)break;
+                    // No direction tap after the last set: it would only nudge the character.
+                    if(stop||set+1==sets)break;
                     if(random(1000L)<pattern->turnChancePermille)facing=facing==KC_LEFT?KC_RIGHT:KC_LEFT;
-                    tap(facing,pattern->directionHold,pattern->directionAfter,batch+1<batches);
+                    tap(facing,pattern->directionHold,pattern->directionAfter);
                     if(!stop)yieldTick();
                 }
                 releaseTracked();

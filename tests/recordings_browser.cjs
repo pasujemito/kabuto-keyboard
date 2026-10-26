@@ -84,8 +84,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'Dynamic pattern',exact:true}).click();
   await page.locator('#dynamicDialog[open]').waitFor();
   await page.getByLabel('Dynamic pattern name').fill('Jump combat varied');
-  await page.getByLabel('Turn after batch (%)',{exact:true}).fill('75');
-  await page.getByLabel('Skill 1 chance per batch (%)',{exact:true}).fill('20');
+  await page.getByLabel('Turn around after a set (%)',{exact:true}).fill('75');
+  await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('20');
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   await page.getByLabel('Skill 2 key',{exact:true}).selectOption('H');
   const dynamicBounds=await page.locator('#dynamicDialog').boundingBox();assert(dynamicBounds.x>=0&&dynamicBounds.x+dynamicBounds.width<=390);
@@ -99,8 +99,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#dynamicDialog[open]').count(),0);
   const dynamicCard=page.locator('.recording-card').filter({hasText:'Dynamic ·'});assert.equal(await dynamicCard.count(),1);
   await dynamicCard.getByRole('button',{name:'Edit',exact:true}).click();
-  assert.equal(await page.getByLabel('Turn after batch (%)',{exact:true}).inputValue(),'75');
-  assert.equal(await page.getByLabel('Skill 1 chance per batch (%)',{exact:true}).inputValue(),'20');
+  assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'75');
+  assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
   await page.locator('#dynamicClose').click();
   assert.deepEqual(errors,[]);console.log('desktop/mobile recordings browser tests passed');
  }finally{await browser.close();}

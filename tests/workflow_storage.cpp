@@ -70,16 +70,24 @@ int main(){
     assert(saveRawJson(dynamicJson,err));assert(loadConfig(cfg));
     const auto* pattern=cfg.layers[0].keys[0].steps[0].pattern();assert(pattern);
     assert(pattern->jumpToAttack.min==45&&pattern->jumpToAttack.max==120);
-    assert(pattern->combosPerBatch.min==2&&pattern->batches.max==12&&pattern->turnChancePermille==800);
+    assert(pattern->attacksPerSet.min==2&&pattern->sets.max==12&&pattern->turnChancePermille==800);
     assert(pattern->skills.size()==1&&pattern->skills[0].keycode==6&&pattern->skills[0].chancePermille==100);
     assert(saveConfig(cfg));assert(loadConfig(roundtrip));
     pattern=roundtrip.layers[0].keys[0].steps[0].pattern();
     assert(pattern&&pattern->skills[0].after.max==1130&&pattern->shuffleSkills);
+    // Presets saved with the old batch keys keep their values and are rewritten with the new names.
+    String legacyJson(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"old","combos_per_side":[3,4],"sides":[5,6],"skills":[]}}]}]}]})");
+    assert(saveRawJson(legacyJson,err));assert(loadConfig(cfg));
+    pattern=cfg.layers[0].keys[0].steps[0].pattern();
+    assert(pattern&&pattern->attacksPerSet.min==3&&pattern->attacksPerSet.max==4&&pattern->sets.min==5&&pattern->sets.max==6);
+    assert(saveConfig(cfg));
+    {std::string saved=readRawJson();assert(saved.find("\"attacks_per_set\"")!=std::string::npos&&saved.find("sides")==std::string::npos);}
     auto good=readRawJson();
     const char* badPatterns[]={
       R"({"id":"p","jump_to_attack":[121,45],"skills":[]})",
       R"({"id":"p","turn_chance":1.1,"skills":[]})",
       R"({"id":"p","turn_chance":true,"skills":[]})",
+      R"({"id":"p","sets":[0,12],"skills":[]})",
       R"({"id":"p","sides":[0,12],"skills":[]})",
       R"({"id":"p","combo_gap":[0,90001],"skills":[]})",
       R"({"id":"p","attack_to_jump_up":[50000,60000],"jump_up_to_attack_up":[50000,60000],"skills":[]})",

@@ -218,7 +218,7 @@ int main() {
     testRandomHook={};engine.config().randomizedDelay=false;
     // Dynamic playback streams the preserved Alt/Ctrl overlap, with explicit
     // sampled timings taking precedence over the configured global jitter.
-    DynamicPattern p;p.id="test-dynamic";p.batches={3,3};p.combosPerBatch={2,2};p.turnChancePermille=1000;
+    DynamicPattern p;p.id="test-dynamic";p.sets={3,3};p.attacksPerSet={2,2};p.turnChancePermille=1000;
     Step dynamic;dynamic.type=StepType::DYNAMIC;dynamic.setPattern(p);
     engine.config().randomizedDelay=true;hidEvents.clear();ctrlDurations.clear();
     run(engine,{dynamic});
@@ -233,17 +233,18 @@ int main() {
     }
     std::vector<uint8_t> directions;
     for(auto e:hidEvents)if(e.down&&(e.key==80||e.key==79)){assert(!e.mods);directions.push_back(e.key);}
-    assert((directions==std::vector<uint8_t>{80,79,80,79}));
+    // Initial facing plus one tap between sets; nothing after the last set.
+    assert((directions==std::vector<uint8_t>{80,79,80}));
     assert(ctrlDurations.size()==6&&std::all_of(ctrlDurations.begin(),ctrlDurations.end(),[](uint32_t v){return v==46;}));
     p.turnChancePermille=0;dynamic.setPattern(p);hidEvents.clear();run(engine,{dynamic});
     for(auto e:hidEvents)if(e.down&&(e.key==80||e.key==79))assert(e.key==80);
     // Fresh counts each activation: minimum draws vs maximum draws.
-    p.batches={2,4};p.combosPerBatch={1,3};dynamic.setPattern(p);
+    p.sets={2,4};p.attacksPerSet={1,3};dynamic.setPattern(p);
     ctrlDurations.clear();run(engine,{dynamic});assert(ctrlDurations.size()==2);
     testRandomHook=[](long upper){return upper-1;};ctrlDurations.clear();run(engine,{dynamic});
     assert(ctrlDurations.size()==12&&ctrlDurations[0]==200);testRandomHook={};
     // Independent skills, repeat counts, and a cooldown retained over Stop/Start.
-    p.batches={3,3};p.combosPerBatch={1,1};
+    p.sets={3,3};p.attacksPerSet={1,1};
     DynamicSkill c;c.id="skill-c";c.keycode=6;c.chancePermille=1000;c.cooldownMs=1000000;
     DynamicSkill h;h.id="skill-h";h.keycode=11;h.chancePermille=1000;h.repeats={1,1};
     p.skills={c,h};dynamic.setPattern(p);hidEvents.clear();run(engine,{dynamic});

@@ -203,7 +203,8 @@ private:
     bool utilityClockStarted_ = false;
     uint32_t utilityEpoch_ = 0;
     std::map<std::string, uint32_t> utilityLastRun_;
-    std::map<std::string, uint32_t> dynamicSkillLastRun_;
+    struct DynamicSkillTimer { uint32_t lastRun; uint32_t wait; };
+    std::map<std::string, DynamicSkillTimer> dynamicSkillTimers_;
     Config cfg_;
     int    layer_      = 0;
 

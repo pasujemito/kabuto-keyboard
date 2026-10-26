@@ -13,7 +13,7 @@ struct DynamicSkill {
     DynamicRange repeats{2,2};
     DynamicRange hold{85,110};
     DynamicRange after{880,1130};
-    uint32_t cooldownMs = 0;
+    DynamicRange cooldown{0,0}; // wait after each use; a fresh draw every time
 };
 struct DynamicPattern {
     std::string id;

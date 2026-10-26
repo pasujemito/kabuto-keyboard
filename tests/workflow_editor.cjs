@@ -115,7 +115,8 @@ async function main(){
   w.document.querySelector('#dynamicAddSkill').click();
   const h=w.document.querySelector('[aria-label="Skill 2 key"]');h.value='H';h.onchange();
   const hEnabled=w.document.querySelector('[aria-label="Enable skill 2"]');hEnabled.click();
-  const cooldown=w.document.querySelector('[aria-label="Skill 2 minimum interval (minutes)"]');cooldown.value='5';cooldown.oninput();
+  // "Use again after" is a seconds range stored in milliseconds.
+  for(const [end,value] of [['minimum','40'],['maximum','70.5']]){const f=w.document.querySelector(`[aria-label="Skill 2 use again after (seconds) ${end}"]`);f.value=value;f.oninput();}
   // Invalid fields leave the configuration unchanged and keep the draft open.
   const originalConfig=snapshot();
   const max=w.document.querySelector('[aria-label="Attacks per set maximum"]');max.value='1';max.oninput();
@@ -123,7 +124,7 @@ async function main(){
   max.value='10';max.oninput();w.document.querySelector('#dynamicApply').click();assert(!w.document.querySelector('#dynamicDialog').open);
   let dynamic=snapshot().workflows.find(r=>r.steps.length===1&&r.steps[0].type==='dynamic');assert(dynamic);
   assert.equal(dynamic.steps[0].pattern.skills.length,2);assert.equal(dynamic.steps[0].pattern.skills[0].chance,.35);
-  assert.equal(dynamic.steps[0].pattern.skills[1].cooldown_ms,300000);
+  assert.deepEqual(dynamic.steps[0].pattern.skills[1].cooldown_ms,[40000,70500]);
   assert.match(evaluate(`recordingSummary(cfg.workflows.find(r=>r.id===${JSON.stringify(dynamic.id)}))`),/Dynamic/);
   evaluate(`openStepEditor(${JSON.stringify(dynamic.id)});`);assert(w.document.querySelector('#dynamicDialog').open);assert(!w.document.querySelector('#editDialog').open);
   // One generated example preserves overlap order and establishes facing first.

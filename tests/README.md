@@ -66,7 +66,8 @@ failure.
 Dynamic tests exercise the triangular sampler's endpoints, bounds and centre
 weighting; live Alt/Ctrl ordering and actual hold times; fresh set counts;
 0/100% turn probability; no direction tap after the last set; legacy
-`combos_per_side`/`sides` keys; independent skill repeats/chances/cooldowns;
+`combos_per_side`/`sides` keys; independent skill repeats/chances/cooldowns; ranged "use again after" waits
+drawn per use (and older single-number intervals);
 Stop during direction, modifier and skill holds; definition persistence; and
 rejection of invalid or unsafe bounds without replacing the saved config.
 The UI tests cover the mobile settings dialog, multiple skills, invalid edits,

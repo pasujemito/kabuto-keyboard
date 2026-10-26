@@ -80,9 +80,10 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         skill.enabled=s["enabled"] | true;
         if (!chance(s["chance"],skill.chancePermille) || !range(s["repeats"],skill.repeats,1,10) ||
             !range(s["hold"],skill.hold,1,90000) || !range(s["after"],skill.after,0,90000)) return false;
-        if (!s["cooldown_ms"].isNull() && !s["cooldown_ms"].is<uint32_t>()) return false;
-        skill.cooldownMs=s["cooldown_ms"] | 0U;
-        if (skill.cooldownMs>86400000U) return false;
+        // A single number is the older fixed interval; a [min,max] range is drawn after each use.
+        if (s["cooldown_ms"].is<uint32_t>()) skill.cooldown={s["cooldown_ms"].as<uint32_t>(),s["cooldown_ms"].as<uint32_t>()};
+        else if (!range(s["cooldown_ms"],skill.cooldown,0,86400000)) return false;
+        if (skill.cooldown.max>86400000U) return false;
         p.skills.push_back(std::move(skill));
     }
     return true;
@@ -340,7 +341,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             JsonArray skills=d["skills"].to<JsonArray>();
-            for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;k["cooldown_ms"]=skill.cooldownMs;range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
+            for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;
         }
         case StepType::KEY:

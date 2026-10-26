@@ -242,16 +242,34 @@ The default skill is **C**, enabled with a **10% chance after each set**,
 tapped twice. Each tap holds for 85–110 ms and has an 880–1130 ms gap **after
 release**, including the last tap. Thus start-to-start spacing includes both
 hold and gap. Add up to eight independent skills; configure their key,
-probability, repeat-count range, hold/gap ranges and optional minimum interval.
+chance, number of taps (a range, up to 10), hold/gap ranges and an optional
+**use again after** range.
 New additional skills start disabled until configured/enabled. Multiple skills
 can run at the same boundary; their order can be shuffled. They run only after
 all jump/attack inputs have been released.
 
-A skill's minimum interval is measured from completion of its previous burst;
-it does not guarantee execution by a deadline. The first opportunity needs no
-initial cooldown. An interrupted burst consumes its cooldown too. Timers
+**Use again after** is a wait measured from the end of the skill's previous
+use. It is a range in seconds, and a new wait is drawn from it after every use,
+so 40–70 s gives a different gap each time. With 100% chance the skill fires at
+the first set boundary after the wait; it is not a deadline. The first
+opportunity needs no wait. An interrupted use starts its wait too. In the JSON
+it is `"cooldown_ms": [min, max]`; an older single number still loads as a
+fixed wait. Timers
 survive repeated activations and Toggle/Hold passes, but config reload/reboot
 resets them. A copied/imported preset gets independent timer identities.
+
+Common setups:
+
+| You want | Set |
+| --- | --- |
+| Attack exactly twice, then turn | Attacks per set 2–2, turn around 100% |
+| Usually turn after 1–3 attacks | Attacks per set 1–3, turn around 80% |
+| A skill that fires now and then | Chance 10–30%, use again after 0–0 |
+| A buff every 40–70 s, tapped 5–8 times | Chance 100%, taps 5–8, use again after 40–70 |
+| Rare, but never back to back | Chance 20%, use again after 20–45 |
+
+Strict settings (2–2 at 100%) repeat exactly; ranges and chances below 100%
+vary the rhythm.
 
 Explicit sampled timings are not modified again by global recording jitter.
 Each wait is interruptible, and Stop releases arrows, skills, Alt and Ctrl.

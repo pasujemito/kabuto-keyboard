@@ -223,7 +223,7 @@ bool MacroEngine::load() {
     bool ok = loadConfig(cfg_);
     utilityClockStarted_ = false;
     utilityLastRun_.clear();
-    dynamicSkillLastRun_.clear();
+    dynamicSkillTimers_.clear();
     cfg_.ensureLayer(0);
     commit();
     if (layer_ >= (int)cfg_.layers.size()) layer_ = 0;
@@ -448,8 +448,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i){
                         const auto& skill=pattern->skills[i];
-                        auto last=dynamicSkillLastRun_.find(pattern->id+"/"+skill.id);
-                        if(skill.enabled && (last==dynamicSkillLastRun_.end() || (uint32_t)(millis()-last->second)>=skill.cooldownMs) &&
+                        auto timer=dynamicSkillTimers_.find(pattern->id+"/"+skill.id);
+                        if(skill.enabled && (timer==dynamicSkillTimers_.end() || (uint32_t)(millis()-timer->second.lastRun)>=timer->second.wait) &&
                            random(1000L)<skill.chancePermille)skills.push_back(i);
                     }
                     if(pattern->shuffleSkills)for(size_t i=skills.size();i>1;--i)std::swap(skills[i-1],skills[random((long)i)]);
@@ -461,8 +461,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         uint32_t id=logStep(skillEntry,pc,started,0,false,skill.id.c_str());
                         uint32_t repeats=sample(skill.repeats);
                         for(uint32_t repeat=0;repeat<repeats&&!stop;++repeat)tap(skill.keycode,skill.hold,skill.after);
-                        // Even an interrupted use consumes its cooldown.
-                        dynamicSkillLastRun_[pattern->id+"/"+skill.id]=millis();
+                        // Even an interrupted use starts its cooldown; each wait is drawn fresh.
+                        dynamicSkillTimers_[pattern->id+"/"+skill.id]={millis(),sample(skill.cooldown)};
                         updateLogDuration(id,millis()-started,true);
                     }
                     // No direction tap after the last set: it would only nudge the character.

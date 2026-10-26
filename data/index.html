@@ -413,6 +413,8 @@
   <header><h3 id="dynamicTitle">Dynamic jump-attack</h3><button class="btn sm" id="dynamicClose">Close</button></header>
   <label>Name <input class="name" id="dynamicName" aria-label="Dynamic pattern name"></label>
   <p class="hint">Fresh sets on every play. Alt → Ctrl → release Alt → release Ctrl stays in order. Counts and timings use center-weighted triangular sampling.</p>
+  <div class="recording-actions" id="dynamicPresets" aria-label="Pattern presets"><span class="hint">Start from:</span></div>
+  <p class="hint" id="dynamicPresetHint"></p>
   <div class="dynamic-main" id="dynamicMain"></div>
   <p class="hint">A set is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around. The starting direction is tapped first; there is no tap after the last set. Direction taps move the character; turn probability does not guarantee position balance.</p>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
@@ -630,12 +632,24 @@ function setGridMode(m){
 
 /* Dynamic jump-attack presets: compact definitions, sampled by the ESP32. */
 const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_jump_up','Attack → jump release',0,90000],['jump_up_to_attack_up','Jump release → attack release',0,90000],['combo_gap','Gap after attack',0,90000],['dir_hold','Direction hold',1,90000],['dir_after','Gap after direction',0,90000],['attacks_per_set','Attacks per set',1,100],['sets','Sets per play',1,100]];
-function defaultDynamicPattern(){return {id:freshId(),jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,180],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.8,shuffle_skills:true,skills:[{id:freshId(),enabled:true,key:'C',chance:.1,repeats:[2,2],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]}]};}
+// Movement and rhythm presets; skills are left as they are. Natural is fitted to
+// a recorded 57 s jump-attack run (timings ~min-max, gap drift ~15%); Smooth keeps
+// its middle half; Flip turns after nearly every 1-3 attacks.
+const DYNAMIC_PRESETS={
+  natural:{label:'Natural',hint:'Fitted to recorded play: full timing spread, the attack rhythm drifts slower/faster like a person, usually turns after a set.',
+    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,195],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.85,tempo_drift:.15}},
+  smooth:{label:'Smooth',hint:'Steady rhythm: the middle of the recorded timings, medium sets, little drift, turns after every set.',
+    values:{jump_to_attack:[75,105],attack_to_jump_up:[60,90],jump_up_to_attack_up:[40,65],combo_gap:[580,680],dir_hold:[100,150],dir_after:[120,230],attacks_per_set:[4,7],sets:[8,12],turn_chance:1,tempo_drift:.05}},
+  flip:{label:'Flip',hint:'Turns often: 1–3 attacks per set and nearly always turns, with more sets so a play lasts about as long.',
+    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,700],dir_hold:[85,150],dir_after:[60,200],attacks_per_set:[1,3],sets:[20,30],turn_chance:.95,tempo_drift:.1}},
+};
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,skills:[{id:freshId(),enabled:true,key:'C',chance:.1,repeats:[2,2],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]}]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
   if(!p||typeof p!=='object')return p;
   for(const [key,old] of [['attacks_per_set','combos_per_side'],['sets','sides']]){if(p[key]===undefined&&p[old]!==undefined)p[key]=p[old];delete p[old];}
+  if(p.tempo_drift===undefined)p.tempo_drift=0; // presets from before drift existed
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -648,7 +662,7 @@ function validateDynamicPattern(p){
   if(!p||!id(p.id))throw new Error('Invalid dynamic pattern ID.');
   DYNAMIC_RANGES.forEach(([key,label,min,max])=>range(p[key],label,min,max));
   if(p.jump_to_attack[1]+p.attack_to_jump_up[1]>90000||p.attack_to_jump_up[1]+p.jump_up_to_attack_up[1]>90000)throw new Error('Combined Alt or Ctrl hold must not exceed 90 seconds.');
-  chance(p.turn_chance,'Turn chance');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
+  chance(p.turn_chance,'Turn chance');if(typeof p.tempo_drift!=='number'||!(p.tempo_drift>=0&&p.tempo_drift<=.3))throw new Error('Tempo drift: enter a percentage from 0 to 30.');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
   if(!Array.isArray(p.skills)||p.skills.length>8)throw new Error('Use at most 8 skills.');
   const ids=new Set();
   for(const s of p.skills){
@@ -678,12 +692,21 @@ function openDynamicEditor(id=null){
   if(id&&!dynamicTarget)return;
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
+  normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';
+  renderDynamicFields();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+}
+function renderDynamicFields(){
   const main=$('#dynamicMain');main.replaceChildren();
   for(const key of ['attacks_per_set','sets']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);main.appendChild(dynamicRange(label,dynamicDraft[key],min,max));}
   main.appendChild(dynamicNumber('Turn around after a set (%)',dynamicDraft.turn_chance*100,0,100,.1,n=>dynamicDraft.turn_chance=n/100));
+  main.appendChild(dynamicNumber('Tempo drift (%)',dynamicDraft.tempo_drift*100,0,30,1,n=>dynamicDraft.tempo_drift=n/100));
   const timings=$('#dynamicTimings');timings.replaceChildren();
   DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>timings.appendChild(dynamicRange(label+' (ms)',dynamicDraft[key],min,max)));
-  $('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+}
+function applyDynamicPreset(name){
+  const preset=DYNAMIC_PRESETS[name];
+  Object.assign(dynamicDraft,JSON.parse(JSON.stringify(preset.values)));dynamicDirty=true;
+  $('#dynamicPresetHint').textContent=preset.label+': '+preset.hint;$('#dynamicError').textContent='';renderDynamicFields();
 }
 function renderDynamicSkills(){
   const list=$('#dynamicSkills');list.replaceChildren();
@@ -721,6 +744,9 @@ function generateDynamicSample(p,rng=Math.random){
   validateDynamicPattern(p);
   const r=range=>{const u=Math.max(0,Math.min(1,rng())),span=range[1]-range[0];return Math.round(u<.5?range[0]+span*Math.sqrt(u/2):range[1]-span*Math.sqrt((1-u)/2));};
   const steps=[],due=new Map();let at=0;
+  // Same tempo drift as the device: a mean-reverting walk in permille, within +/-drift.
+  const drift=Math.round(p.tempo_drift*1000),half=Math.trunc(drift/2),int=n=>Math.min(n-1,Math.floor(rng()*n));
+  let tempo=drift?int(2*drift+1)-drift:0;
   const add=step=>{if(steps.length>=12000)throw new Error('This example exceeds 12000 steps. Reduce the sets or attacks per set for the preview; live playback is streamed.');steps.push(step);};
   const delay=range=>{const ms=r(range);add({type:'delay',ms});at+=ms;};
   const tap=(key,hold,after)=>{add({type:'down',key});delay(hold);add({type:'up',key});delay(after);};
@@ -728,7 +754,9 @@ function generateDynamicSample(p,rng=Math.random){
   for(let set=0;set<sets;set++){
     const units=r(p.attacks_per_set);
     for(let unit=0;unit<units;unit++){
-      add({type:'down',mods:['alt']});delay(p.jump_to_attack);add({type:'down',mods:['ctrl']});delay(p.attack_to_jump_up);add({type:'up',mods:['alt']});delay(p.jump_up_to_attack_up);add({type:'up',mods:['ctrl']});delay(p.combo_gap);
+      if(drift)tempo=Math.max(-drift,Math.min(drift,Math.trunc(tempo*9/10)+int(2*half+1)-half));
+      const gap=Math.floor(r(p.combo_gap)*(1000+tempo)/1000);
+      add({type:'down',mods:['alt']});delay(p.jump_to_attack);add({type:'down',mods:['ctrl']});delay(p.attack_to_jump_up);add({type:'up',mods:['alt']});delay(p.jump_up_to_attack_up);add({type:'up',mods:['ctrl']});add({type:'delay',ms:gap});at+=gap;
     }
     const skills=p.skills.filter(s=>s.enabled&&(!due.has(s.id)||at>=due.get(s.id))&&rng()<s.chance);
     if(p.shuffle_skills)for(let i=skills.length;i>1;i--){const j=Math.min(i-1,Math.floor(rng()*i));[skills[i-1],skills[j]]=[skills[j],skills[i-1]];}
@@ -1568,6 +1596,7 @@ async function pollStatus(){
 }
 
 $("#newDynamic").onclick=()=>openDynamicEditor();
+for(const [name,preset] of Object.entries(DYNAMIC_PRESETS)){const b=el('button','btn sm');b.type='button';b.textContent=preset.label;b.onclick=()=>applyDynamicPreset(name);$('#dynamicPresets').appendChild(b);}
 $("#dynamicName").oninput=()=>dynamicDirty=true;
 $("#dynamicClose").onclick=closeDynamicEditor;
 $("#dynamicDialog").addEventListener("cancel",event=>{event.preventDefault();closeDynamicEditor();});

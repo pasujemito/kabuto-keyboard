@@ -84,6 +84,18 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'Dynamic pattern',exact:true}).click();
   await page.locator('#dynamicDialog[open]').waitFor();
   await page.getByLabel('Dynamic pattern name').fill('Jump combat varied');
+  // New patterns start Natural; presets change movement/rhythm and keep skills.
+  assert.equal(await page.getByLabel('Tempo drift (%)',{exact:true}).inputValue(),'15');
+  await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('35');
+  await page.getByRole('button',{name:'Flip',exact:true}).click();
+  assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'3');
+  assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'95');
+  assert.match(await page.locator('#dynamicPresetHint').textContent(),/^Flip: Turns often/);
+  assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'35');
+  await page.getByRole('button',{name:'Smooth',exact:true}).click();
+  assert.equal(await page.getByLabel('Gap after attack (ms) minimum',{exact:true}).inputValue(),'580');
+  await page.getByRole('button',{name:'Natural',exact:true}).click();
+  assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'10');
   await page.getByLabel('Turn around after a set (%)',{exact:true}).fill('75');
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('20');
   await page.getByRole('button',{name:'Add skill',exact:true}).click();

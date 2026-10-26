@@ -65,7 +65,8 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         !range(o["dir_hold"],p.directionHold,1,90000) ||
         !range(o["dir_after"],p.directionAfter,0,90000) ||
         !range(legacy(o,"attacks_per_set","combos_per_side"),p.attacksPerSet,1,100) ||
-        !range(legacy(o,"sets","sides"),p.sets,1,100) || !chance(o["turn_chance"],p.turnChancePermille)) return false;
+        !range(legacy(o,"sets","sides"),p.sets,1,100) || !chance(o["turn_chance"],p.turnChancePermille) ||
+        !chance(o["tempo_drift"],p.tempoDriftPermille) || p.tempoDriftPermille>300) return false;
     if (p.jumpToAttack.max+p.attackToJumpUp.max>90000 || p.attackToJumpUp.max+p.jumpUpToAttackUp.max>90000) return false;
     if (!o["shuffle_skills"].isNull() && !o["shuffle_skills"].is<bool>()) return false;
     p.shuffleSkills = o["shuffle_skills"] | true;
@@ -339,7 +340,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"jump_up_to_attack_up",p->jumpUpToAttackUp);range(d,"combo_gap",p->comboGap);
             range(d,"dir_hold",p->directionHold);range(d,"dir_after",p->directionAfter);
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
-            d["turn_chance"]=p->turnChancePermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
+            d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             JsonArray skills=d["skills"].to<JsonArray>();
             for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;

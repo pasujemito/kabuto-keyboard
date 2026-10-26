@@ -216,17 +216,36 @@ Timings and integer counts use a symmetric triangular distribution centred
 between each minimum and maximum. This is a chosen random model, not evidence
 of human behaviour or a guarantee against repetition/detection.
 
-| Setting | Default |
-| --- | --- |
-| Alt down → Ctrl down | 45–120 ms |
-| Ctrl down → Alt up | 30–120 ms |
-| Alt up → Ctrl up | 16–80 ms |
-| Gap after each attack | 510–760 ms |
-| Direction hold | 85–180 ms |
-| Gap after direction | 16–330 ms |
-| Attacks per set | 2–10 |
-| Sets per play | 8–12 |
-| Turn around after a set | 80% |
+**Start from** offers three presets for movement and rhythm (skills are left
+alone). New patterns start as Natural.
+
+| Setting | Natural | Smooth | Flip |
+| --- | --- | --- | --- |
+| Alt down → Ctrl down | 45–120 ms | 75–105 ms | 45–120 ms |
+| Ctrl down → Alt up | 30–120 ms | 60–90 ms | 30–120 ms |
+| Alt up → Ctrl up | 16–80 ms | 40–65 ms | 16–80 ms |
+| Gap after each attack | 510–760 ms | 580–680 ms | 510–700 ms |
+| Direction hold | 85–195 ms | 100–150 ms | 85–150 ms |
+| Gap after direction | 16–330 ms | 120–230 ms | 60–200 ms |
+| Attacks per set | 2–10 | 4–7 | 1–3 |
+| Sets per play | 8–12 | 8–12 | 20–30 |
+| Turn around after a set | 85% | 100% | 95% |
+| Tempo drift | 15% | 5% | 10% |
+
+Natural is fitted to a recorded 57-second jump-attack run (62 jump-attacks).
+Its timing ranges are that run's spread. Smooth keeps roughly the middle half
+of each, and Flip turns after nearly every 1–3 attacks. The recording's short
+delays fall on ~15 ms steps; that is the PC timer used for recording, not your
+hands, so the presets don't copy it.
+
+**Tempo drift** handles what independent random draws can't. In the recording,
+the gap after each attack wandered: a slow gap tended to follow a slow one
+(lag-1 correlation 0.34), and the average went from ~590 ms to ~700 ms over the
+minute. The device keeps a slowly wandering tempo, within ±drift, and scales
+each gap after an attack by it. At 15%, generated runs average a lag-1
+correlation of 0.31 and similar slow/fast stretches. The press/release timings
+inside a jump-attack showed no drift in the recording (lag-1 ≈ 0), so they stay
+independent. Patterns saved before drift existed load with 0%.
 
 Every jump-attack retains that exact press/release order. Directions are tapped
 between sets, never mixed into an Alt/Ctrl chord. The initial facing is

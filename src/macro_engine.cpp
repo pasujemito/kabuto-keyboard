@@ -427,6 +427,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 };
                 uint8_t facing=random(2L)==0?KC_LEFT:KC_RIGHT;
                 uint32_t sets=sample(pattern->sets);
+                const int32_t drift=pattern->tempoDriftPermille;
+                int32_t tempo=drift?(int32_t)random(2L*drift+1)-drift:0;
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 // Establish the actual initial facing before the first attack.
                 tap(facing,pattern->directionHold,pattern->directionAfter);
@@ -436,11 +438,13 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
                     uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
+                        if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
+                        uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
                         std::vector<Step> actions{
                             edge(true,KC_NONE,KM_LALT),delay(sample(pattern->jumpToAttack)),
                             edge(true,KC_NONE,KM_LCTRL),delay(sample(pattern->attackToJumpUp)),
                             edge(false,KC_NONE,KM_LALT),delay(sample(pattern->jumpUpToAttackUp)),
-                            edge(false,KC_NONE,KM_LCTRL),delay(sample(pattern->comboGap))};
+                            edge(false,KC_NONE,KM_LCTRL),delay(gap)};
                         executeSteps(actions,stop,state,depth+1);
                     }
                     updateLogDuration(setLog,millis()-started,true);

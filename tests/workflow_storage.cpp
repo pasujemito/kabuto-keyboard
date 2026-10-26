@@ -82,6 +82,10 @@ int main(){
     assert(pattern&&pattern->attacksPerSet.min==3&&pattern->attacksPerSet.max==4&&pattern->sets.min==5&&pattern->sets.max==6);
     assert(saveConfig(cfg));
     {std::string saved=readRawJson();assert(saved.find("\"attacks_per_set\"")!=std::string::npos&&saved.find("sides")==std::string::npos);}
+    assert(pattern->tempoDriftPermille==0); // absent in older presets: no drift
+    String drifting(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"d","tempo_drift":0.15,"skills":[]}}]}]}]})");
+    assert(saveRawJson(drifting,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
+    assert(roundtrip.layers[0].keys[0].steps[0].pattern()->tempoDriftPermille==150);
     // A skill's "use again after" is a range; an older single number means a fixed wait.
     String intervals(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"iv","skills":[{"id":"a","key":"C","cooldown_ms":60000},{"id":"b","key":"H","cooldown_ms":[40000,70000]}]}}]}]}]})");
     assert(saveRawJson(intervals,err));assert(loadConfig(cfg));
@@ -95,6 +99,7 @@ int main(){
       R"({"id":"p","jump_to_attack":[121,45],"skills":[]})",
       R"({"id":"p","turn_chance":1.1,"skills":[]})",
       R"({"id":"p","turn_chance":true,"skills":[]})",
+      R"({"id":"p","tempo_drift":0.31,"skills":[]})",
       R"({"id":"p","sets":[0,12],"skills":[]})",
       R"({"id":"p","sides":[0,12],"skills":[]})",
       R"({"id":"p","combo_gap":[0,90001],"skills":[]})",

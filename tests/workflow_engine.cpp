@@ -243,6 +243,20 @@ int main() {
     ctrlDurations.clear();run(engine,{dynamic});assert(ctrlDurations.size()==2);
     testRandomHook=[](long upper){return upper-1;};ctrlDurations.clear();run(engine,{dynamic});
     assert(ctrlDurations.size()==12&&ctrlDurations[0]==200);testRandomHook={};
+    // Tempo drift scales only the gap after each attack, within +/-drift.
+    {
+        DynamicPattern q=p;q.sets={1,1};q.attacksPerSet={3,3};q.tempoDriftPermille=150;q.skills.clear();
+        Step drifting=dynamic;drifting.setPattern(q);
+        for(bool high:{false,true}){
+            if(high)testRandomHook=[](long upper){return upper-1;};else testRandomHook=[](long){return 0L;};
+            hidEvents.clear();run(engine,{drifting});testRandomHook={};
+            std::vector<uint32_t> ctrlUps,altDowns;uint8_t mods=0;
+            for(auto e:hidEvents)if(e.key==0&&e.mods!=mods){if(e.mods==4&&!mods)altDowns.push_back(e.at);if(!e.mods&&mods==1)ctrlUps.push_back(e.at);mods=e.mods;}
+            assert(ctrlUps.size()==3&&altDowns.size()==3);
+            // Pinned at the edge: 760 ms max gap * 1.15, or 510 ms min gap * 0.85.
+            for(size_t i=0;i+1<altDowns.size();++i)assert(altDowns[i+1]-ctrlUps[i]==(high?874U:433U));
+        }
+    }
     // Independent skills, repeat counts, and a cooldown retained over Stop/Start.
     p.sets={3,3};p.attacksPerSet={1,1};
     DynamicSkill c;c.id="skill-c";c.keycode=6;c.chancePermille=1000;c.cooldown={1000000,1000000};

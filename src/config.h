@@ -6,7 +6,16 @@
 // physical keys plus one "config mode" button.
 
 #define DEVICE_NAME        "Kabuto"
+// Base version. Releases from main count the patch up from here (1.14.0,
+// 1.14.1, ...) and pass the number in as KABUTO_VERSION; raise this for a
+// bigger step. See tools/next_version.py.
+#ifdef KABUTO_VERSION
+#define KABUTO_STR_(x)     #x
+#define KABUTO_STR(x)      KABUTO_STR_(x)
+#define FIRMWARE_VERSION   KABUTO_STR(KABUTO_VERSION)
+#else
 #define FIRMWARE_VERSION   "1.14.0"
+#endif
 
 // --- Key matrix -----------------------------------------------------------
 // A matrix of ROWS x COLS mechanical keys. Each intersection is one

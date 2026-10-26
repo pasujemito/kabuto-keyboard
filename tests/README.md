@@ -21,6 +21,7 @@ NODE_PATH=/tmp/kabuto-ui-test/node_modules node tests/workflow_editor.cjs
 python3 tools/recorder.py --selftest
 python3 tools/flash_backup.py --selftest   # LittleFS part needs littlefs-python
 python3 tools/release_index.py --selftest  # needs the openssl CLI
+python3 tools/next_version.py --selftest
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It

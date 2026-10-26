@@ -127,7 +127,8 @@ has no internet connection.
 
 ### Updates from GitHub releases
 
-Once set up, you publish a version by pushing a tag. Every pad then shows
+Once set up, every push to `main` that changes the firmware is released
+automatically: built, tested, signed and published. Every pad then shows
 **Update available** in **Recordings → Updates**, and installs only when someone
 taps **Install** and confirms. The same list offers earlier versions too.
 
@@ -151,17 +152,22 @@ taps **Install** and confirms. The same list offers earlier versions too.
 
 **Releasing**
 
-```bash
-# bump FIRMWARE_VERSION in src/config.h to 1.15.0, commit, then:
-git tag v1.15.0
-git push origin v1.15.0
-```
+Push to `main`. `.github/workflows/release.yml` runs when `src/`, `web/`,
+`platformio.ini`, `update_public_key.pem` or the build hooks change; edits to
+docs, tests or `data/` don't announce an update. It:
 
-`.github/workflows/release.yml` checks the tag matches `FIRMWARE_VERSION`,
-builds the firmware, runs the host tests (including the storage tests), signs
-the build and publishes a GitHub release with `firmware.bin` and
-`versions.json`, the signed list of the 20 most recent releases. Actions and
-releases are free for public repositories.
+1. Picks the version: `FIRMWARE_VERSION` in `src/config.h` is the base, so
+   releases go 1.14.0, 1.14.1, 1.14.2... Raise the base (e.g. to `1.15.0`) for
+   a bigger step; a base behind an existing release stops the workflow.
+2. Builds with that version baked in (local builds report the base), runs the
+   host tests (including the storage tests), and stops if anything fails.
+3. Signs the build and publishes release `vX.Y.Z` with `firmware.bin` and
+   `versions.json`, the signed list of the 20 most recent releases.
+
+Pushes queue rather than race, and **Actions → Release firmware → Run
+workflow** releases without a code change. Actions and releases are free for
+public repositories. Anyone who can push to `main` can publish a release your
+pads will trust, so keep write access to yourself (or protect `main`).
 
 **On the pad**
 

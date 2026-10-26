@@ -7,6 +7,8 @@ clock/RNG; they do not simulate Bluetooth, FreeRTOS scheduling or ESP32 hardware
 ```sh
 g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/kabuto-dynamic-tests
 /tmp/kabuto-dynamic-tests
+g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/kabuto-update-tests
+/tmp/kabuto-update-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o /tmp/kabuto-selection-tests
 /tmp/kabuto-selection-tests
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/kabuto-engine-tests
@@ -18,6 +20,7 @@ npm install --prefix /tmp/kabuto-ui-test --cache /tmp/kabuto-npm-cache --no-audi
 NODE_PATH=/tmp/kabuto-ui-test/node_modules node tests/workflow_editor.cjs
 python3 tools/recorder.py --selftest
 python3 tools/flash_backup.py --selftest   # LittleFS part needs littlefs-python
+python3 tools/release_index.py --selftest  # needs the openssl CLI
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It
@@ -76,3 +79,11 @@ JSON previews, discard protection, export/import and independent timer IDs.
 Chromium checks the new dialog on a phone viewport while retaining the existing
 pad, storage, recording editor and assignment tests. Physical BLE/game behaviour
 remains outside these host tests.
+
+Update tests cover version ordering, the exact signed payload (pinned in both
+`tests/update_logic.cpp` and `tools/release_index.py`), signing with a throwaway
+key, rejecting a key that doesn't match the committed public key, carrying the
+release list forward, and the Updates panel (announcement, confirm-to-install,
+older-version warning, refusals, Wi-Fi form) in Chromium. Downloading and
+flashing over Wi-Fi, signature checks with mbedtls and rollback need hardware.
+The release workflow runs the C++ and Python tests on every release.

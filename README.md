@@ -125,6 +125,65 @@ lands wherever that phone saves and syncs downloads.
 The pad can't back up to the cloud by itself: it runs its own Wi-Fi hotspot and
 has no internet connection.
 
+### Updates from GitHub releases
+
+Once set up, you publish a version by pushing a tag. Every pad then shows
+**Update available** in **Recordings → Updates**, and installs only when someone
+taps **Install** and confirms. The same list offers earlier versions too.
+
+**One-time setup**
+
+1. Make the repository public, or publish releases from a public repo and set
+   `UPDATE_REPO` in `src/config.h` to it. Pads download without logging in.
+2. Create a signing key pair on your PC (OpenSSL ships with Git for Windows):
+
+   ```bash
+   openssl ecparam -name prime256v1 -genkey -noout -out kabuto-signing-key.pem
+   openssl ec -in kabuto-signing-key.pem -pubout -out update_public_key.pem
+   ```
+
+   Commit `update_public_key.pem`. Put the whole contents of
+   `kabuto-signing-key.pem` in a repository secret named `UPDATE_SIGNING_KEY`
+   (GitHub → Settings → Secrets and variables → Actions). Then store the private
+   key file somewhere safe off the repo; `*signing-key*.pem` is gitignored.
+3. Flash the pad once over USB (`pio run -t upload`) so it has the public key.
+4. In **Recordings → Updates**, enter your home Wi-Fi and press **Save Wi-Fi**.
+
+**Releasing**
+
+```bash
+# bump FIRMWARE_VERSION in src/config.h to 1.15.0, commit, then:
+git tag v1.15.0
+git push origin v1.15.0
+```
+
+`.github/workflows/release.yml` checks the tag matches `FIRMWARE_VERSION`,
+builds the firmware, runs the host tests (including the storage tests), signs
+the build and publishes a GitHub release with `firmware.bin` and
+`versions.json`, the signed list of the 20 most recent releases. Actions and
+releases are free for public repositories.
+
+**On the pad**
+
+- It checks a minute after starting and every 6 hours, joining your home Wi-Fi
+  only for the check. Its own hotspot stays on, though a phone on it may drop
+  for a moment. **Check now** checks straight away.
+- Only releases signed with your key are listed. A download is installed only
+  if its size and SHA-256 match the signed entry, so a tampered file is
+  rejected even though the connection itself isn't certificate-checked.
+- **Install** asks for confirmation and refuses while something is playing or
+  recording. The pad restarts on the new version; reconnect to its Wi-Fi and
+  reload the page. Your recordings and patterns are untouched.
+- Older versions may not understand settings added later. Your saved config
+  stays on the pad, and works again once you update.
+- If a version fails to start three times within its first minute, the pad goes
+  back to the previous one and says so in **Updates**.
+- Versions from before 1.14 have no updater: flash 1.14 or later over USB once.
+- The home Wi-Fi password is stored in the pad's settings storage (not in
+  `macros.json` or JSON exports) and is never sent back to the browser.
+- Updates need the standard two-slot flash layout (the default), and a build
+  must fit one slot: `pio run` reports that as flash usage.
+
 ## Recordings and button assignments
 
 The editor is laid out as a pad. **Buttons** shows the current layer's buttons
@@ -437,6 +496,8 @@ src/
   macro_engine.*      step model, loop execution, trigger modes
   storage.*           LittleFS + JSON load/save
   web_server.*        SoftAP + REST API + built-in UI
+  updater.*           GitHub release checks, signed installs, rollback
+  update_logic.h      version/signature payload/rollback rules (host-tested)
 web/
   index.html          config UI (gzipped into the firmware at build time)
 data/
@@ -446,6 +507,8 @@ tools/
   flash_backup.py     read the saved config off the pad over USB
   pio_keep_config.py  uploadfs hook: back up + keep the saved config
   embed_web_ui.py     build hook: gzip web/index.html into the firmware
+  embed_update_key.py build hook: bake update_public_key.pem into the firmware
+  release_index.py    sign a build and add it to versions.json (release CI)
 ```
 
 ## What changed in 1.4

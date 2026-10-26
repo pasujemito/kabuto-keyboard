@@ -1,0 +1,68 @@
+name: Release firmware
+
+# Push a tag such as v1.15.0 (matching FIRMWARE_VERSION in src/config.h) to
+# build, test, sign and publish a release. Pads then list it under Updates.
+# One-time setup: README, "Updates from GitHub releases".
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check version and signing setup
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          version=$(sed -n 's/^#define FIRMWARE_VERSION *"\([0-9.]*\)".*/\1/p' src/config.h)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match FIRMWARE_VERSION $version in src/config.h"; exit 1
+          fi
+          if [ -z "$UPDATE_SIGNING_KEY" ] || [ ! -f update_public_key.pem ]; then
+            echo "::error::Add the UPDATE_SIGNING_KEY secret and commit update_public_key.pem (see README)"; exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build firmware
+        run: |
+          pip install platformio==6.1.16
+          pio run -e esp32-s3-devkitc-1
+
+      - name: Host tests
+        run: |
+          set -e
+          out="$RUNNER_TEMP/tests"; mkdir -p "$out"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o "$out/dynamic" && "$out/dynamic"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o "$out/update" && "$out/update"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o "$out/selection" && "$out/selection"
+          g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o "$out/engine" && "$out/engine"
+          g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src \
+            tests/workflow_storage.cpp src/storage.cpp src/keymap.cpp -o "$out/storage" && "$out/storage"
+          python3 tools/release_index.py --selftest
+          python3 tools/flash_backup.py --selftest
+          python3 tools/recorder.py --selftest
+
+      - name: Sign and publish
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          key="$RUNNER_TEMP/signing-key.pem"
+          (umask 077; printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key")
+          # Carry the list of earlier releases forward (there is none before the first).
+          gh release download --pattern versions.json --dir previous || true
+          cp .pio/build/esp32-s3-devkitc-1/firmware.bin firmware.bin
+          python3 tools/release_index.py firmware.bin --version "$VERSION" --date "$(date -u +%F)" \
+            --key "$key" --public update_public_key.pem --previous previous/versions.json --out versions.json
+          rm -f "$key"
+          gh release create "$GITHUB_REF_NAME" firmware.bin versions.json --title "Kabuto $VERSION" --generate-notes

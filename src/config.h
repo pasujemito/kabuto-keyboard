@@ -6,7 +6,7 @@
 // physical keys plus one "config mode" button.
 
 #define DEVICE_NAME        "Kabuto"
-#define FIRMWARE_VERSION   "1.13.0"
+#define FIRMWARE_VERSION   "1.14.0"
 
 // --- Key matrix -----------------------------------------------------------
 // A matrix of ROWS x COLS mechanical keys. Each intersection is one
@@ -39,6 +39,11 @@ static const int COL_PINS[MATRIX_COLS] = {6, 7, 15};
 #define MACRO_FILE         "/macros.json"
 #define MACRO_TMP_FILE     "/macros.tmp"  // uploads land here, then replace MACRO_FILE
 #define MAX_CONFIG_BYTES   (256 * 1024)   // reject larger config uploads
+
+// --- Updates --------------------------------------------------------------
+// Public GitHub repo whose releases the pad offers (built and signed by
+// .github/workflows/release.yml). Change it if you publish releases elsewhere.
+#define UPDATE_REPO        "pasujemito/kabuto-keyboard"
 
 // --- Config portal --------------------------------------------------------
 #define AP_SSID            "Kabuto-Setup"

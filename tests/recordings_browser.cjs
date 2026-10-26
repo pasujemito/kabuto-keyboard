@@ -5,6 +5,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  try{
   const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];let truncateConfig=true;
+  // Update API mock: one newer and one older signed release on the device's list.
+  const updateState={current:'1.14.0',repo:'owner/kabuto',enabled:true,wifi:'HomeNet',state:'ready',error:'',progress:0,installing:'',checkedAgoS:120,rolledBack:'',
+    releases:[{version:'1.15.0',date:'2026-11-02',newer:true},{version:'1.14.0',date:'2026-10-27',newer:false},{version:'1.13.0',date:'2026-10-20',newer:false}]};
+  const updateRequests=[];let refuseInstall=false;
   page.on('pageerror',e=>errors.push(e.message));
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
@@ -12,6 +16,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    const url=new URL(route.request().url());
    if(url.hostname!=='kabuto.test')return route.abort();
    if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
+   if(url.pathname.startsWith('/api/update/')){
+    updateRequests.push({path:url.pathname,version:url.searchParams.get('version'),body:route.request().postData()});
+    if(url.pathname==='/api/update/install'&&refuseInstall)return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({ok:false,error:'Stop playback or recording first'})});
+    return route.fulfill({contentType:'application/json',body:'{"ok":true}'});
+   }
+   if(url.pathname==='/api/update')return route.fulfill({contentType:'application/json',body:JSON.stringify(updateState)});
    if(url.pathname==='/api/config'&&truncateConfig)return route.fulfill({contentType:'application/json',body:JSON.stringify(config).slice(0,20000)});
    const data=url.pathname==='/api/meta'?{firmware:'test',cols:3,rows:2,keyCount:6,maxLayers:8,keys:['A','C','W','H','F1','LEFT','RIGHT','Z'],media:[]}:url.pathname==='/api/config'?config:url.pathname==='/api/log'?{events:[],elapsedMs:0,running:false}:url.pathname==='/api/storage'?{fsTotal:1441792,fsUsed:180224,configBytes:80719,maxConfig:262144,heapSize:327680,heapFree:122880,heapLargest:73728}:{connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
@@ -114,6 +124,28 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'75');
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
   await page.locator('#dynamicClose').click();
+  // Updates: a newer release is announced; installing needs a confirmation.
+  await page.locator('#tabRecordings').click();
+  assert.equal(await page.locator('#updateSummary').textContent(),'Update available: v1.15.0');
+  await page.locator('#updateSummary').click();
+  assert.equal(await page.getByRole('button',{name:'Install v1.14.0'}).count(),0); // installed one has no button
+  let dialogText='';page.once('dialog',d=>{dialogText=d.message();d.dismiss();});
+  await page.getByRole('button',{name:'Install v1.15.0'}).click();
+  assert.match(dialogText,/^Install v1\.15\.0\?/);assert(!updateRequests.some(r=>r.path==='/api/update/install'));
+  page.once('dialog',d=>{dialogText=d.message();d.accept();});
+  await page.getByRole('button',{name:'Install v1.13.0'}).click();
+  await page.waitForFunction(()=>true);await page.waitForTimeout(100);
+  assert.match(dialogText,/older than v1\.14\.0/);
+  assert.deepEqual(updateRequests.filter(r=>r.path==='/api/update/install').map(r=>r.version),['1.13.0']);
+  refuseInstall=true;page.once('dialog',d=>d.accept());
+  await page.getByRole('button',{name:'Install v1.15.0'}).click();
+  await page.locator('#toast.show.err').waitFor();assert.match(await page.locator('#toast').textContent(),/Stop playback/);
+  // Typing survives a status refresh; a blank password keeps the saved one.
+  await page.getByLabel('Home Wi-Fi name').fill('OtherNet');
+  await page.evaluate(()=>refreshUpdates());await page.waitForTimeout(100);
+  assert.equal(await page.getByLabel('Home Wi-Fi name').inputValue(),'OtherNet');
+  await page.getByRole('button',{name:'Save Wi-Fi'}).click();await page.waitForTimeout(100);
+  const saved=updateRequests.find(r=>r.path==='/api/update/wifi');assert.equal(saved.body,'ssid=OtherNet');
   assert.deepEqual(errors,[]);console.log('desktop/mobile recordings browser tests passed');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

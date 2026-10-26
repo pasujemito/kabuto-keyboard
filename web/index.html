@@ -266,6 +266,11 @@
   .storage .meter i{display:block;height:100%;background:var(--live)}
   .storage .meter i.warn{background:var(--amber)}
   .storage .meter i.full{background:var(--stop)}
+  .update-release{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--edge)}
+  .update-release span{font-family:var(--mono);color:var(--ink)}
+  .update-release small{color:var(--muted);margin-left:6px}
+  .update-form{display:grid;gap:6px}
+  .update-form input{padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px;min-width:0}
 </style>
 </head>
 <body>
@@ -345,6 +350,7 @@
     <h2>Recordings</h2>
     <div class="recording-actions"><button class="btn primary withic" id="newRecording"><svg class="ic" aria-hidden="true"><use href="#i-record"/></svg>New recording</button><button class="btn withic" id="importRecording"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg>Import JSON</button></div>
     <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
+    <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
@@ -488,6 +494,82 @@ function showLoadError(e){
   $("#loadError").hidden=false;
 }
 let storage=null;
+/* Firmware updates: the pad checks this project's GitHub releases over home
+   Wi-Fi and lists them; nothing installs until you pick a version and confirm. */
+let updateInfo=null,updateTimer=null;
+async function refreshUpdates(){
+  try{updateInfo=await getJson("/api/update");}catch(e){updateInfo=null;}
+  renderUpdates();
+  clearTimeout(updateTimer);
+  const busy=updateInfo&&['checking','downloading','restarting'].includes(updateInfo.state);
+  updateTimer=setTimeout(refreshUpdates,busy?1500:30000);
+}
+function updateStatusText(u){
+  const ago=s=>s<90?'just now':s<5400?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago';
+  switch(u.state){
+    case 'checking':return 'Checking GitHub…';
+    case 'downloading':return `Downloading v${u.installing}… ${u.progress}%`;
+    case 'restarting':return `v${u.installing} installed. The pad is restarting; reconnect to its Wi-Fi and reload this page.`;
+    case 'error':return u.error;
+    default:return u.checkedAgoS>=0?'Checked '+ago(u.checkedAgoS):'Not checked yet';
+  }
+}
+async function installUpdate(release,current){
+  const older=!release.newer;
+  const note=older?`\n\nv${release.version} is older than v${current}. Older versions may not read settings added later; your saved config stays on the pad and works again after updating.`:'';
+  if(!confirm(`Install v${release.version}?\n\nThe pad downloads it, checks its signature, then restarts. Keep it powered.${note}`))return;
+  const r=await api('/api/update/install?version='+encodeURIComponent(release.version),{method:'POST'}).catch(()=>null);
+  const body=r?await r.json().catch(()=>({})):{};
+  if(!r||!r.ok)toast(body.error||'Install failed to start',true);
+  refreshUpdates();
+}
+function renderUpdates(){
+  const panel=$('#updatePanel'),box=$('#updateStatus'),summary=$('#updateSummary');if(!panel)return;
+  box.replaceChildren();
+  const u=updateInfo,releases=u?.releases||[],newest=releases.find(r=>r.newer);
+  summary.textContent=newest?`Update available: v${newest.version}`:'Updates';
+  $('#updateBox').classList.toggle('warn',!!newest);
+  const note=text=>{const n=el('div','hint');n.textContent=text;return n;};
+  const form=$('#updateForm');
+  if(!u||!u.enabled){if(form)form.hidden=true;box.append(u?note(`v${u.current} · updates are off in this build (no update_public_key.pem).`):note('Update status unavailable.'));return;}
+  const row=el('div','srow'),a=el('span'),b=el('b');a.textContent='Installed';b.textContent='v'+u.current;row.append(a,b);box.append(row);
+  box.append(note(updateStatusText(u)));
+  if(u.rolledBack)box.append(note(`v${u.rolledBack} kept failing to start, so the pad went back to v${u.current}.`));
+  const busy=['checking','downloading','restarting'].includes(u.state);
+  for(const r of releases){
+    const line=el('div','update-release'),label=el('span'),meta=el('small');
+    label.textContent='v'+r.version;
+    meta.textContent=[r.version===u.current?'installed':r.newer?'new':'older',r.date].filter(Boolean).join(' · ');label.appendChild(meta);
+    line.appendChild(label);
+    if(r.version!==u.current){const btn=el('button','btn sm'+(r.newer?' primary':''));btn.type='button';btn.textContent='Install';btn.disabled=busy;btn.setAttribute('aria-label','Install v'+r.version);btn.onclick=()=>installUpdate(r,u.current);line.appendChild(btn);}
+    box.appendChild(line);
+  }
+  // The Wi-Fi form is built once so polling never wipes what you're typing.
+  if(!form)panel.appendChild(buildUpdateForm());
+  const f=$('#updateForm');f.hidden=false;
+  if(!f.dataset.edited)$('#updateSsid').value=u.wifi||'';
+  $('#updatePass').placeholder=u.wifi?'Password (blank keeps the saved one)':'Password';
+  $('#updateCheck').disabled=busy||!u.wifi;
+}
+function buildUpdateForm(){
+  const form=el('form','update-form');form.id='updateForm';form.setAttribute('aria-label','Home Wi-Fi for updates');
+  const ssid=el('input');ssid.id='updateSsid';ssid.placeholder='Home Wi-Fi name';ssid.setAttribute('aria-label','Home Wi-Fi name');ssid.autocomplete='off';
+  const pass=el('input');pass.id='updatePass';pass.type='password';pass.setAttribute('aria-label','Home Wi-Fi password');pass.autocomplete='off';
+  for(const input of [ssid,pass])input.oninput=()=>form.dataset.edited='1';
+  const actions=el('div','recording-actions'),save=el('button','btn sm'),check=el('button','btn sm');
+  save.type='submit';save.textContent='Save Wi-Fi';check.type='button';check.id='updateCheck';check.textContent='Check now';
+  check.onclick=async()=>{await api('/api/update/check',{method:'POST'}).catch(()=>{});setTimeout(refreshUpdates,300);};
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const body=new URLSearchParams({ssid:ssid.value.trim()});
+    if(pass.value||!updateInfo?.wifi)body.set('password',pass.value);   // blank keeps the saved password
+    const r=await api('/api/update/wifi',{method:'POST',body}).catch(()=>null);
+    if(r&&r.ok){pass.value='';delete form.dataset.edited;}
+    toast(r&&r.ok?'Wi-Fi saved — checking for updates':'Could not save Wi-Fi',!(r&&r.ok));setTimeout(refreshUpdates,300);
+  };
+  const hint=el('div','hint');hint.textContent='Only used to reach GitHub. The setup hotspot stays on; a phone on it may drop for a moment while the pad checks.';
+  actions.append(save,check);form.append(ssid,pass,actions,hint);return form;
+}
 function fmtBytes(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";}
 async function refreshStorage(){
   try{storage=await getJson("/api/storage");}catch(e){storage=null;}
@@ -500,7 +582,7 @@ function renderStorage(){
   const rows=[["Recording slots",cfg.workflows.length,64,`${cfg.workflows.length} of 64`,"Long recordings use several slots"]];
   if(storage){
     rows.push(["Config size",pending,storage.maxConfig,`${fmtBytes(pending)} of ${fmtBytes(storage.maxConfig)}`,"Largest config the device accepts on Save"]);
-    rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem, including the web UI"]);
+    rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem: recordings and patterns"]);
     rows.push(["Device memory",storage.heapSize-storage.heapFree,storage.heapSize,`${fmtBytes(storage.heapFree)} free`,`Largest free block ${fmtBytes(storage.heapLargest)}`]);
   }
   // Collapsed summary; opens itself when something is nearly full.
@@ -524,6 +606,7 @@ async function loadAll(){
   renderLayers();renderGrid();renderEditor();buildVKeyboard();updateDirty();
   renderRecordings();
   refreshStorage();
+  refreshUpdates();
   pollStatus();
   pollMacroLog();
 }

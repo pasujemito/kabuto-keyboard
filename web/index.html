@@ -10,6 +10,7 @@
     --ink:#e8eaed; --muted:#8b919e; --faint:#5b616c;
     --amber:#ffb020; --amber-dim:#5a4718;
     --live:#45d6b5; --stop:#ff5d5d; --rec:#ff4d57;
+    --hp:#ff5d5d; --mana:#4f8cff; --xp:#ffb020;
     --r:8px;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -266,6 +267,15 @@
   .storage .meter i{display:block;height:100%;background:var(--live)}
   .storage .meter i.warn{background:var(--amber)}
   .storage .meter i.full{background:var(--stop)}
+  .live-stats{display:grid;gap:6px;margin:10px 0 2px;padding:10px 12px;border:1px solid var(--edge);border-radius:var(--r);background:var(--panel);font-size:12px;color:var(--muted)}
+  .live-stats[hidden]{display:none}
+  .live-stats.stale{opacity:.55}
+  .live-row{display:grid;grid-template-columns:40px 1fr 52px;align-items:center;gap:8px}
+  .live-row b{color:var(--ink);font-family:var(--mono);font-weight:500;text-align:right}
+  .live-row .meter{height:6px;background:var(--edge);border-radius:3px;overflow:hidden}
+  .live-row .meter i{display:block;height:100%;transition:width .4s}
+  .live-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+  .live-foot .btn{margin-left:auto}
   .update-release{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--edge)}
   .update-release span{font-family:var(--mono);color:var(--ink)}
   .update-release small{color:var(--muted);margin-left:6px}
@@ -328,6 +338,7 @@
       </div>
     </div>
     <div class="grid" id="grid"></div>
+    <div class="live-stats" id="liveStats" aria-label="Live stats" hidden></div>
     <details class="monitor"><summary>Device activity</summary><div id="monitor">
       <div class="monitor-head">
         <h2>Macro execution log</h2>
@@ -439,7 +450,7 @@
   </details>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details open><summary>HP &amp; Mana</summary>
-    <p class="hint">Each fires on its own timer, between sets and before skills. Kabuto can't see your bars, so it drinks on time, not when you're low.</p>
+    <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %, even mid-set. Otherwise, or at 0%, it fires on its timer between sets, before skills.</p>
     <div id="dynamicPotions"></div>
   </details>
   <details open><summary>Skills</summary>
@@ -811,7 +822,7 @@ const DYNAMIC_KEY_SLOTS=[['jump','Jump'],['attack','Attack'],['left','Turn left'
 const DYNAMIC_DEFAULT_KEYS={jump:'ALT',attack:'CTRL',left:'LEFT',right:'RIGHT'};
 const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
-  return {id,enabled,key:id==='hp'?'C':'V',every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
+  return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
 function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
@@ -825,6 +836,7 @@ function normalizeDynamicPattern(p){
   for(const [slot,name] of Object.entries(DYNAMIC_DEFAULT_KEYS))if(!p.keys[slot])p.keys[slot]=name;
   if(!Array.isArray(p.potions))p.potions=[];
   p.potions=['hp','mana'].map(id=>p.potions.find(x=>x?.id===id)||defaultPotion(id,false));
+  for(const x of p.potions)if(x.below===undefined)x.below=0;   // saved before live bars: timer only
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -849,7 +861,8 @@ function validateDynamicPattern(p){
   for(const x of p.potions){
     const label=POTION_LABELS[x.id];
     if(typeof x.enabled!=='boolean')throw new Error('Choose whether '+label+' is on.');
-    tapKey(x.key,label+' key');range(x.repeats,label+' taps',1,10);range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
+    tapKey(x.key,label+' key');range(x.repeats,label+' taps',1,10);
+    if(!Number.isInteger(x.below)||x.below<0||x.below>100)throw new Error(label+' drink below: enter a percentage from 0 to 100.');range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
     try{range(x.every_ms,'',0,86400000);}catch(e){throw new Error(label+' every: enter an ordered range from 0 to 86400 seconds.');}
   }
   chance(p.turn_chance,'Turn chance');if(typeof p.tempo_drift!=='number'||!(p.tempo_drift>=0&&p.tempo_drift<=.3))throw new Error('Tempo drift: enter a percentage from 0 to 30.');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
@@ -908,7 +921,8 @@ function renderDynamicPotions(){
     const on=el('label'),check=el('input');check.type='checkbox';check.checked=potion.enabled;check.setAttribute('aria-label','Enable '+label);
     check.onchange=()=>{potion.enabled=check.checked;dynamicDirty=true;};on.append(check,' '+label);head.appendChild(on);
     head.appendChild(dynamicKeySelect(label+' key',potion.key,dynamicTapKeys(),v=>potion.key=v));card.appendChild(head);
-    card.append(dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),dynamicRange(label+' taps',potion.repeats,1,10));
+    card.append(dynamicNumber(label+' drink below (%)',potion.below,0,100,1,n=>potion.below=Number.isFinite(n)?Math.round(n):NaN,label+' drink below (%) · 0 = timer only'),
+      dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),dynamicRange(label+' taps',potion.repeats,1,10));
     const details=el('details'),summary=el('summary');summary.textContent='Tap timing';details.appendChild(summary);
     details.append(dynamicRange(label+' hold (ms)',potion.hold,1,90000),dynamicRange(label+' gap after tap (ms)',potion.after,0,90000));
     card.appendChild(details);list.appendChild(card);
@@ -1805,6 +1819,26 @@ async function pollMacroLog(){
   try{renderMacroLog(await(await api("/api/log")).json());}catch(e){}
   setTimeout(pollMacroLog,800);
 }
+/* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
+function renderLiveStats(live){
+  const box=$('#liveStats');box.hidden=!live;if(!live)return;
+  box.classList.toggle('stale',!live.fresh);box.replaceChildren();
+  const pct=t=>(t/10).toFixed(t%10?1:0)+'%';
+  for(const [key,label,color] of [['hp','HP','--hp'],['mana','MP','--mana'],['xp','XP','--xp']]){
+    if(live[key]<0)continue;
+    const row=el('div','live-row'),name=el('span'),meter=el('div','meter'),fill=el('i'),value=el('b');
+    name.textContent=label;fill.style.width=live[key]/10+'%';fill.style.background=`var(${color})`;value.textContent=pct(live[key]);
+    meter.appendChild(fill);row.append(name,meter,value);box.appendChild(row);
+  }
+  const foot=el('div','live-foot'),info=el('span');
+  const hours=m=>m<60?m+' min':Math.floor(m/60)+' h '+(m%60)+' min';
+  info.textContent=!live.fresh?`Screen reader stopped ${Math.round(live.ageMs/1000)} s ago; potions use their timers.`:
+    live.xpPerHour<0?(live.xp>=0?'XP rate after a minute of reading…':'Live from your PC.'):
+    `+${(live.xpPerHour/10).toFixed(1)}%/h · ${(live.xpPerHour/600).toFixed(2)}%/min`+(live.minutesToLevel>=0?` · level in ${hours(live.minutesToLevel)}`:'')+(live.levels?` · ${live.levels} level${live.levels>1?'s':''} up`:'');
+  foot.appendChild(info);
+  if(live.xp>=0){const reset=el('button','btn sm');reset.type='button';reset.textContent='Reset XP rate';reset.onclick=()=>api('/api/stats/reset',{method:'POST'}).catch(()=>{});foot.appendChild(reset);}
+  box.appendChild(foot);
+}
 async function pollStatus(){
   try{
     status=await(await api("/api/status")).json();
@@ -1814,6 +1848,7 @@ async function pollStatus(){
     $("#monCount").textContent=status.keyDownCount||0;
     const down=[];for(let i=0;i<meta.keyCount;i++)if(status.keyMask&(1<<i))down.push("#"+i);
     $("#monDown").textContent=down.length?down.join(" "):"none";
+    renderLiveStats(status.live);
     renderGrid();updateDirty();
   }catch(e){}
   setTimeout(pollStatus,700);

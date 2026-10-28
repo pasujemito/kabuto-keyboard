@@ -97,6 +97,11 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         if (potion) skill.chancePermille=1000;
         else if (!chance(s["chance"],skill.chancePermille)) return false;
         if (!range(s["repeats"],skill.repeats,1,10) || !range(s["hold"],skill.hold,1,90000) || !range(s["after"],skill.after,0,90000)) return false;
+        if (potion) {
+            // "below": drink when the live bar is under this % (0 = timer only).
+            if (!s["below"].isNull() && (!s["below"].is<uint32_t>() || s["below"].as<uint32_t>() > 100)) return false;
+            skill.belowPercent = s["below"] | 0U;
+        }
         JsonVariantConst wait = s[potion ? "every_ms" : "cooldown_ms"];
         // A single number is the older fixed interval; a [min,max] range is drawn after each use.
         if (!potion && wait.is<uint32_t>()) skill.cooldown={wait.as<uint32_t>(),wait.as<uint32_t>()};
@@ -375,7 +380,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             JsonObject keys=d["keys"].to<JsonObject>();
             keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);
             JsonArray potions=d["potions"].to<JsonArray>();
-            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
+            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
             JsonArray skills=d["skills"].to<JsonArray>();
             for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;

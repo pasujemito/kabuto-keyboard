@@ -11,9 +11,11 @@ g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/kabuto-updat
 /tmp/kabuto-update-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o /tmp/kabuto-access-tests
 /tmp/kabuto-access-tests
+g++ -std=c++11 -Wall -Wextra -Werror tests/stats_logic.cpp -o /tmp/kabuto-stats-tests
+/tmp/kabuto-stats-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o /tmp/kabuto-selection-tests
 /tmp/kabuto-selection-tests
-g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/kabuto-engine-tests
+g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp src/live_stats.cpp -o /tmp/kabuto-engine-tests
 /tmp/kabuto-engine-tests
 # After pio run has installed the ArduinoJson dependency:
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src tests/workflow_storage.cpp src/storage.cpp src/keymap.cpp -o /tmp/kabuto-storage-tests
@@ -24,6 +26,7 @@ python3 tools/recorder.py --selftest
 python3 tools/flash_backup.py --selftest   # LittleFS part needs littlefs-python
 python3 tools/release_index.py --selftest  # needs the openssl CLI
 python3 tools/next_version.py --selftest
+python3 tools/screen_stats.py --selftest     # bar reading + PIN login, no screen needed
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It

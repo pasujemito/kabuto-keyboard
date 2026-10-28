@@ -9,3 +9,5 @@ backups/
 __pycache__/
 # Never commit the private key used to sign releases
 *signing-key*.pem
+# Bar positions for tools/screen_stats.py (your screen layout)
+kabuto-bars.json

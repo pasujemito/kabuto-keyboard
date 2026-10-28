@@ -7,6 +7,7 @@
 #include "../src/macro_engine.h"
 #undef private
 #include "../src/hid_keyboard.h"
+#include "../src/live_stats.h"
 #include <cassert>
 #include <algorithm>
 #include <iostream>
@@ -306,6 +307,27 @@ int main() {
         for(auto e:hidEvents)if(e.key==6||e.key==0x19)assert(!e.mods);
         q.potions[0].enabled=false;drinking.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{drinking});
         assert(pressCount(6)==0&&pressCount(0x19)==3);
+    }
+    // Live bars: with a "drink below" threshold, HP follows the screen reading
+    // (between attacks, at most every LIVE_POTION_GAP_MS); stale or unread bars
+    // fall back to the timer.
+    {
+        DynamicPattern q=p;q.sets={1,1};q.attacksPerSet={8,8};q.skills.clear();
+        DynamicSkill hp;hp.id="hp";hp.keycode=6;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={1000000,1000000};hp.belowPercent=50;
+        DynamicSkill mana=hp;mana.id="mana";mana.keycode=0x19;mana.belowPercent=50;
+        q.potions={hp,mana};Step live=dynamic;live.setPattern(q);
+        auto drink=[&](int hpTenths,int manaTenths){engine.dynamicSkillTimers_.clear();hidEvents.clear();liveStatsUpdate(hpTenths,manaTenths,-1);run(engine,{live});};
+        drink(300,-1);      // HP low: drinks at once and again after the gap (~0.6 s/attack); Mana unread: its timer, once
+        assert(pressCount(6)>=2&&pressCount(0x19)==1);
+        uint32_t firstHp=0,secondHp=0;for(auto e:hidEvents)if(e.down&&e.key==6){if(!firstHp)firstHp=e.at;else if(!secondHp)secondHp=e.at;}
+        assert(secondHp-firstHp>=LIVE_POTION_GAP_MS);
+        for(auto e:hidEvents)if(e.key==6)assert(!e.mods);   // never inside the jump/attack chord
+        drink(800,900);     // both bars healthy: neither drinks, not even on the timer
+        assert(pressCount(6)==0&&pressCount(0x19)==0);
+        liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});
+        assert(pressCount(6)==1&&pressCount(0x19)==1);   // stale reading: timers, once each
+        q.potions[0].belowPercent=0;live.setPattern(q);drink(100,-1);
+        assert(pressCount(6)==1);   // no threshold: timer only, whatever the bar says
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.
     p.skills[0].chancePermille=1000;p.skills[0].cooldown={0,0};dynamic.setPattern(p);

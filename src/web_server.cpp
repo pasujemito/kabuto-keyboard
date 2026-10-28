@@ -7,6 +7,7 @@
 #include "updater.h"
 #include "home_wifi.h"
 #include "access.h"
+#include "live_stats.h"
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
@@ -105,6 +106,14 @@ static void handleStatus(AsyncWebServerRequest* req) {
     d["keyMask"]      = (uint32_t)g_keyMask;      // bitmask of keys down now
     d["lastKeyDown"]  = (int)g_lastKeyDown;       // last key index pressed
     d["keyDownCount"] = (uint32_t)g_keyDownCount; // total presses since boot
+    // Live bars from tools/screen_stats.py, in tenths of a percent (-1: not read).
+    LiveStats live = liveStatsSnapshot();
+    if (live.hp >= 0 || live.mana >= 0 || live.xp >= 0) {
+        JsonObject l = d["live"].to<JsonObject>();
+        l["hp"] = live.hp; l["mana"] = live.mana; l["xp"] = live.xp;
+        l["ageMs"] = live.ageMs; l["fresh"] = live.fresh;
+        l["xpPerHour"] = live.xpPerHour; l["minutesToLevel"] = live.minutesToLevel; l["levels"] = live.levels;
+    }
     String out; serializeJson(d, out);
     sendJson(req, 200, out);
 }
@@ -262,6 +271,23 @@ void webServerBegin() {
         JsonDocument d; d["ok"] = !err.length(); if (err.length()) d["error"] = err;
         String out; serializeJson(d, out);
         sendJson(req, err.length() ? 409 : 200, out);
+    });
+    // Bar readings from tools/screen_stats.py as a form body: hp, mana and xp
+    // in percent (decimals allowed). A missing or out-of-range value means
+    // that bar isn't being read.
+    api("/api/stats", HTTP_POST, [](AsyncWebServerRequest* req) {
+        auto tenths = [&](const char* name) {
+            String text = req->hasParam(name, true) ? req->getParam(name, true)->value() : String();
+            if (!text.length()) return -1;   // empty must not read as 0% (it would trigger a potion)
+            float v = text.toFloat();
+            return v >= 0 && v <= 100 ? (int)(v * 10 + 0.5f) : -1;
+        };
+        liveStatsUpdate(tenths("hp"), tenths("mana"), tenths("xp"));
+        sendJson(req, 200, "{\"ok\":true}");
+    });
+    api("/api/stats/reset", HTTP_POST, [](AsyncWebServerRequest* req) {
+        liveStatsReset();
+        sendJson(req, 200, "{\"ok\":true}");
     });
     api("/api/log/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
         Macros.clearLog();

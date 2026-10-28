@@ -11,6 +11,11 @@ and show up in the pad's **Updates** panel.
   timer with its own taps and timing, fired between sets before skills
 - 🧩 Clashing keys are refused (same jump and attack, a skill on a movement
   key...); older patterns keep Alt, Ctrl and the arrows, with potions off
+- 📊 **Live HP, Mana and XP from your screen**: `tools/screen_stats.py` reads
+  the bars on your PC (one pixel row each, about once a second) and the pad
+  shows them with XP per hour/minute and time to level
+- 🩸 Potions can **drink below a %** of their live bar (HP 50%, Mana 30%), even
+  mid-set, falling back to their timers when there's no reading
 
 ## 1.14.2
 

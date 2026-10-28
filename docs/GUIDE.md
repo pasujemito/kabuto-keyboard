@@ -148,6 +148,43 @@ the address shown in the panel) from any device on that Wi-Fi:
   settings storage, never in `macros.json` or exports, and never sent back to
   the browser.
 
+### Live HP, Mana and XP from your screen
+
+The pad can't see your screen, so a small script on the game PC does the
+looking. About once a second, `tools/screen_stats.py` grabs one pixel row across
+each bar, works out how full it is, and sends three numbers to the pad. No
+screenshots leave your PC and there's no text reading, so it stays light.
+
+```bash
+pip install mss pynput
+python tools/screen_stats.py --setup        # hover each bar's ends, press F8
+python tools/screen_stats.py --pin 123456   # or set KABUTO_PIN
+```
+
+Setup asks for HP, then Mana, then XP: hover over the left end of a bar and
+press **F8**, then the right end and **F8** (**Esc** skips a bar). Do it with
+every bar at least partly filled, since it learns each bar's colour from its
+left end. Positions go in `kabuto-bars.json` (gitignored). If a bar reads
+wrong, raise its `tolerance` there, or check Windows display scaling.
+`--dry-run` prints readings without sending.
+
+The PC reaches the pad at `kabuto.local` while it stays on your home Wi-Fi
+(PIN needed), or join the PC to the Kabuto-Setup hotspot (no PIN; use
+`--host 192.168.4.1`).
+
+**On the pad:**
+
+- The **Buttons** screen shows HP, MP and XP bars, with XP per hour, XP per
+  minute (in % of a level), time to the next level and level-ups. The rate
+  appears after a minute of readings; **Reset XP rate** starts it afresh. It
+  counts through level-ups; small XP drops (death, a misread) are ignored.
+- Each HP/Mana potion has **Drink below (%)**: HP defaults to 50%, Mana to
+  30%. While fresh readings arrive, a potion drinks as soon as its bar is under
+  that, even between attacks in a set, at most every 3 s. With no reading for
+  5 s, a bar that isn't read, or 0%, the potion uses its timer as before.
+- XP is a percentage of the bar, not points: exact XP numbers would need text
+  reading (OCR), which isn't light.
+
 ### Updates from GitHub releases
 
 Once set up, every push to `main` that changes the firmware is released

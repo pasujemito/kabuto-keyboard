@@ -66,13 +66,15 @@ jobs:
           g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o "$out/dynamic" && "$out/dynamic"
           g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o "$out/update" && "$out/update"
           g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o "$out/access" && "$out/access"
+          g++ -std=c++11 -Wall -Wextra -Werror tests/stats_logic.cpp -o "$out/stats" && "$out/stats"
           g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o "$out/selection" && "$out/selection"
-          g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o "$out/engine" && "$out/engine"
+          g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp src/live_stats.cpp -o "$out/engine" && "$out/engine"
           g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src \
             tests/workflow_storage.cpp src/storage.cpp src/keymap.cpp -o "$out/storage" && "$out/storage"
           python3 tools/next_version.py --selftest
           python3 tools/release_index.py --selftest
           python3 tools/flash_backup.py --selftest
+          python3 tools/screen_stats.py --selftest
           python3 tools/recorder.py --selftest
 
       - name: Sign and publish

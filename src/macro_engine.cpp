@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "macro_engine.h"
+#include "live_stats.h"
 #include "hid_keyboard.h"
 #include "keymap.h"
 #include "storage.h"
@@ -431,6 +432,36 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 uint32_t sets=sample(pattern->sets);
                 const int32_t drift=pattern->tempoDriftPermille;
                 int32_t tempo=drift?(int32_t)random(2L*drift+1)-drift:0;
+                // Potions and skills share timers keyed by pattern; potions get a
+                // prefix so a skill can't share an HP/Mana timer by its id.
+                auto due=[&](const DynamicSkill& skill,const std::string& key){
+                    auto timer=dynamicSkillTimers_.find(key);
+                    return skill.enabled && (timer==dynamicSkillTimers_.end() || (uint32_t)(millis()-timer->second.lastRun)>=timer->second.wait) &&
+                           random(1000L)<skill.chancePermille;
+                };
+                auto use=[&](const DynamicSkill& skill,const std::string& key){
+                    Step skillEntry=s;skillEntry.keycode=skill.keycode;
+                    uint32_t started=millis();
+                    uint32_t id=logStep(skillEntry,pc,started,0,false,skill.id.c_str());
+                    uint32_t repeats=sample(skill.repeats);
+                    for(uint32_t repeat=0;repeat<repeats&&!stop;++repeat)tap(dynamicKeycode(skill.keycode),skill.hold,skill.after);
+                    // Even an interrupted use starts its cooldown; each wait is drawn fresh.
+                    dynamicSkillTimers_[key]={millis(),sample(skill.cooldown)};
+                    updateLogDuration(id,millis()-started,true);
+                };
+                // A potion with a "drink below" threshold follows its bar while
+                // tools/screen_stats.py sends fresh readings; otherwise its timer.
+                auto potionKey=[&](const DynamicSkill& potion){return pattern->id+"/potion:"+potion.id;};
+                auto potionLive=[&](const DynamicSkill& potion,int& value){
+                    LiveStats live=liveStatsSnapshot();value=potion.id=="hp"?live.hp:live.mana;
+                    return liveDecides(potion.belowPercent,live.fresh&&value>=0);
+                };
+                auto potionDue=[&](const DynamicSkill& potion){
+                    int value;std::string key=potionKey(potion);
+                    if(!potionLive(potion,value))return due(potion,key);
+                    auto timer=dynamicSkillTimers_.find(key);bool drunk=timer!=dynamicSkillTimers_.end();
+                    return potion.enabled&&liveWantsPotion(potion.belowPercent,value,drunk,drunk?(uint32_t)(millis()-timer->second.lastRun):0);
+                };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 // Establish the actual initial facing before the first attack.
                 tap(facing(),pattern->directionHold,pattern->directionAfter);
@@ -440,6 +471,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
                     uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
+                        // Live potions can't wait for the end of the set: drink between attacks.
+                        int value;
+                        for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))use(potion,potionKey(potion));
                         if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
                         uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
                         std::vector<Step> actions{
@@ -451,27 +485,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     }
                     updateLogDuration(setLog,millis()-started,true);
                     if(stop)break;
-                    // Potions and skills share timers keyed by pattern; potions get a
-                    // prefix so a skill can't share an HP/Mana timer by its id.
-                    auto due=[&](const DynamicSkill& skill,const std::string& key){
-                        auto timer=dynamicSkillTimers_.find(key);
-                        return skill.enabled && (timer==dynamicSkillTimers_.end() || (uint32_t)(millis()-timer->second.lastRun)>=timer->second.wait) &&
-                               random(1000L)<skill.chancePermille;
-                    };
-                    auto use=[&](const DynamicSkill& skill,const std::string& key){
-                        Step skillEntry=s;skillEntry.keycode=skill.keycode;
-                        uint32_t started=millis();
-                        uint32_t id=logStep(skillEntry,pc,started,0,false,skill.id.c_str());
-                        uint32_t repeats=sample(skill.repeats);
-                        for(uint32_t repeat=0;repeat<repeats&&!stop;++repeat)tap(dynamicKeycode(skill.keycode),skill.hold,skill.after);
-                        // Even an interrupted use starts its cooldown; each wait is drawn fresh.
-                        dynamicSkillTimers_[key]={millis(),sample(skill.cooldown)};
-                        updateLogDuration(id,millis()-started,true);
-                    };
-                    for(const auto& potion:pattern->potions){
-                        std::string key=pattern->id+"/potion:"+potion.id;
-                        if(!stop&&due(potion,key))use(potion,key);
-                    }
+                    for(const auto& potion:pattern->potions)if(!stop&&potionDue(potion))use(potion,potionKey(potion));
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i)
                         if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))skills.push_back(i);

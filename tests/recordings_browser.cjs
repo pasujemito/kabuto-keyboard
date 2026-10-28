@@ -12,6 +12,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Home Wi-Fi and PIN mocks; pinRequired acts like a page opened over the home network.
   const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true};
   const networkRequests=[];let pinRequired=false,loggedIn=false;
+  let liveState=null;const statsRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
@@ -25,6 +26,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    }
    if(url.pathname.startsWith('/api/')&&pinRequired&&!loggedIn)return route.fulfill({status:401,contentType:'application/json',body:'{"ok":false,"error":"PIN required"}'});
    if(url.pathname==='/api/network'&&route.request().method()==='POST'){networkRequests.push(route.request().postData());return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/stats/reset'){statsRequests.push(url.pathname);return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{})})});
    if(url.pathname==='/api/network')return route.fulfill({contentType:'application/json',body:JSON.stringify(networkState)});
    if(url.pathname.startsWith('/api/update/')){
     updateRequests.push({path:url.pathname,version:url.searchParams.get('version'),body:route.request().postData()});
@@ -110,6 +113,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert(await page.getByLabel('Enable HP',{exact:true}).isChecked());
   assert.equal(await page.getByLabel('HP key',{exact:true}).inputValue(),'C');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   assert.equal(await page.getByLabel('HP every (seconds) minimum',{exact:true}).inputValue(),'40');
+  assert.equal(await page.getByLabel('HP drink below (%)',{exact:true}).inputValue(),'50');assert.equal(await page.getByLabel('Mana drink below (%)',{exact:true}).inputValue(),'30');
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('101');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Mana drink below: enter a percentage from 0 to 100.');
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('25');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
@@ -169,6 +176,22 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   refuseInstall=true;page.once('dialog',d=>d.accept());
   await page.getByRole('button',{name:'Install v1.15.0'}).click();
   await page.locator('#toast.show.err').waitFor();assert.match(await page.locator('#toast').textContent(),/Stop playback/);
+  // Live bars from the PC screen reader appear on the pad screen with XP rates.
+  await page.locator('#tabKeys').click();
+  assert(await page.locator('#liveStats').isHidden());
+  liveState={hp:723,mana:400,xp:632,ageMs:500,fresh:true,xpPerHour:53,minutesToLevel:416,levels:1};
+  await page.waitForFunction(()=>!document.querySelector('#liveStats').hidden);
+  const liveText=await page.locator('#liveStats').textContent();
+  assert.match(liveText,/HP72\.3%/);assert.match(liveText,/MP40%/);assert.match(liveText,/XP63\.2%/);
+  assert.match(liveText,/\+5\.3%\/h · 0\.09%\/min · level in 6 h 56 min · 1 level up/);
+  assert.equal(await page.locator('#liveStats .meter i').first().evaluate(e=>e.style.width),'72.3%');
+  await page.getByRole('button',{name:'Reset XP rate'}).click();await page.waitForTimeout(100);assert.deepEqual(statsRequests,['/api/stats/reset']);
+  liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
+  assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);
+  assert.equal(await page.locator('#liveStats .live-row').count(),1);   // unread bars aren't shown
+  liveState=null;await page.waitForFunction(()=>document.querySelector('#liveStats').hidden);
+  await page.locator('#tabRecordings').click();
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();
   assert.match(await page.locator('#networkStatus').textContent(),/Saved: HomeNet\. Joined only to check for updates/);

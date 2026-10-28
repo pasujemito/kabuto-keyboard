@@ -11,6 +11,7 @@ your phone. No cables to your computer, no drivers, no reflashing to change a ke
 - 🗂️ **Layers & modes:** tap, toggle or hold, on up to 8 layers
 - 📱 **Phone-friendly editor:** built into the pad, no app to install
 - 📊 **Live HP, Mana & XP:** a tiny PC script reads your bars; see XP/hour and drink when low
+- 🗺️ **Screen aware:** stops on death or disconnect, keeps off map edges, faces mobs
 - 🏠 **On your Wi-Fi too:** open `kabuto.local` from any device, PIN-protected
 - 🔄 **Updates from GitHub:** tap Install, done; roll back any time
 - 💾 **Your patterns stay put:** reflashing never wipes them

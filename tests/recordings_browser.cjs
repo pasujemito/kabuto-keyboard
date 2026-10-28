@@ -117,6 +117,17 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Mana drink below (%)',{exact:true}).fill('101');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'Mana drink below: enter a percentage from 0 to 100.');
   await page.getByLabel('Mana drink below (%)',{exact:true}).fill('25');
+  // Screen awareness: on for new patterns; out-of-range values are refused.
+  await page.locator('summary',{hasText:'Screen awareness'}).click();
+  assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'12');
+  assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'20');
+  assert(await page.getByLabel('Face mobs',{exact:true}).isChecked());
+  await page.getByLabel('Turn at map edges (%)',{exact:true}).fill('50');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Turn at map edges: enter a percentage from 0 to 40.');
+  await page.getByLabel('Turn at map edges (%)',{exact:true}).fill('15');
+  await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('2');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Stuck after: enter 0 (off) or 3 to 600 seconds.');
+  await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('30');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
@@ -158,7 +169,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await dynamicCard.getByRole('button',{name:'Edit',exact:true}).click();
   assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'75');
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
-  assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
+  assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');
+  assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'15');assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   await page.locator('#dynamicClose').click();
   // Updates: a newer release is announced; installing needs a confirmation.
   await page.locator('#tabRecordings').click();
@@ -186,6 +198,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.match(liveText,/\+5\.3%\/h · 0\.09%\/min · level in 6 h 56 min · 1 level up/);
   assert.equal(await page.locator('#liveStats .meter i').first().evaluate(e=>e.style.width),'72.3%');
   await page.getByRole('button',{name:'Reset XP rate'}).click();await page.waitForTimeout(100);assert.deepEqual(statsRequests,['/api/stats/reset']);
+  // Death stops the pad: a red banner, plus your minimap position and a mob on the left.
+  liveState={hp:0,mana:400,xp:632,x:420,y:700,mobs:1,stopped:'you died',ageMs:400,fresh:true,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  await page.waitForFunction(()=>document.querySelector('#liveStats .live-stop'));
+  const deadText=await page.locator('#liveStats').textContent();
+  assert.match(deadText,/⛔ Stopped: you died/);assert.match(deadText,/Map◀ 42%/);
+  assert.equal(await page.locator('#liveStats .track i').evaluate(e=>e.style.left),'42%');
   liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
   await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
   assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);

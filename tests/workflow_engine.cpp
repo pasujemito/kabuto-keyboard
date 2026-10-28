@@ -329,6 +329,42 @@ int main() {
         q.potions[0].belowPercent=0;live.setPattern(q);drink(100,-1);
         assert(pressCount(6)==1);   // no threshold: timer only, whatever the bar says
     }
+    // Screen awareness: stop on death/login/map change, face away from edges
+    // and towards mobs, and turn then stop when the minimap dot is stuck.
+    {
+        DynamicPattern q=p;q.sets={2,2};q.attacksPerSet={6,6};q.skills.clear();q.potions.clear();q.turnChancePermille=0;
+        Step aware=dynamic;
+        const uint8_t L=80,R=79;   // arrow keycodes
+        auto attacks=[&]{int n=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)++n;return n;};   // Ctrl down while Alt held
+        auto dirs=[&]{std::vector<uint8_t> d;for(auto e:hidEvents)if(e.down&&(e.key==L||e.key==R))d.push_back(e.key);return d;};
+        // Like the PC script, send a reading before starting and keep sending while it plays.
+        auto play=[&](std::function<void()> eachDelay){eachDelay();testRandomHook=[](long){return 0L;};testDelayHook=eachDelay;hidEvents.clear();run(engine,{aware});testDelayHook={};testRandomHook={};};
+        // Dead before starting: nothing is pressed.
+        aware.setPattern(q);liveStatsUpdate(500,500,-1,LIVE_DEAD);play([]{});
+        assert(std::none_of(hidEvents.begin(),hidEvents.end(),[](const HidEvent& e){return e.down;}));
+        // Dies mid-pattern: stops at once, nothing left held.
+        liveStatsUpdate(500,500,-1,LIVE_OK);uint32_t dieAt=millis()+1500;
+        play([&]{liveStatsUpdate(500,500,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});
+        assert(attacks()>=1&&attacks()<4&&held.empty()&&!heldMods&&engine.stopFlag_);engine.stopFlag_=false;
+        // Near the left edge while facing left (the first random draw): turns right before attacking.
+        q.edgeMarginPermille=120;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,50,500);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));   // between sets it taps the way it faces
+        // A mob on the right only: face it, and keep facing it at the set boundary.
+        q.edgeMarginPermille=0;q.faceMobs=true;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_RIGHT);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));
+        // Mobs on both sides: no opinion, so the (zero) turn chance keeps facing left.
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_LEFT|MOB_RIGHT);});
+        assert((dirs()==std::vector<uint8_t>{L,L}));
+        // Stuck on the same spot: turns around once, then stops.
+        q.faceMobs=false;q.stuckAfterMs=1500;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,400,300);});
+        // Start left, turn right when stuck, tap right between sets, stop early in set 2.
+        assert((dirs()==std::vector<uint8_t>{L,R,R})&&attacks()==6);
+        assert(engine.stopFlag_&&held.empty()&&!heldMods);engine.stopFlag_=false;
+        liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
+    }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.
     p.skills[0].chancePermille=1000;p.skills[0].cooldown={0,0};dynamic.setPattern(p);
     for(uint32_t offset: {1U,105U,150U,185U,210U,720U,800U,1700U}){

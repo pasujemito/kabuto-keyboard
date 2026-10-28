@@ -148,25 +148,37 @@ the address shown in the panel) from any device on that Wi-Fi:
   settings storage, never in `macros.json` or exports, and never sent back to
   the browser.
 
-### Live HP, Mana and XP from your screen
+### Live stats and screen awareness
 
 The pad can't see your screen, so a small script on the game PC does the
-looking. About once a second, `tools/screen_stats.py` grabs one pixel row across
-each bar, works out how full it is, and sends three numbers to the pad. No
-screenshots leave your PC and there's no text reading, so it stays light.
+looking. About once a second, `tools/screen_stats.py` samples a few small areas
+and sends a handful of numbers: HP, Mana and XP (bar fill %), your position on
+the minimap, which side mobs are on, and whether you're dead, disconnected or
+on another map. No screenshots leave your PC and there's no text reading. All
+the work happens on the PC; the pad only keeps a few numbers (about 20 bytes).
 
 ```bash
 pip install mss pynput
-python tools/screen_stats.py --setup        # hover each bar's ends, press F8
+python tools/screen_stats.py --setup        # hover things, press F8
 python tools/screen_stats.py --pin 123456   # or set KABUTO_PIN
 ```
 
-Setup asks for HP, then Mana, then XP: hover over the left end of a bar and
-press **F8**, then the right end and **F8** (**Esc** skips a bar). Do it with
-every bar at least partly filled, since it learns each bar's colour from its
-left end. Positions go in `kabuto-bars.json` (gitignored). If a bar reads
-wrong, raise its `tolerance` there, or check Windows display scaling.
-`--dry-run` prints readings without sending.
+Setup marks things by hovering and pressing **F8** (**Esc** skips):
+
+1. **Bars:** HP, then Mana, then XP; each bar's left end, then its right end.
+   Do it with every bar at least partly filled: it learns each colour from the
+   bar's left end.
+2. **Minimap:** its top-left corner, its bottom-right corner, then your own dot
+   on it (it learns your dot's colour).
+3. **Mobs:** your character on screen, then up to 3 mobs of different kinds (it
+   learns their colours). **Esc** when done.
+
+Optionally, while that screen is showing, run `--mark death` (hover e.g. the
+respawn button) or `--mark login` (e.g. the login box) for exact detection.
+Everything goes in `kabuto-bars.json` (gitignored). If something reads wrong,
+raise its `tolerance` there, or check Windows display scaling. `--dry-run`
+prints readings without sending. **Restart the script after moving to a new
+map**: it learns the minimap when it starts.
 
 The PC reaches the pad at `kabuto.local` while it stays on your home Wi-Fi
 (PIN needed), or join the PC to the Kabuto-Setup hotspot (no PIN; use
@@ -184,6 +196,27 @@ The PC reaches the pad at `kabuto.local` while it stays on your home Wi-Fi
   5 s, a bar that isn't read, or 0%, the potion uses its timer as before.
 - XP is a percentage of the bar, not points: exact XP numbers would need text
   reading (OCR), which isn't light.
+- **Death, disconnects and map changes stop playback at once**, and a pattern
+  won't start until the game is back. Dead means the HP bar reads 0% twice in
+  a row (or the `--mark death` spot shows); disconnected means the bars and the
+  minimap have gone (or the `--mark login` spot shows); a map change means the
+  minimap looks different for three readings. The Buttons screen says why it
+  stopped. Without a minimap set up, disconnects show up as death.
+- Your **minimap position** shows on the Buttons screen, with ◀ ▶ when mobs are
+  on that side.
+- Each dynamic pattern has **Screen awareness** (on for new patterns, off for
+  older ones):
+  - **Turn at map edges (%)**, 12% by default: within that distance of the
+    minimap's left or right edge, it turns back, even mid-set.
+  - **Face mobs**: when mobs show on one side only, it turns to face them.
+    Edges come first, then mobs, then the pattern's turn chance.
+  - **Stuck after (s)**, 20 s by default: if your dot doesn't move for that
+    long, it turns around; still stuck after another wait, it stops.
+- The mob detector is colour-based: it looks for the sampled mob colours left
+  and right of where your character was marked. It suits maps with one or two
+  mob types; bright skill effects in the same colours can fool it, and when
+  the camera stops following you at a map edge, your character isn't where it
+  was marked.
 
 ### Updates from GitHub releases
 

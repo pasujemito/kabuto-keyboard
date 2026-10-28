@@ -419,6 +419,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 if (!pattern || depth>=8 || hasHeldInput() || state.combat) {
                     logStep(s,pc,stepStartedAt,0,true,"skipped: dynamic needs neutral input");break;
                 }
+                // Don't start attacking a death or login screen.
+                {LiveStats live=liveStatsSnapshot();const char* reason=live.fresh?liveStopReason(live.state):nullptr;
+                 if(reason){char label[80];std::snprintf(label,sizeof(label),"skipped: %s",reason);logStep(s,pc,stepStartedAt,0,true,label);break;}}
                 auto sample=[](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L));};
                 auto delay=[](uint32_t ms){Step step;step.type=StepType::DELAY;step.value=ms;step.maxValue=ms;return step;};
                 auto edge=[](bool down,uint8_t key,uint8_t mods){Step step;step.type=down?StepType::KEY_DOWN:StepType::KEY_UP;step.keycode=key;step.modifiers=mods;return step;};
@@ -462,6 +465,26 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     auto timer=dynamicSkillTimers_.find(key);bool drunk=timer!=dynamicSkillTimers_.end();
                     return potion.enabled&&liveWantsPotion(potion.belowPercent,value,drunk,drunk?(uint32_t)(millis()-timer->second.lastRun):0);
                 };
+                // Between attacks: stop on a death/login screen or map change,
+                // turn for map edges and mobs, and turn (then stop) when stuck.
+                StuckWatch stuck;
+                auto screenCheck=[&]{
+                    LiveStats live=liveStatsSnapshot();
+                    if(!live.fresh)return false;
+                    char label[80];
+                    if(const char* reason=liveStopReason(live.state)){
+                        std::snprintf(label,sizeof(label),"stopped: %s",reason);logStep(s,pc,millis(),0,true,label);
+                        stop=true;return true;
+                    }
+                    int want=liveFacing(true,live.x,pattern->edgeMarginPermille,pattern->faceMobs,live.mobs);
+                    if(want&&(want<0)!=facingLeft){facingLeft=want<0;tap(facing(),pattern->directionHold,pattern->directionAfter);}
+                    if(pattern->stuckAfterMs){
+                        uint8_t verdict=stuck.update(live.x,live.y,millis(),pattern->stuckAfterMs);
+                        if(verdict==1){logStep(s,pc,millis(),0,true,"stuck: turning around");facingLeft=!facingLeft;tap(facing(),pattern->directionHold,pattern->directionAfter);}
+                        if(verdict==2){logStep(s,pc,millis(),0,true,"stopped: still stuck");stop=true;return true;}
+                    }
+                    return false;
+                };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 // Establish the actual initial facing before the first attack.
                 tap(facing(),pattern->directionHold,pattern->directionAfter);
@@ -471,6 +494,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
                     uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
+                        if(screenCheck())break;
                         // Live potions can't wait for the end of the set: drink between attacks.
                         int value;
                         for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))use(potion,potionKey(potion));
@@ -496,7 +520,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     }
                     // No direction tap after the last set: it would only nudge the character.
                     if(stop||set+1==sets)break;
-                    if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
+                    // Live facing (map edge, mobs) wins; otherwise the turn chance.
+                    LiveStats live=liveStatsSnapshot();
+                    int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,pattern->faceMobs,live.mobs);
+                    if(want)facingLeft=want<0;
+                    else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
                     tap(facing(),pattern->directionHold,pattern->directionAfter);
                     if(!stop)yieldTick();
                 }

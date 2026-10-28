@@ -23,8 +23,8 @@ firmware updates from this repo's GitHub releases.
 | `src/access.*` | access PIN (salted hash) and login sessions |
 | `src/access_logic.h` | PIN rules, login lockout, cookie parsing (pure) |
 | `src/update_logic.h` | version/payload/rollback rules (pure) |
-| `src/live_stats.*` | latest HP/Mana/XP readings from the PC, XP rate |
-| `src/stats_logic.h` | XP rate across level-ups, live potion rule (pure) |
+| `src/live_stats.*` | latest readings from the PC: bars, game state, minimap x/y, mob sides |
+| `src/stats_logic.h` | XP rate, live potions, stop reasons, edge/mob facing, stuck (pure) |
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
@@ -74,6 +74,8 @@ release workflow runs all C++ and Python tests.
   page itself are open; hotspot clients need no PIN.
 - Never commit private keys (`*signing-key*.pem` is gitignored). Only
   `update_public_key.pem` belongs in the repo.
+- Screen reading stays on the PC (`tools/screen_stats.py`); the pad only gets
+  a few numbers per reading. Keep it that way: the pad has little RAM.
 - Keep the README light. Details go in `docs/GUIDE.md`, changes in
   `CHANGELOG.md`.
 

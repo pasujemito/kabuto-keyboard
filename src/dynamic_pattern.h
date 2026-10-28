@@ -41,6 +41,10 @@ struct DynamicPattern {
     uint16_t turnChancePermille = 800;
     uint16_t tempoDriftPermille = 0;  // how far the gap after each attack may drift slower/faster
     bool shuffleSkills = true;
+    // Screen awareness (needs tools/screen_stats.py); off in older patterns.
+    uint16_t edgeMarginPermille = 0;  // turn back within this far of a minimap edge
+    uint32_t stuckAfterMs = 0;        // minimap dot still this long: turn, then stop
+    bool faceMobs = false;            // turn towards mobs seen on one side only
     // Defaults match patterns saved before keys were configurable.
     DynamicKey jump = dynamicModifier(0x04);     // KM_LALT
     DynamicKey attack = dynamicModifier(0x01);   // KM_LCTRL

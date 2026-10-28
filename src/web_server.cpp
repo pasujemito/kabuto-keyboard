@@ -108,9 +108,11 @@ static void handleStatus(AsyncWebServerRequest* req) {
     d["keyDownCount"] = (uint32_t)g_keyDownCount; // total presses since boot
     // Live bars from tools/screen_stats.py, in tenths of a percent (-1: not read).
     LiveStats live = liveStatsSnapshot();
-    if (live.hp >= 0 || live.mana >= 0 || live.xp >= 0) {
+    if (live.hp >= 0 || live.mana >= 0 || live.xp >= 0 || live.x >= 0 || live.state != LIVE_OK) {
         JsonObject l = d["live"].to<JsonObject>();
         l["hp"] = live.hp; l["mana"] = live.mana; l["xp"] = live.xp;
+        l["x"] = live.x; l["y"] = live.y; l["mobs"] = live.mobs;
+        if (const char* reason = liveStopReason(live.state)) l["stopped"] = reason;
         l["ageMs"] = live.ageMs; l["fresh"] = live.fresh;
         l["xpPerHour"] = live.xpPerHour; l["minutesToLevel"] = live.minutesToLevel; l["levels"] = live.levels;
     }
@@ -272,9 +274,10 @@ void webServerBegin() {
         String out; serializeJson(d, out);
         sendJson(req, err.length() ? 409 : 200, out);
     });
-    // Bar readings from tools/screen_stats.py as a form body: hp, mana and xp
-    // in percent (decimals allowed). A missing or out-of-range value means
-    // that bar isn't being read.
+    // Readings from tools/screen_stats.py as a form body: hp, mana, xp and the
+    // minimap x/y in percent (decimals allowed; missing or out of range = not
+    // read), state (ok/dead/offline/map) and mobs (L, R, LR or empty). A state
+    // turning bad stops playback at once.
     api("/api/stats", HTTP_POST, [](AsyncWebServerRequest* req) {
         auto tenths = [&](const char* name) {
             String text = req->hasParam(name, true) ? req->getParam(name, true)->value() : String();
@@ -282,7 +285,12 @@ void webServerBegin() {
             float v = text.toFloat();
             return v >= 0 && v <= 100 ? (int)(v * 10 + 0.5f) : -1;
         };
-        liveStatsUpdate(tenths("hp"), tenths("mana"), tenths("xp"));
+        String state = req->hasParam("state", true) ? req->getParam("state", true)->value() : String("ok");
+        String mobs = req->hasParam("mobs", true) ? req->getParam("mobs", true)->value() : String();
+        uint8_t code = state == "dead" ? LIVE_DEAD : state == "offline" ? LIVE_OFFLINE : state == "map" ? LIVE_MAP_CHANGED : LIVE_OK;
+        uint8_t sides = (mobs.indexOf('L') >= 0 ? MOB_LEFT : 0) | (mobs.indexOf('R') >= 0 ? MOB_RIGHT : 0);
+        if (liveStatsUpdate(tenths("hp"), tenths("mana"), tenths("xp"), code, tenths("x"), tenths("y"), sides))
+            Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
         sendJson(req, 200, "{\"ok\":true}");
     });
     api("/api/stats/reset", HTTP_POST, [](AsyncWebServerRequest* req) {

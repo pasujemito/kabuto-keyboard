@@ -72,6 +72,14 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (p.jumpToAttack.max+p.attackToJumpUp.max>90000 || p.attackToJumpUp.max+p.jumpUpToAttackUp.max>90000) return false;
     if (!o["shuffle_skills"].isNull() && !o["shuffle_skills"].is<bool>()) return false;
     p.shuffleSkills = o["shuffle_skills"] | true;
+    // Screen awareness: edge margin as a fraction of the minimap (up to 40%),
+    // stuck time 0 (off) or 3 s-10 min, and facing mobs.
+    if (!chance(o["edge_margin"],p.edgeMarginPermille) || p.edgeMarginPermille>400) return false;
+    if (!o["stuck_after_ms"].isNull() && !o["stuck_after_ms"].is<uint32_t>()) return false;
+    p.stuckAfterMs = o["stuck_after_ms"] | 0U;
+    if (p.stuckAfterMs && (p.stuckAfterMs<3000 || p.stuckAfterMs>600000)) return false;
+    if (!o["face_mobs"].isNull() && !o["face_mobs"].is<bool>()) return false;
+    p.faceMobs = o["face_mobs"] | false;
     // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
     // keys keep the defaults, so older patterns play exactly as before.
     auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
@@ -376,6 +384,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"dir_hold",p->directionHold);range(d,"dir_after",p->directionAfter);
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
+            d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
             auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
             JsonObject keys=d["keys"].to<JsonObject>();
             keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);

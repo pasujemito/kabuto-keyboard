@@ -43,3 +43,49 @@ inline bool liveDecides(uint8_t belowPercent, bool freshReadingOfThisBar) { retu
 inline bool liveWantsPotion(uint8_t belowPercent, int valueTenths, bool drunkBefore, uint32_t msSinceDrink) {
     return valueTenths >= 0 && valueTenths < belowPercent * 10 && (!drunkBefore || msSinceDrink >= LIVE_POTION_GAP_MS);
 }
+
+// Game state reported by the screen reader. Anything but OK stops playback.
+enum LiveState : uint8_t { LIVE_OK = 0, LIVE_DEAD = 1, LIVE_OFFLINE = 2, LIVE_MAP_CHANGED = 3 };
+inline const char* liveStopReason(uint8_t state) {
+    switch (state) {
+        case LIVE_DEAD: return "you died";
+        case LIVE_OFFLINE: return "the game is disconnected or at the login screen";
+        case LIVE_MAP_CHANGED: return "the map changed";
+        default: return nullptr;
+    }
+}
+
+// Mob sides from the screen reader: bit 0 = left of you, bit 1 = right.
+const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2;
+
+// Which way to face from live data: -1 left, +1 right, 0 no opinion (the
+// pattern's own turn chance decides). Keeping off a map edge comes first;
+// then facing mobs that are on one side only. x is the minimap position in
+// tenths of a percent (-1: not read).
+inline int liveFacing(bool fresh, int x, uint16_t edgeMarginTenths, bool faceMobs, uint8_t mobSides) {
+    if (!fresh) return 0;
+    if (edgeMarginTenths && x >= 0) {
+        if (x < edgeMarginTenths) return +1;
+        if (x > 1000 - edgeMarginTenths) return -1;
+    }
+    if (faceMobs && mobSides == MOB_LEFT) return -1;
+    if (faceMobs && mobSides == MOB_RIGHT) return +1;
+    return 0;
+}
+
+// Stuck = the minimap dot stays within `radius` for `afterMs`. The first time
+// returns 1 (try turning around); still stuck a window later returns 2 (stop).
+struct StuckWatch {
+    int x = -1, y = -1;
+    uint32_t since = 0;
+    uint8_t strikes = 0;
+    uint8_t update(int nx, int ny, uint32_t now, uint32_t afterMs, int radius = 15) {
+        if (nx < 0 || ny < 0) { x = -1; return 0; }
+        if (x < 0 || nx - x > radius || x - nx > radius || ny - y > radius || y - ny > radius) {
+            x = nx; y = ny; since = now; strikes = 0; return 0;
+        }
+        if (now - since < afterMs) return 0;
+        since = now;
+        return ++strikes >= 2 ? 2 : 1;
+    }
+};

@@ -14,26 +14,26 @@ Easiest: plug the pad into the game PC with a USB data cable, then
     python screen_stats.py
 The first run walks you through setup; after that it finds the pad on the
 cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
-    python tools/screen_stats.py --setup
+    python screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
     # right end; the minimap's top-left and bottom-right corners, then your
     # dot on it; your character, then up to 3 mobs (Esc when done).
 Optional, while that screen is showing, for exact detection:
-    python tools/screen_stats.py --mark death    # e.g. hover the respawn button
-    python tools/screen_stats.py --mark login    # e.g. hover the login box
+    python screen_stats.py --mark death    # e.g. hover the respawn button
+    python screen_stats.py --mark login    # e.g. hover the login box
 
 Run: it finds the pad on the USB cable by itself. Without a cable it uses
 Wi-Fi: the pad on your home Wi-Fi with "Stay connected" (PIN needed), or this
 PC joined to the Kabuto-Setup hotspot (no PIN, --host 192.168.4.1):
-    python tools/screen_stats.py                            # USB, else kabuto.local
-    python tools/screen_stats.py --pin 123456               # http://kabuto.local
-    python tools/screen_stats.py --host 192.168.1.42 --pin 123456
-    python tools/screen_stats.py --dry-run                  # just print readings
+    python screen_stats.py                       # USB, else kabuto.local
+    python screen_stats.py --pin 123456          # http://kabuto.local
+    python screen_stats.py --host 192.168.1.42 --pin 123456
+    python screen_stats.py --dry-run             # just print readings
 Set KABUTO_PIN instead of --pin to keep the PIN out of your shell history.
 Restart it after moving to a new map: it learns the map's minimap at start.
 
 Run the self-test (no screen or pad needed):
-    python tools/screen_stats.py --selftest
+    python screen_stats.py --selftest
 """
 import argparse, http.cookiejar, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 

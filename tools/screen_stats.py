@@ -46,15 +46,21 @@ CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
 def near(raw, i, color, t2):
     return (raw[i] - color[0]) ** 2 + (raw[i + 1] - color[1]) ** 2 + (raw[i + 2] - color[2]) ** 2 <= t2
 
-def fill_percent(row, color, tolerance=60, min_run=3):
+def fill_percent(row, color, tolerance=60, min_run=3, step=30):
     """How full a bar is, from one row of (r, g, b) pixels across it, left to
     right. Uses the end of the rightmost run of bar-coloured pixels, so numbers
-    drawn over the middle of a bar don't make it look emptier."""
+    drawn over the middle of a bar don't make it look emptier. Bar-coloured
+    means near `color` (learned at the bar's left end) or within `step` of the
+    last bar pixel, so a bar that fades along its length (e.g. dark to light
+    blue) is followed all the way; the empty part is a jump, not a fade."""
     if not row:
         return None
     end = run = 0
+    last = color
     for i, px in enumerate(row):
-        if sum((a - b) ** 2 for a, b in zip(px, color)) <= tolerance ** 2:
+        if (sum((a - b) ** 2 for a, b in zip(px, color)) <= tolerance ** 2
+                or sum((a - b) ** 2 for a, b in zip(px, last)) <= step ** 2):
+            last = px
             run += 1
             if run >= min_run:
                 end = i + 1
@@ -223,7 +229,7 @@ def read_bars(sct, bars):
     for name, bar in bars.items():
         raw = grab(sct, bar["x1"], bar["y"], bar["x2"] - bar["x1"] + 1, 1)
         row = [tuple(raw[i:i + 3]) for i in range(0, len(raw), 3)]
-        readings[name] = fill_percent(row, bar["color"], bar.get("tolerance", 60))
+        readings[name] = fill_percent(row, bar["color"], bar.get("tolerance", 60), step=bar.get("fade", 30))
     return readings
 
 class Screen:
@@ -486,6 +492,12 @@ def selftest():
     assert fill_percent([red] * 50 + [grey] * 30 + [red] + [grey] * 19, red) == 50.0
     assert fill_percent([(190, 40, 35)] * 40 + [grey] * 60, red) == 40.0   # shading within tolerance
     assert fill_percent([], red) is None
+    # A bar that fades along its length (dark to light blue) is followed to its end,
+    # even past numbers drawn over it; the empty part after it isn't.
+    fade = [(20 + i * 2, 50 + i * 2, 150 + i) for i in range(70)]
+    assert fill_percent(fade + [grey] * 30, fade[0]) == 70.0
+    assert fill_percent(fade[:35] + [white] * 8 + fade[43:] + [grey] * 30, fade[0]) == 70.0
+    assert fill_percent(fade + [(25, 30, 60)] * 30, fade[0]) == 70.0   # dark-blue empty part
 
     def canvas(w, h, bg):
         return bytearray(bytes(bg) * (w * h))

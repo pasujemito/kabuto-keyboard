@@ -6,8 +6,8 @@ and show up in the pad's **Updates** panel.
 ## 1.16.0
 
 - 📊 **Live HP, Mana and XP from your screen**: `tools/screen_stats.py` reads
-  the bars on your PC (one pixel row each, about once a second) and the pad
-  shows them with XP per hour/minute and time to level
+  the bars on your PC (one pixel row each, about once a second, gradient bars
+  included) and the pad shows them with XP per hour/minute and time to level
 - 🩸 Potions can **drink below a %** of their live bar (HP 50%, Mana 30%), even
   mid-set, falling back to their timers when there's no reading
 - ⛔ **Stops at once on death, disconnects and map changes**, and won't start

@@ -185,7 +185,9 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
 
 1. **Bars:** HP, then Mana, then XP; each bar's left end, then its right end.
    Do it with every bar at least partly filled: it learns each colour from the
-   bar's left end.
+   bar's left end. Bars that fade along their length (e.g. dark to light blue
+   Mana) are fine: it follows the fade to the bar's end. If a fading bar still
+   reads short, raise its `fade` (default 30) in `kabuto-bars.json`.
 2. **Minimap:** its top-left corner, its bottom-right corner, then your own dot
    on it (it learns your dot's colour).
 3. **Mobs:** your character on screen, then up to 3 mobs of different kinds (it

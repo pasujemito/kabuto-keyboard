@@ -14,7 +14,6 @@ on:
       - 'update_public_key.pem'
       - 'tools/embed_web_ui.py'
       - 'tools/embed_update_key.py'
-      - 'tools/screen_stats.py'
       - '.github/workflows/release.yml'
   workflow_dispatch:     # "Run workflow" button for a release without a code change
 
@@ -30,8 +29,6 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +38,6 @@ jobs:
           python-version: '3.12'
 
       - name: Pick version and check signing setup
-        id: version
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
@@ -51,7 +47,6 @@ jobs:
           base=$(sed -n 's/^#define FIRMWARE_VERSION *"\([0-9.]*\)".*/\1/p' src/config.h)
           version=$(python3 tools/next_version.py "$base" $(git tag -l 'v*'))
           echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing v$version"
 
       - name: Build firmware
@@ -98,28 +93,3 @@ jobs:
           rm -f "$key"
           gh release create "v$VERSION" firmware.bin versions.json --target "$GITHUB_SHA" \
             --title "Kabuto $VERSION" --generate-notes
-
-  # kabuto-screen.exe: the PC screen reader for Windows game laptops, no
-  # Python needed. Plug the pad in by USB and double-click it.
-  screen-tool:
-    needs: release
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Build kabuto-screen.exe
-        shell: bash
-        run: |
-          pip install pyinstaller==6.10.0 mss==9.0.2 pynput==1.7.7 pyserial==3.5
-          # pynput picks its Windows backend at runtime, so name it for PyInstaller.
-          pyinstaller --onefile --console --name kabuto-screen \
-            --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32 \
-            tools/screen_stats.py
-          ./dist/kabuto-screen.exe --selftest
-      - name: Attach to the release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "v${{ needs.release.outputs.version }}" dist/kabuto-screen.exe --clobber

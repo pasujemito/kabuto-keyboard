@@ -9,12 +9,11 @@ whether you're dead, disconnected or on another map. Nothing else leaves
 your PC: no screenshots, no reading text. All the work happens here, so the
 pad only stores a few numbers.
 
-Easiest (Windows game laptop): plug the pad in with a USB data cable and run
-kabuto-screen.exe from the latest GitHub release. The first run walks you
-through setup; after that it just starts sending. No Python, Wi-Fi or PIN.
-
-From source (any OS):
+Easiest: plug the pad into the game PC with a USB data cable, then
     pip install mss pynput pyserial
+    python screen_stats.py
+The first run walks you through setup; after that it finds the pad on the
+cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
     python tools/screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
     # right end; the minimap's top-left and bottom-right corners, then your
@@ -39,12 +38,7 @@ Run the self-test (no screen or pad needed):
 import argparse, http.cookiejar, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
 BARS = (("hp", "HP"), ("mana", "Mana"), ("xp", "XP"))
-CONFIG = "kabuto-bars.json"   # in the current folder (gitignored), or next to the .exe
-
-def default_config():
-    if getattr(sys, "frozen", False):   # kabuto-screen.exe keeps its setup beside itself
-        return os.path.join(os.path.dirname(sys.executable), CONFIG)
-    return CONFIG
+CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
 
 # ---- pure screen maths (raw = RGB bytes, row by row) ------------------------
 
@@ -557,7 +551,7 @@ def main():
     ap.add_argument("--host", default="kabuto.local", help="the pad's Wi-Fi address (default kabuto.local)")
     ap.add_argument("--pin", default=os.environ.get("KABUTO_PIN"), help="access PIN (or set KABUTO_PIN)")
     ap.add_argument("--interval", type=float, default=1.0, help="seconds between readings (default 1)")
-    ap.add_argument("--config", default=default_config(), help="setup file (default %s)" % CONFIG)
+    ap.add_argument("--config", default=CONFIG, help="setup file (default %s)" % CONFIG)
     ap.add_argument("--dry-run", action="store_true", help="print readings without sending")
     ap.add_argument("--selftest", action="store_true", help="run built-in tests and exit")
     a = ap.parse_args()
@@ -574,10 +568,4 @@ def main():
             print()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except SystemExit as e:
-        if e.code not in (None, 0) and getattr(sys, "frozen", False):
-            print(e.code if isinstance(e.code, str) else "")
-            input("Press Enter to close")   # double-clicked .exe: keep the message on screen
-        raise
+    main()

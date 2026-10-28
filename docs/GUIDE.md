@@ -157,28 +157,28 @@ the minimap, which side mobs are on, and whether you're dead, disconnected or
 on another map. No screenshots leave your PC and there's no text reading. All
 the work happens on the PC; the pad only keeps a few numbers (about 20 bytes).
 
-**Plug and play (Windows game laptop):**
+**Plug and play on a game laptop:**
 
-1. Pair the pad with the laptop over Bluetooth as usual (that's how keys get in).
-2. Plug the pad into the laptop with a USB **data** cable (it powers the pad
+1. Install Python 3 once (python.org, or `winget install Python.Python.3.12`
+   on Windows; tick **Add to PATH**), then:
+   `pip install mss pynput pyserial`
+2. Copy `tools/screen_stats.py` onto the laptop (it's a single file:
+   `https://raw.githubusercontent.com/pasujemito/kabuto-keyboard/main/tools/screen_stats.py`).
+3. Pair the pad with the laptop over Bluetooth as usual (that's how keys get in).
+4. Plug the pad into the laptop with a USB **data** cable (it powers the pad
    and carries the readings).
-3. Download `kabuto-screen.exe` from the latest release
-   (`https://github.com/pasujemito/kabuto-keyboard/releases/latest/download/kabuto-screen.exe`)
-   and double-click it. Windows may warn about an unknown app the first time:
-   **More info → Run anyway**.
-4. The first run walks you through setup (below) and saves it beside the exe;
-   after that it just finds the pad on the USB cable and starts sending.
+5. Run `python screen_stats.py` in the folder you copied it to. The first run
+   walks you through setup (below) and saves `kabuto-bars.json` there; after
+   that it finds the pad on the USB cable and starts sending.
 
 Over USB there's no Wi-Fi, `kabuto.local` or PIN involved: having the pad
 plugged in is the permission. Without a cable, it uses Wi-Fi instead.
 
-**From source (any OS):**
-
 ```bash
-pip install mss pynput pyserial
-python tools/screen_stats.py                # USB if plugged in, else kabuto.local
-python tools/screen_stats.py --pin 123456   # Wi-Fi with the PIN (or set KABUTO_PIN)
-python tools/screen_stats.py --setup        # redo setup
+python screen_stats.py                 # USB if plugged in, else kabuto.local
+python screen_stats.py --pin 123456    # Wi-Fi with the PIN (or set KABUTO_PIN)
+python screen_stats.py --setup         # redo setup
+python screen_stats.py --dry-run       # check readings without sending
 ```
 
 Setup marks things by hovering and pressing **F8** (**Esc** skips):

@@ -479,7 +479,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     int want=liveFacing(true,live.x,pattern->edgeMarginPermille,pattern->faceMobs,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;tap(facing(),pattern->directionHold,pattern->directionAfter);}
                     if(pattern->stuckAfterMs){
-                        uint8_t verdict=stuck.update(live.x,live.y,millis(),pattern->stuckAfterMs);
+                        // Map position when the script sends it (the dot can stay centred while you walk), else the dot.
+                        bool map=live.wx!=LIVE_NO_POS&&live.wy!=LIVE_NO_POS;
+                        uint8_t verdict=map?stuck.update(true,live.wx,live.wy,millis(),pattern->stuckAfterMs):stuck.update(live.x>=0&&live.y>=0,live.x,live.y,millis(),pattern->stuckAfterMs);
                         if(verdict==1){logStep(s,pc,millis(),0,true,"stuck: turning around");facingLeft=!facingLeft;tap(facing(),pattern->directionHold,pattern->directionAfter);}
                         if(verdict==2){logStep(s,pc,millis(),0,true,"stopped: still stuck");stop=true;return true;}
                     }

@@ -155,7 +155,7 @@ looking. About once a second, `tools/screen_stats.py` samples a few small areas
 and sends a handful of numbers: HP, Mana and XP (bar fill %), your position on
 the minimap, which side mobs are on, and whether you're dead, disconnected or
 on another map. No screenshots leave your PC and there's no text reading. All
-the work happens on the PC; the pad only keeps a few numbers (about 20 bytes).
+the work happens on the PC; the pad only keeps a few numbers (about 30 bytes).
 
 **Plug and play on a game laptop:**
 
@@ -198,6 +198,15 @@ raise its `tolerance` there, or check Windows display scaling. `--dry-run`
 prints readings without sending. **Restart the script after moving to a new
 map**: it learns the minimap when it starts.
 
+**Sliding minimaps** are fine. Many games keep your dot in the middle and slide
+the minimap under it as you walk, until you near the map's edge, where the
+minimap stops and the dot moves instead. The script lines each reading up with
+the last one (up to a quarter of the minimap per reading) and adds up how far
+it has slid, so it always knows where you are on the whole map. A view that
+won't line up two readings in a row (another map, a teleport, a respawn
+elsewhere) counts as a map change. If a busy minimap is flagged wrongly, raise
+`map_mismatch` (default 0.6) under `minimap` in `kabuto-bars.json`.
+
 Without a USB cable, the PC reaches the pad at `kabuto.local` while it stays on
 your home Wi-Fi (PIN needed), or join the PC to the Kabuto-Setup hotspot (no
 PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
@@ -218,18 +227,22 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   won't start until the game is back. Dead means the HP bar reads 0% twice in
   a row (or the `--mark death` spot shows); disconnected means the bars and the
   minimap have gone (or the `--mark login` spot shows); a map change means the
-  minimap looks different for three readings. The Buttons screen says why it
-  stopped. Without a minimap set up, disconnects show up as death.
+  minimap jumped somewhere it can't line up with for two readings in a row
+  (sliding as you walk doesn't count). It stays flagged until you restart the
+  script. The Buttons screen says why it stopped. Without a minimap set up, disconnects show up as death.
 - Your **minimap position** shows on the Buttons screen, with ◀ ▶ when mobs are
   on that side.
 - Each dynamic pattern has **Screen awareness** (on for new patterns, off for
   older ones):
   - **Turn at map edges (%)**, 12% by default: within that distance of the
-    minimap's left or right edge, it turns back, even mid-set.
+    minimap's left or right edge, it turns back, even mid-set. On a sliding
+    minimap your dot only gets there at the map's real edges.
   - **Face mobs**: when mobs show on one side only, it turns to face them.
     Edges come first, then mobs, then the pattern's turn chance.
-  - **Stuck after (s)**, 20 s by default: if your dot doesn't move for that
-    long, it turns around; still stuck after another wait, it stops.
+  - **Stuck after (s)**, 20 s by default: if your place on the map doesn't
+    change for that long, it turns around; still stuck after another wait, it
+    stops. It goes by the map position (slide plus dot), so a dot that stays
+    centred while the minimap slides isn't "stuck".
 - The mob detector is colour-based: it looks for the sampled mob colours left
   and right of where your character was marked. It suits maps with one or two
   mob types; bright skill effects in the same colours can fool it, and when

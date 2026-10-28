@@ -149,7 +149,7 @@ static void usbStatsPoll() {
             Serial.printf("KABUTO %s\n", FIRMWARE_VERSION);
         } else if (!strncmp(line, "KABUTO stats ", 13)) {
             StatsReading r = parseStatsForm(line + 13);
-            if (liveStatsUpdate(r.hp, r.mana, r.xp, r.state, r.x, r.y, r.mobs)) Macros.post(EngineCmd::STOP);
+            if (liveStatsUpdate(r.hp, r.mana, r.xp, r.state, r.x, r.y, r.mobs, r.wx, r.wy)) Macros.post(EngineCmd::STOP);
             Serial.print("KABUTO ok\n");
         }
     }

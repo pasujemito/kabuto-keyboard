@@ -363,6 +363,12 @@ int main() {
         // Start left, turn right when stuck, tap right between sets, stop early in set 2.
         assert((dirs()==std::vector<uint8_t>{L,R,R})&&attacks()==6);
         assert(engine.stopFlag_&&held.empty()&&!heldMods);engine.stopFlag_=false;
+        // A sliding minimap: the dot stays centred but the map position moves, so it isn't stuck.
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0,(int)(millis()/10),500);});
+        assert((dirs()==std::vector<uint8_t>{L,L})&&attacks()==12&&!engine.stopFlag_);
+        // The map position standing still while the dot doesn't move either: stuck as before.
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0,-2400,500);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R})&&attacks()==6&&engine.stopFlag_);engine.stopFlag_=false;
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

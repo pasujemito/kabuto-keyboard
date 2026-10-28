@@ -13,7 +13,8 @@ and show up in the pad's **Updates** panel.
 - ⛔ **Stops at once on death, disconnects and map changes**, and won't start
   a pattern until the game is back
 - 🗺️ **Minimap position**: turn back at map edges and turn around (then stop)
-  when stuck
+  when stuck. **Sliding minimaps** work: the script follows the slide, so a
+  dot that stays centred while you walk isn't stuck or a new map
 - 👾 **Mob detector**: turns to face mobs seen on one side only
 - 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
   (no Wi-Fi or PIN) and sets itself up on first run

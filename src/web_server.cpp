@@ -276,13 +276,14 @@ void webServerBegin() {
     });
     // Readings from tools/screen_stats.py as a form body: hp, mana, xp and the
     // minimap x/y in percent (decimals allowed; missing or out of range = not
-    // read), state (ok/dead/offline/map) and mobs (L, R, LR or empty). A state
-    // turning bad stops playback at once.
+    // read), map position wx/wy (whole numbers, see stats_logic.h), state
+    // (ok/dead/offline/map) and mobs (L, R, LR or empty). A state turning bad
+    // stops playback at once.
     api("/api/stats", HTTP_POST, [](AsyncWebServerRequest* req) {
         auto field = [&](const char* name) { return req->hasParam(name, true) ? req->getParam(name, true)->value() : String(); };
         if (liveStatsUpdate(statsTenths(field("hp").c_str()), statsTenths(field("mana").c_str()), statsTenths(field("xp").c_str()),
                             statsState(field("state").c_str()), statsTenths(field("x").c_str()), statsTenths(field("y").c_str()),
-                            statsMobs(field("mobs").c_str())))
+                            statsMobs(field("mobs").c_str()), statsPos(field("wx").c_str()), statsPos(field("wy").c_str())))
             Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
         sendJson(req, 200, "{\"ok\":true}");
     });

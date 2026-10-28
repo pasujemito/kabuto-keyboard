@@ -11,6 +11,7 @@ struct LiveStats {
     int hp = -1, mana = -1, xp = -1;
     uint8_t state = LIVE_OK;     // LiveState: dead/offline/map changed stop playback
     int x = -1, y = -1;          // your dot on the minimap
+    int wx = LIVE_NO_POS, wy = LIVE_NO_POS;   // your place on the whole map (stats_logic.h)
     uint8_t mobs = 0;            // MOB_LEFT | MOB_RIGHT
     uint32_t ageMs = 0;          // since the last reading
     bool fresh = false;          // a reading within LIVE_STATS_STALE_MS
@@ -20,6 +21,7 @@ struct LiveStats {
 };
 
 // True when this reading turns the state from OK to a stop reason.
-bool liveStatsUpdate(int hp, int mana, int xp, uint8_t state = LIVE_OK, int x = -1, int y = -1, uint8_t mobs = 0);
+bool liveStatsUpdate(int hp, int mana, int xp, uint8_t state = LIVE_OK, int x = -1, int y = -1, uint8_t mobs = 0,
+                     int wx = LIVE_NO_POS, int wy = LIVE_NO_POS);
 LiveStats liveStatsSnapshot();
 void liveStatsReset();   // start the XP rate afresh

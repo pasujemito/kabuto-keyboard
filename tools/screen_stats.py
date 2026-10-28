@@ -31,11 +31,12 @@ PC joined to the Kabuto-Setup hotspot (no PIN, --host 192.168.4.1):
     python screen_stats.py --dry-run             # just print readings
 Set KABUTO_PIN instead of --pin to keep the PIN out of your shell history.
 Restart it after moving to a new map: it learns the map's minimap at start.
+A minimap that slides as you walk is followed, so that isn't a new map.
 
 Run the self-test (no screen or pad needed):
     python screen_stats.py --selftest
 """
-import argparse, http.cookiejar, json, os, sys, time, urllib.error, urllib.parse, urllib.request
+import argparse, http.cookiejar, json, os, random, sys, time, urllib.error, urllib.parse, urllib.request
 
 BARS = (("hp", "HP"), ("mana", "Mana"), ("xp", "XP"))
 CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
@@ -73,18 +74,99 @@ def find_dot(raw, w, h, color, tolerance=40, step=2):
         return None
     return round(100.0 * sx / n / max(w - 1, 1), 1), round(100.0 * sy / n / max(h - 1, 1), 1)
 
-def thumbnail(raw, w, h, cols=16, rows=8):
-    """A tiny brightness map of the minimap, to notice a different map."""
-    out = []
-    for r in range(rows):
-        for c in range(cols):
-            x, y = int((c + 0.5) * w / cols), int((r + 0.5) * h / rows)
-            i = (y * w + x) * 3
-            out.append((raw[i] + raw[i + 1] + raw[i + 2]) // 3)
-    return out
+def col_profile(raw, w, x0, x1, y0, y1, step=2):
+    """Average brightness (0-255) of each column x0..x1, over rows y0..y1."""
+    rows = range(y0, y1, step)
+    n = 3.0 * max(len(rows), 1)
+    return [sum(raw[(y * w + x) * 3] + raw[(y * w + x) * 3 + 1] + raw[(y * w + x) * 3 + 2] for y in rows) / n
+            for x in range(x0, x1)]
 
-def thumb_diff(a, b):
-    return sum(abs(x - y) for x, y in zip(a, b)) / max(len(a), 1)
+def row_profile(raw, w, x0, x1, y0, y1, step=2):
+    """Average brightness (0-255) of each row y0..y1, over columns x0..x1."""
+    cols = range(x0, x1, step)
+    n = 3.0 * max(len(cols), 1)
+    return [sum(raw[(y * w + x) * 3] + raw[(y * w + x) * 3 + 1] + raw[(y * w + x) * 3 + 2] for x in cols) / n
+            for y in range(y0, y1)]
+
+def spread(profile):
+    """How much a profile varies (mean distance from its average)."""
+    mean = sum(profile) / max(len(profile), 1)
+    return sum(abs(v - mean) for v in profile) / max(len(profile), 1)
+
+def best_shift(prev, cur, max_shift):
+    """How far the minimap slid between two readings: the s where cur[i]
+    best matches prev[i + s] (positive: the view moved right/down). Returns
+    (s, mismatch) in brightness levels."""
+    n, best = min(len(prev), len(cur)), None
+    for s in range(-max_shift, max_shift + 1):
+        lo, hi = max(0, -s), min(n, n - s)
+        if hi - lo < n // 2:
+            continue
+        diff = sum(abs(prev[i + s] - cur[i]) for i in range(lo, hi)) / (hi - lo)
+        score = diff + 0.01 * abs(s)   # on flat stretches, prefer "didn't slide"
+        if best is None or score < best[0]:
+            best = (score, s, diff)
+    return (best[1], best[2]) if best else (0, float("inf"))
+
+def overlap_mismatch(prev, cur, w, h, dx, dy, step=2):
+    """How badly two views disagree where they overlap after sliding by
+    (dx, dy), relative to the minimap's own contrast: near 0 for a real
+    slide, about 1 or more for unrelated views. A plain minimap counts as
+    having some contrast, so a little noise on it isn't a new map.
+    Checks every `step`th pixel, in brightness."""
+    diff, vals = 0, []
+    for y in range(max(0, -dy), min(h, h - dy), step):
+        for x in range(max(0, -dx), min(w, w - dx), step):
+            i, j = (y * w + x) * 3, ((y + dy) * w + x + dx) * 3
+            a, b = cur[i] + cur[i + 1] + cur[i + 2], prev[j] + prev[j + 1] + prev[j + 2]
+            diff += abs(a - b)
+            vals.append(a)
+    if not vals:
+        return float("inf")
+    return diff / len(vals) / max(spread(vals), 45)   # 45 = 15 levels on each of R, G, B
+
+def find_slide(prev, cur, w, h, max_dx, max_dy):
+    """(dx, dy, mismatch) between two minimap views. Sideways first from
+    column brightness, then up and down over the columns both views share,
+    then sideways again over the shared rows. Mismatch: see overlap_mismatch."""
+    dx = dy = 0
+    for _ in range(2):
+        py, cy = (max(0, dy), min(h, h + dy)), (max(0, -dy), min(h, h - dy))
+        dx = best_shift(col_profile(prev, w, 0, w, *py), col_profile(cur, w, 0, w, *cy), max_dx)[0]
+        px, cx = (max(0, dx), min(w, w + dx)), (max(0, -dx), min(w, w - dx))
+        dy = best_shift(row_profile(prev, w, px[0], px[1], 0, h), row_profile(cur, w, cx[0], cx[1], 0, h), max_dy)[0]
+    return dx, dy, overlap_mismatch(prev, cur, w, h, dx, dy)
+
+class MinimapTracker:
+    """Follows a minimap that slides as you walk. Keeps how far it has slid
+    since the start, so your map position is slide + dot (the dot can sit in
+    the middle while you walk). A view that two readings in a row can't line
+    up with the last good one means a new map, teleport or respawn."""
+    def __init__(self, threshold=0.6, max_slide=0.25):
+        self.threshold, self.max_slide = threshold, max_slide
+        self.prev, self.ox, self.oy, self.misses, self.changed = None, 0, 0, 0, False
+
+    def update(self, raw, w, h):
+        if self.prev is None:
+            self.prev = raw
+            return self.changed
+        dx, dy, mismatch = find_slide(self.prev, raw, w, h, max(1, int(w * self.max_slide)), max(1, int(h * self.max_slide)))
+        if mismatch > self.threshold:
+            self.misses += 1                 # keep the last good view to compare against
+            if self.misses >= 2:
+                self.changed = True          # stays until the script restarts
+        else:
+            self.misses = 0
+            self.ox += dx
+            self.oy += dy
+            self.prev = raw
+        return self.changed
+
+    def world(self, dot, w, h):
+        """Your position on the whole map in tenths of a minimap width/height
+        (can go below 0 or past 1000 as the minimap slides)."""
+        x, y = dot
+        return (round(self.ox * 1000.0 / max(w - 1, 1) + x * 10), round(self.oy * 1000.0 / max(h - 1, 1) + y * 10))
 
 def mob_sides(raw, w, h, colors, tolerance=40, gap=40, mid=None, step_x=6, step_y=8, min_hits=3):
     """Which sides of you have mob-coloured pixels: 'L', 'R', 'LR' or ''.
@@ -113,7 +195,7 @@ class GameState:
     """ok / dead / offline / map from the readings, needing a couple of
     agreeing readings so one odd frame doesn't stop the pad."""
     def __init__(self):
-        self.zero_hp = self.gone = self.other_map = 0
+        self.zero_hp = self.gone = 0
 
     def update(self, hp, mana, dot_seen, minimap_used, watches, map_changed):
         if watches.get("login"):
@@ -123,12 +205,11 @@ class GameState:
         no_bars = (hp in (None, 0)) and (mana in (None, 0))
         self.gone = self.gone + 1 if no_bars and minimap_used and not dot_seen else 0
         self.zero_hp = self.zero_hp + 1 if hp == 0 else 0
-        self.other_map = self.other_map + 1 if map_changed else 0
         if self.gone >= 2:
             return "offline"          # no bars and no minimap: login screen or disconnected
         if self.zero_hp >= 2:
             return "dead"
-        if self.other_map >= 3:
+        if map_changed:               # MinimapTracker already wants two readings
             return "map"
         return "ok"
 
@@ -148,20 +229,22 @@ def read_bars(sct, bars):
 class Screen:
     """Everything read each tick, plus what's learned at start (the map)."""
     def __init__(self, sct, config):
-        self.sct, self.config, self.state, self.map_thumb = sct, config, GameState(), None
+        mm = config.get("minimap") or {}
+        self.sct, self.config, self.state = sct, config, GameState()
+        self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))   # "map_threshold" was the old check's: ignored
 
     def read(self):
         c = self.config
         out = read_bars(self.sct, c.get("bars", {}))
-        dot, map_changed, mm = None, False, c.get("minimap")
+        dot, world, map_changed, mm = None, None, False, c.get("minimap")
         if mm:
             w, h = mm["x2"] - mm["x1"] + 1, mm["y2"] - mm["y1"] + 1
             raw = grab(self.sct, mm["x1"], mm["y1"], w, h)
             dot = find_dot(raw, w, h, mm["dot"], mm.get("tolerance", 40))
-            thumb = thumbnail(raw, w, h)
-            if self.map_thumb is None and dot:
-                self.map_thumb = thumb            # learn this map while you're on it
-            map_changed = self.map_thumb is not None and thumb_diff(thumb, self.map_thumb) > mm.get("map_threshold", 25)
+            # Only while your dot shows: a login or loading screen isn't the map.
+            map_changed = self.minimap.update(raw, w, h) if dot else self.minimap.changed
+            if dot:
+                world = self.minimap.world(dot, w, h)
         mobs, mb = "", c.get("mobs")
         if mb and mb.get("colors"):
             # The area either side of your character, clipped to the screen.
@@ -177,6 +260,7 @@ class Screen:
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
         out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, map_changed)
         out["x"], out["y"] = dot if dot else (None, None)
+        out["wx"], out["wy"] = world if world else (None, None)   # for stuck: moves even when the dot doesn't
         out["mobs"] = mobs
         return out
 
@@ -216,7 +300,7 @@ def setup(path):
     if len(pts) == 3:
         (ax, ay), (bx, by), (dx, dy) = pts
         config["minimap"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by),
-                             "dot": pixel(sct, dx, dy), "tolerance": 40, "map_threshold": 25}
+                             "dot": pixel(sct, dx, dy), "tolerance": 40, "map_mismatch": 0.6}
     pts = mark_points("Mobs: hover YOUR character, F8; then up to 3 mobs (different kinds), F8 each; Esc when done", 4)
     if len(pts) >= 2:
         (cx, cy), mobs = pts[0], pts[1:]
@@ -415,11 +499,53 @@ def selftest():
     x, y = find_dot(mm, 101, 51, yellow)
     assert abs(x - 21.0) < 2 and abs(y - 63.0) < 3, (x, y)
     assert find_dot(canvas(101, 51, grey), 101, 51, yellow) is None
-    # Map change: same map ~0 difference (even with the dot moving), another map a lot.
-    other = canvas(101, 51, (120, 160, 90))
-    moved = bytearray(mm); paint(moved, 101, 60, 30, 64, 34, yellow)
-    assert thumb_diff(thumbnail(mm, 101, 51), thumbnail(moved, 101, 51)) < 25
-    assert thumb_diff(thumbnail(mm, 101, 51), thumbnail(other, 101, 51)) > 25
+    # A minimap that slides as you walk: a 400x120 map seen through a 100x40
+    # minimap. Mid-map the view slides and your dot stays in the middle; at the
+    # map's edge the view stops and the dot moves instead.
+    def textured(w, h, seed):
+        rnd = random.Random(seed)
+        cells = [[rnd.randrange(40, 200) for _ in range(w // 7 + 1)] for _ in range(h // 5 + 1)]
+        out = bytearray()
+        for y in range(h):
+            for x in range(w):
+                v = cells[y // 5][x // 7]
+                out += bytes((v, v, v))
+        return out
+    world_map = textured(400, 120, 1)
+    def view(ox, oy, dot=None, world=world_map, ww=400):
+        raw = bytearray()
+        for y in range(oy, oy + 40):
+            raw += world[(y * ww + ox) * 3:(y * ww + ox + 100) * 3]
+        if dot:
+            paint(raw, 100, dot[0] - 2, dot[1] - 2, dot[0] + 2, dot[1] + 2, yellow)
+        return raw
+    t = MinimapTracker()
+    positions = []
+    for ox, oy, dot in ((0, 40, (50, 20)), (12, 40, (50, 20)), (30, 44, (50, 20)), (55, 44, (50, 20))):
+        raw = view(ox, oy, dot)
+        assert not t.update(raw, 100, 40), (ox, oy)
+        d = find_dot(raw, 100, 40, yellow)
+        positions.append(t.world(d, 100, 40))
+    # Slides of 12, 18 and 25 px (and 4 down) are tracked: map position moves even though the dot doesn't.
+    assert (t.ox, t.oy) == (55, 4), (t.ox, t.oy)
+    assert positions[0][0] < positions[1][0] < positions[2][0] < positions[3][0], positions
+    assert abs(positions[3][0] - positions[0][0] - round(55 * 1000 / 99)) <= 2
+    # A far jump (300 px is more than a quarter of the minimap) can't be lined up: two of those = map changed.
+    t2 = MinimapTracker()
+    t2.update(view(0, 40, (50, 20)), 100, 40)
+    t2.update(view(10, 40, (50, 20)), 100, 40)
+    other_map = textured(400, 120, 999)
+    assert not t2.update(view(10, 40, (50, 20), other_map), 100, 40)      # one odd reading: not yet
+    assert not t2.update(view(14, 40, (50, 20)), 100, 40)                 # back to normal: forgiven
+    assert t2.ox == 14 and t2.misses == 0
+    assert not t2.update(view(0, 0, None, other_map), 100, 40)
+    assert t2.update(view(4, 0, None, other_map), 100, 40) and t2.changed # two in a row: new map, latched
+    assert t2.update(view(14, 40, (50, 20)), 100, 40)                     # stays until the script restarts
+    # At the map's edge the view stops sliding; the dot moving still moves you.
+    t3 = MinimapTracker()
+    for dot_x in (40, 60, 80):
+        t3.update(view(300, 44, (dot_x, 20)), 100, 40)
+    assert t3.ox == 0 and t3.world((80.0, 50.0), 100, 40)[0] == 800
     # Mobs: left, right, both, none; your own character in the middle is ignored.
     green = (60, 200, 60)
     for x0, want in ((50, "L"), (600, "R"), (None, "")):
@@ -443,8 +569,7 @@ def selftest():
     assert g.update(70, 50, True, True, {}, False) == "ok"
     g = GameState(); g.update(0, 0, False, True, {}, False)
     assert g.update(None, 0, False, True, {}, False) == "offline"
-    g = GameState()
-    assert [g.update(80, 50, True, True, {}, True) for _ in range(3)] == ["ok", "ok", "map"]
+    assert GameState().update(80, 50, True, True, {}, True) == "map"   # the tracker already confirmed it
     assert GameState().update(80, 50, True, True, {"death": True}, False) == "dead"
     assert GameState().update(80, 50, True, True, {"login": True, "death": True}, False) == "offline"
     assert GameState().update(None, None, False, False, {}, False) == "ok"   # nothing set up: no false alarms
@@ -480,13 +605,17 @@ def selftest():
     screen = Screen(fake, config)
     r = screen.read()
     assert r["hp"] == 75.0 and r["mana"] == 30.0 and r["state"] == "ok" and r["mobs"] == "L", r
+    assert r["wx"] == round(r["x"] * 10) and r["wy"] == round(r["y"] * 10), r   # no slide yet: map position = dot
     assert abs(r["x"] - 26.4) < 2 and abs(r["y"] - 52.0) < 4, r
     paint(fake.px, 800, 100, 580, 250, 584, grey)            # HP gone: dead after two readings
     assert screen.read()["state"] == "ok" and screen.read()["state"] == "dead"
     paint(fake.px, 800, 100, 580, 250, 584, red)
-    paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # a different minimap: map changed after three
-    states = [screen.read()["state"] for _ in range(3)]
-    assert states == ["ok", "ok", "map"], states
+    paint(fake.px, 800, 600, 10, 760, 90, (40, 40, 40))      # minimap gone (loading): not compared, not a new map
+    assert [screen.read()["state"] for _ in range(3)] == ["ok"] * 3
+    paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # a different minimap: map changed on the second reading
+    paint(fake.px, 800, 680, 50, 684, 54, yellow)
+    states = [screen.read()["state"] for _ in range(2)]
+    assert states == ["ok", "map"], states
 
     # USB: finds the Espressif port that answers, sends one line per reading.
     class FakeSerial:

@@ -75,16 +75,24 @@ inline int liveFacing(bool fresh, int x, uint16_t edgeMarginTenths, bool faceMob
     return 0;
 }
 
-// Stuck = the minimap dot stays within `radius` for `afterMs`. The first time
+// Map position (wx/wy): where you are on the whole map, in tenths of a
+// minimap width/height, counting how far a sliding minimap has moved. Your dot
+// can sit in the middle while you walk, so this is what tells you're moving.
+// It can go below 0 or past 1000; LIVE_NO_POS = not read.
+const int LIVE_NO_POS = -1000000;
+
+// Stuck = your position stays within `radius` for `afterMs`. The first time
 // returns 1 (try turning around); still stuck a window later returns 2 (stop).
+// `seen` false (no position) starts over.
 struct StuckWatch {
-    int x = -1, y = -1;
+    bool has = false;
+    int x = 0, y = 0;
     uint32_t since = 0;
     uint8_t strikes = 0;
-    uint8_t update(int nx, int ny, uint32_t now, uint32_t afterMs, int radius = 15) {
-        if (nx < 0 || ny < 0) { x = -1; return 0; }
-        if (x < 0 || nx - x > radius || x - nx > radius || ny - y > radius || y - ny > radius) {
-            x = nx; y = ny; since = now; strikes = 0; return 0;
+    uint8_t update(bool seen, int nx, int ny, uint32_t now, uint32_t afterMs, int radius = 15) {
+        if (!seen) { has = false; return 0; }
+        if (!has || nx - x > radius || x - nx > radius || ny - y > radius || y - ny > radius) {
+            has = true; x = nx; y = ny; since = now; strikes = 0; return 0;
         }
         if (now - since < afterMs) return 0;
         since = now;
@@ -93,7 +101,7 @@ struct StuckWatch {
 };
 
 // ---- readings from tools/screen_stats.py -----------------------------------
-// The same form ("hp=72.5&mana=40&xp=63.2&x=41.5&y=70&state=ok&mobs=L") comes
+// The same form ("hp=72.5&mana=40&xp=63.2&x=41.5&y=70&wx=1415&wy=700&state=ok&mobs=L") comes
 // over Wi-Fi (POST /api/stats) or the USB cable ("KABUTO stats <form>").
 
 // "72.5" -> 725 tenths. Empty, not a number or outside 0-100 -> -1 (not read):
@@ -104,6 +112,14 @@ inline int statsTenths(const char* text) {
     double v = strtod(text, &end);
     if (end == text || *end || !(v >= 0 && v <= 100)) return -1;
     return (int)(v * 10 + 0.5);
+}
+// Map position: a whole number within +-100000, else LIVE_NO_POS.
+inline int statsPos(const char* text) {
+    if (!text || !*text) return LIVE_NO_POS;
+    char* end;
+    long v = strtol(text, &end, 10);
+    if (end == text || *end || v < -100000 || v > 100000) return LIVE_NO_POS;
+    return (int)v;
 }
 inline uint8_t statsState(const char* text) {
     if (!text) return LIVE_OK;
@@ -117,7 +133,7 @@ inline uint8_t statsMobs(const char* text) {
 }
 
 struct StatsReading {
-    int hp = -1, mana = -1, xp = -1, x = -1, y = -1;
+    int hp = -1, mana = -1, xp = -1, x = -1, y = -1, wx = LIVE_NO_POS, wy = LIVE_NO_POS;
     uint8_t state = LIVE_OK, mobs = 0;
 };
 
@@ -139,6 +155,8 @@ inline StatsReading parseStatsForm(const char* form) {
                 else if (!strcmp(key, "xp")) r.xp = statsTenths(value);
                 else if (!strcmp(key, "x")) r.x = statsTenths(value);
                 else if (!strcmp(key, "y")) r.y = statsTenths(value);
+                else if (!strcmp(key, "wx")) r.wx = statsPos(value);
+                else if (!strcmp(key, "wy")) r.wy = statsPos(value);
                 else if (!strcmp(key, "state")) r.state = statsState(value);
                 else if (!strcmp(key, "mobs")) r.mobs = statsMobs(value);
             }

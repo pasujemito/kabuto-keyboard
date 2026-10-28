@@ -34,5 +34,16 @@ int main(){
     assert(sw.update(505,498,10000,10000)==1&&sw.update(500,500,15000,10000)==0&&sw.update(500,500,20000,10000)==2);
     assert(sw.update(600,500,21000,10000)==0&&sw.strikes==0);   // moved away: fine again
     assert(sw.update(-1,-1,40000,10000)==0&&sw.x==-1);           // dot lost: start over
+    // Readings: Wi-Fi and USB share one parser; blanks and junk are "not read".
+    assert(statsTenths("72.5")==725&&statsTenths("0")==0&&statsTenths("100")==1000);
+    assert(statsTenths("")==-1&&statsTenths(nullptr)==-1&&statsTenths("abc")==-1&&statsTenths("7x")==-1&&statsTenths("101")==-1&&statsTenths("-1")==-1&&statsTenths("nan")==-1);
+    assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("map")==LIVE_MAP_CHANGED&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
+    assert(statsMobs("LR")==(MOB_LEFT|MOB_RIGHT)&&statsMobs("R")==MOB_RIGHT&&statsMobs("")==0);
+    StatsReading r=parseStatsForm("hp=72.0&xp=63.2&x=41.5&y=70.0&state=dead&mobs=L");
+    assert(r.hp==720&&r.mana==-1&&r.xp==632&&r.x==415&&r.y==700&&r.state==LIVE_DEAD&&r.mobs==MOB_LEFT);
+    r=parseStatsForm("hp=&mana=40.0&state=ok&mobs=&junk=1&averyveryverylongkey=5&hp2=9");
+    assert(r.hp==-1&&r.mana==400&&r.state==LIVE_OK&&r.mobs==0&&r.x==-1);
+    r=parseStatsForm("");assert(r.hp==-1&&r.state==LIVE_OK);
+    r=parseStatsForm("hp=12345678901234567890&mana");assert(r.hp==-1&&r.mana==-1);   // oversized value, no '='
     std::cout<<"stats logic tests passed\n";
 }

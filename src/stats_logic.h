@@ -1,5 +1,7 @@
 #pragma once
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
 // Live HP/Mana/XP, read off the game screen by tools/screen_stats.py as bar
 // fill percentages (pure, host-tested). Kept in tenths of a percent (0-1000).
@@ -89,3 +91,59 @@ struct StuckWatch {
         return ++strikes >= 2 ? 2 : 1;
     }
 };
+
+// ---- readings from tools/screen_stats.py -----------------------------------
+// The same form ("hp=72.5&mana=40&xp=63.2&x=41.5&y=70&state=ok&mobs=L") comes
+// over Wi-Fi (POST /api/stats) or the USB cable ("KABUTO stats <form>").
+
+// "72.5" -> 725 tenths. Empty, not a number or outside 0-100 -> -1 (not read):
+// a blank must never look like an empty HP bar, which would trigger a potion.
+inline int statsTenths(const char* text) {
+    if (!text || !*text) return -1;
+    char* end;
+    double v = strtod(text, &end);
+    if (end == text || *end || !(v >= 0 && v <= 100)) return -1;
+    return (int)(v * 10 + 0.5);
+}
+inline uint8_t statsState(const char* text) {
+    if (!text) return LIVE_OK;
+    if (!strcmp(text, "dead")) return LIVE_DEAD;
+    if (!strcmp(text, "offline")) return LIVE_OFFLINE;
+    if (!strcmp(text, "map")) return LIVE_MAP_CHANGED;
+    return LIVE_OK;
+}
+inline uint8_t statsMobs(const char* text) {
+    return text ? (uint8_t)((strchr(text, 'L') ? MOB_LEFT : 0) | (strchr(text, 'R') ? MOB_RIGHT : 0)) : 0;
+}
+
+struct StatsReading {
+    int hp = -1, mana = -1, xp = -1, x = -1, y = -1;
+    uint8_t state = LIVE_OK, mobs = 0;
+};
+
+// Parses the form without allocating. Unknown keys are ignored; values the
+// script sends never need escaping (numbers, ok/dead/offline/map, L/R).
+inline StatsReading parseStatsForm(const char* form) {
+    StatsReading r;
+    while (form && *form) {
+        const char* amp = strchr(form, '&');
+        size_t len = amp ? (size_t)(amp - form) : strlen(form);
+        const char* eq = (const char*)memchr(form, '=', len);
+        if (eq) {
+            char key[8] = {}, value[16] = {};
+            size_t kl = (size_t)(eq - form), vl = len - kl - 1;
+            if (kl < sizeof(key) && vl < sizeof(value)) {
+                memcpy(key, form, kl); memcpy(value, eq + 1, vl);
+                if (!strcmp(key, "hp")) r.hp = statsTenths(value);
+                else if (!strcmp(key, "mana")) r.mana = statsTenths(value);
+                else if (!strcmp(key, "xp")) r.xp = statsTenths(value);
+                else if (!strcmp(key, "x")) r.x = statsTenths(value);
+                else if (!strcmp(key, "y")) r.y = statsTenths(value);
+                else if (!strcmp(key, "state")) r.state = statsState(value);
+                else if (!strcmp(key, "mobs")) r.mobs = statsMobs(value);
+            }
+        }
+        form = amp ? amp + 1 : nullptr;
+    }
+    return r;
+}

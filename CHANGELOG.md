@@ -15,6 +15,9 @@ and show up in the pad's **Updates** panel.
 - 🗺️ **Minimap position**: turn back at map edges and turn around (then stop)
   when stuck
 - 👾 **Mob detector**: turns to face mobs seen on one side only
+- 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
+  (no Wi-Fi or PIN), and each release includes `kabuto-screen.exe` for Windows,
+  which sets itself up on first run
 
 ## 1.15.0
 

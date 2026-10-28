@@ -35,6 +35,10 @@ pio run -t upload
 
 Hold **BOOT** for 3 s to forget paired devices.
 
+🎮 **Game laptop?** Plug the pad in by USB and run `kabuto-screen.exe` from the
+[latest release](https://github.com/pasujemito/kabuto-keyboard/releases/latest)
+for live HP, Mana, XP and screen awareness. No Python, Wi-Fi or PIN.
+
 ## 📚 More
 
 - 📖 [Guide](docs/GUIDE.md): wiring, recordings, patterns, backups, updates

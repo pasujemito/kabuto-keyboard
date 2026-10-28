@@ -9,8 +9,12 @@ whether you're dead, disconnected or on another map. Nothing else leaves
 your PC: no screenshots, no reading text. All the work happens here, so the
 pad only stores a few numbers.
 
-Setup (once, with the game open and every bar at least partly filled):
-    pip install mss pynput
+Easiest (Windows game laptop): plug the pad in with a USB data cable and run
+kabuto-screen.exe from the latest GitHub release. The first run walks you
+through setup; after that it just starts sending. No Python, Wi-Fi or PIN.
+
+From source (any OS):
+    pip install mss pynput pyserial
     python tools/screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
     # right end; the minimap's top-left and bottom-right corners, then your
@@ -19,8 +23,10 @@ Optional, while that screen is showing, for exact detection:
     python tools/screen_stats.py --mark death    # e.g. hover the respawn button
     python tools/screen_stats.py --mark login    # e.g. hover the login box
 
-Run (the pad on your home Wi-Fi with "Stay connected", or this PC joined to
-the Kabuto-Setup hotspot, where no PIN is needed):
+Run: it finds the pad on the USB cable by itself. Without a cable it uses
+Wi-Fi: the pad on your home Wi-Fi with "Stay connected" (PIN needed), or this
+PC joined to the Kabuto-Setup hotspot (no PIN, --host 192.168.4.1):
+    python tools/screen_stats.py                            # USB, else kabuto.local
     python tools/screen_stats.py --pin 123456               # http://kabuto.local
     python tools/screen_stats.py --host 192.168.1.42 --pin 123456
     python tools/screen_stats.py --dry-run                  # just print readings
@@ -33,7 +39,12 @@ Run the self-test (no screen or pad needed):
 import argparse, http.cookiejar, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
 BARS = (("hp", "HP"), ("mana", "Mana"), ("xp", "XP"))
-CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
+CONFIG = "kabuto-bars.json"   # in the current folder (gitignored), or next to the .exe
+
+def default_config():
+    if getattr(sys, "frozen", False):   # kabuto-screen.exe keeps its setup beside itself
+        return os.path.join(os.path.dirname(sys.executable), CONFIG)
+    return CONFIG
 
 # ---- pure screen maths (raw = RGB bytes, row by row) ------------------------
 
@@ -280,6 +291,77 @@ class Pad:
                 raise SystemExit("Login failed: %s" % json.loads(login.read() or b"{}").get("error", login.code))
             self._post("/api/stats", fields)
 
+ESPRESSIF_VID = 0x303A   # the ESP32-S3's own USB port
+
+class UsbPad:
+    """Sends readings down the USB cable ("KABUTO stats <form>" lines), so a
+    game laptop needs no Wi-Fi or PIN: plugging the pad in is the permission."""
+    def __init__(self, port, version=None):
+        self.port, self.version = port, version
+
+    @staticmethod
+    def open(device):
+        import serial
+        port = serial.Serial()
+        port.port, port.baudrate, port.timeout, port.write_timeout = device, 115200, 0.5, 2
+        port.dtr = port.rts = False   # leave the reset lines alone so the pad doesn't restart
+        port.open()
+        return port
+
+    def hello(self, wait=3.0):
+        """The pad's firmware version, or None if this port isn't a Kabuto."""
+        self.port.write(b"KABUTO hello\n")
+        end = time.time() + wait
+        while time.time() < end:
+            line = self.port.readline().decode("ascii", "replace").strip()
+            if line.startswith("KABUTO ") and line != "KABUTO ok":
+                self.version = line[7:]
+                return self.version
+        return None
+
+    def send(self, readings):
+        self.port.write(("KABUTO stats " + urllib.parse.urlencode(form_fields(readings)) + "\n").encode())
+        waiting = getattr(self.port, "in_waiting", 0)
+        if waiting:
+            self.port.read(waiting)   # replies and the pad's log; just keep the buffer empty
+
+    @property
+    def where(self):
+        return "USB " + getattr(self.port, "port", "")
+
+def find_usb_pad(ports=None, opener=None):
+    """The first Espressif USB device that answers like a Kabuto, or None."""
+    if ports is None:
+        try:
+            from serial.tools import list_ports
+        except ImportError:
+            return None
+        ports = list_ports.comports()
+    for info in ports:
+        if getattr(info, "vid", None) != ESPRESSIF_VID:
+            continue
+        try:
+            port = (opener or UsbPad.open)(info.device)
+        except Exception:
+            continue
+        pad = UsbPad(port)
+        if pad.hello():
+            return pad
+        port.close()
+    return None
+
+def connect(args):
+    """USB if a Kabuto is plugged in (unless --via wifi), otherwise Wi-Fi."""
+    if args.via in ("auto", "usb"):
+        pad = find_usb_pad()
+        if pad:
+            return pad
+        if args.via == "usb":
+            raise OSError("no Kabuto on USB (plug it in with a data cable)")
+    pad = Pad(args.host, args.pin)
+    pad.where = "Wi-Fi " + args.host
+    return pad
+
 def describe(r):
     parts = ["%s %5.1f%%" % (label, r[name]) for name, label in BARS if r.get(name) is not None]
     if r.get("x") is not None:
@@ -292,22 +374,27 @@ def describe(r):
 
 def run(args):
     import mss
-    config = load_config(args.config)
+    config = load_config(args.config, required=False)
     if not (config.get("bars") or config.get("minimap") or config.get("mobs")):
-        raise SystemExit("Nothing set up - run with --setup")
-    pad = None if args.dry_run else Pad(args.host, args.pin)
-    screen = Screen(mss.mss(), config)
+        print("First run: let's mark your bars, minimap and mobs (hover, then F8).")
+        setup(args.config)
+        config = load_config(args.config)
+    screen, pad = Screen(mss.mss(), config), None
     while True:
         readings = screen.read()
         line = describe(readings)
         try:
+            if not args.dry_run and pad is None:
+                pad = connect(args)
+                print("\nSending to Kabuto over %s" % pad.where)
             if pad:
                 pad.send(readings)
             print("\r" + line.ljust(70) + ("" if pad else "(dry run)"), end="", flush=True)
             time.sleep(args.interval)
-        except (urllib.error.URLError, OSError) as e:
-            print("\r%s  can't reach %s (%s), retrying..." % (line, args.host, getattr(e, "reason", e)), end="", flush=True)
-            time.sleep(5)
+        except (urllib.error.URLError, OSError) as e:   # serial errors are OSErrors too
+            print("\r%s  can't reach Kabuto (%s), retrying..." % (line, getattr(e, "reason", e)), end="", flush=True)
+            pad = None   # unplugged or out of range: look again
+            time.sleep(3)
 
 # ---- self-test ---------------------------------------------------------------------
 
@@ -407,6 +494,27 @@ def selftest():
     states = [screen.read()["state"] for _ in range(3)]
     assert states == ["ok", "ok", "map"], states
 
+    # USB: finds the Espressif port that answers, sends one line per reading.
+    class FakeSerial:
+        def __init__(self, replies): self.replies, self.sent, self.closed, self.port = list(replies), [], False, "COM9"
+        def write(self, data): self.sent.append(data)
+        def readline(self): return self.replies.pop(0) if self.replies else b""
+        @property
+        def in_waiting(self): return len(b"".join(self.replies))
+        def read(self, n): self.replies.clear(); return b""
+        def close(self): self.closed = True
+    class Port:
+        def __init__(self, device, vid): self.device, self.vid = device, vid
+    silent, kabuto = FakeSerial([]), FakeSerial([b"[ok] ready\r\n", b"KABUTO 1.16.0\r\n"])
+    opened = {"COM3": silent, "COM9": kabuto}
+    pad = find_usb_pad([Port("COM1", 0x1234), Port("COM3", ESPRESSIF_VID), Port("COM9", ESPRESSIF_VID)],
+                       opener=lambda d: opened[d])
+    assert pad and pad.version == "1.16.0" and pad.where == "USB COM9" and silent.closed, pad
+    kabuto.replies = [b"KABUTO ok\n"]
+    pad.send({"hp": 0.0, "x": 41.5, "y": 70.0, "mobs": "L", "state": "dead"})
+    assert kabuto.sent[-1] == b"KABUTO stats hp=0.0&x=41.5&y=70.0&state=dead&mobs=L\n", kabuto.sent
+    assert find_usb_pad([Port("COM1", 0x1234)], opener=lambda d: 1 / 0) is None   # no Espressif port: not opened
+
     # Login on 401, then the readings go through.
     import threading
     from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -444,10 +552,12 @@ def main():
     ap = argparse.ArgumentParser(description="Send what your game screen shows to Kabuto.")
     ap.add_argument("--setup", action="store_true", help="mark the bars, minimap and mobs")
     ap.add_argument("--mark", choices=["death", "login"], help="capture a spot only that screen has")
-    ap.add_argument("--host", default="kabuto.local", help="the pad's address (default kabuto.local)")
+    ap.add_argument("--via", choices=["auto", "usb", "wifi"], default="auto",
+                    help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
+    ap.add_argument("--host", default="kabuto.local", help="the pad's Wi-Fi address (default kabuto.local)")
     ap.add_argument("--pin", default=os.environ.get("KABUTO_PIN"), help="access PIN (or set KABUTO_PIN)")
     ap.add_argument("--interval", type=float, default=1.0, help="seconds between readings (default 1)")
-    ap.add_argument("--config", default=CONFIG, help="setup file (default %s)" % CONFIG)
+    ap.add_argument("--config", default=default_config(), help="setup file (default %s)" % CONFIG)
     ap.add_argument("--dry-run", action="store_true", help="print readings without sending")
     ap.add_argument("--selftest", action="store_true", help="run built-in tests and exit")
     a = ap.parse_args()
@@ -464,4 +574,10 @@ def main():
             print()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit as e:
+        if e.code not in (None, 0) and getattr(sys, "frozen", False):
+            print(e.code if isinstance(e.code, str) else "")
+            input("Press Enter to close")   # double-clicked .exe: keep the message on screen
+        raise

@@ -26,7 +26,7 @@ python3 tools/recorder.py --selftest
 python3 tools/flash_backup.py --selftest   # LittleFS part needs littlefs-python
 python3 tools/release_index.py --selftest  # needs the openssl CLI
 python3 tools/next_version.py --selftest
-python3 tools/screen_stats.py --selftest     # bar reading + PIN login, no screen needed
+python3 tools/screen_stats.py --selftest     # screen maths, USB + Wi-Fi sending; no screen, pad or pyserial needed
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It

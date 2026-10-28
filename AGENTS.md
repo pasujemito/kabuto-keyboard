@@ -76,6 +76,10 @@ release workflow runs all C++ and Python tests.
   `update_public_key.pem` belongs in the repo.
 - Screen reading stays on the PC (`tools/screen_stats.py`); the pad only gets
   a few numbers per reading. Keep it that way: the pad has little RAM.
+  Readings arrive as the same form over Wi-Fi (`POST /api/stats`) or USB serial
+  (`KABUTO hello` / `KABUTO stats <form>` lines, `usbStatsPoll` in `main.cpp`),
+  parsed by `parseStatsForm` (`stats_logic.h`). The release workflow also
+  builds `kabuto-screen.exe` from the script with PyInstaller.
 - Keep the README light. Details go in `docs/GUIDE.md`, changes in
   `CHANGELOG.md`.
 

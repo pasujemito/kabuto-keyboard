@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "web_server.h"
 #include "updater.h"
+#include "live_stats.h"
 
 // ---------------------------------------------------------------------------
 // Matrix scanning with per-key debounce.
@@ -126,6 +127,34 @@ static void configButtonPoll() {
 #endif
 }
 
+// USB link for tools/screen_stats.py, so a game laptop needs no Wi-Fi or PIN:
+// "KABUTO hello" -> "KABUTO <version>", "KABUTO stats <form>" -> "KABUTO ok".
+// Other lines (and the firmware's own log output) are ignored.
+static void usbStatsPoll() {
+    static char line[192];
+    static size_t len = 0;
+    static bool overflow = false;
+    while (Serial.available()) {
+        char c = (char)Serial.read();
+        if (c == '\r') continue;
+        if (c != '\n') {
+            if (len < sizeof(line) - 1) line[len++] = c; else overflow = true;
+            continue;
+        }
+        line[len] = 0;
+        bool usable = !overflow;   // a cut-off line could carry a cut-off number
+        len = 0; overflow = false;
+        if (!usable) continue;
+        if (!strcmp(line, "KABUTO hello")) {
+            Serial.printf("KABUTO %s\n", FIRMWARE_VERSION);
+        } else if (!strncmp(line, "KABUTO stats ", 13)) {
+            StatsReading r = parseStatsForm(line + 13);
+            if (liveStatsUpdate(r.hp, r.mana, r.xp, r.state, r.x, r.y, r.mobs)) Macros.post(EngineCmd::STOP);
+            Serial.print("KABUTO ok\n");
+        }
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(300);
@@ -162,6 +191,7 @@ void loop() {
     Macros.processCommands();   // apply queued web actions on this (engine) task
     matrixScan();
     configButtonPoll();
+    usbStatsPoll();
     statusLedUpdate();
     delay(1000 / MATRIX_SCAN_HZ);
 }

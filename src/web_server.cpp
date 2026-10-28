@@ -279,17 +279,10 @@ void webServerBegin() {
     // read), state (ok/dead/offline/map) and mobs (L, R, LR or empty). A state
     // turning bad stops playback at once.
     api("/api/stats", HTTP_POST, [](AsyncWebServerRequest* req) {
-        auto tenths = [&](const char* name) {
-            String text = req->hasParam(name, true) ? req->getParam(name, true)->value() : String();
-            if (!text.length()) return -1;   // empty must not read as 0% (it would trigger a potion)
-            float v = text.toFloat();
-            return v >= 0 && v <= 100 ? (int)(v * 10 + 0.5f) : -1;
-        };
-        String state = req->hasParam("state", true) ? req->getParam("state", true)->value() : String("ok");
-        String mobs = req->hasParam("mobs", true) ? req->getParam("mobs", true)->value() : String();
-        uint8_t code = state == "dead" ? LIVE_DEAD : state == "offline" ? LIVE_OFFLINE : state == "map" ? LIVE_MAP_CHANGED : LIVE_OK;
-        uint8_t sides = (mobs.indexOf('L') >= 0 ? MOB_LEFT : 0) | (mobs.indexOf('R') >= 0 ? MOB_RIGHT : 0);
-        if (liveStatsUpdate(tenths("hp"), tenths("mana"), tenths("xp"), code, tenths("x"), tenths("y"), sides))
+        auto field = [&](const char* name) { return req->hasParam(name, true) ? req->getParam(name, true)->value() : String(); };
+        if (liveStatsUpdate(statsTenths(field("hp").c_str()), statsTenths(field("mana").c_str()), statsTenths(field("xp").c_str()),
+                            statsState(field("state").c_str()), statsTenths(field("x").c_str()), statsTenths(field("y").c_str()),
+                            statsMobs(field("mobs").c_str())))
             Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
         sendJson(req, 200, "{\"ok\":true}");
     });

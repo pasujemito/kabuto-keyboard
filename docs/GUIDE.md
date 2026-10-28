@@ -157,10 +157,28 @@ the minimap, which side mobs are on, and whether you're dead, disconnected or
 on another map. No screenshots leave your PC and there's no text reading. All
 the work happens on the PC; the pad only keeps a few numbers (about 20 bytes).
 
+**Plug and play (Windows game laptop):**
+
+1. Pair the pad with the laptop over Bluetooth as usual (that's how keys get in).
+2. Plug the pad into the laptop with a USB **data** cable (it powers the pad
+   and carries the readings).
+3. Download `kabuto-screen.exe` from the latest release
+   (`https://github.com/pasujemito/kabuto-keyboard/releases/latest/download/kabuto-screen.exe`)
+   and double-click it. Windows may warn about an unknown app the first time:
+   **More info → Run anyway**.
+4. The first run walks you through setup (below) and saves it beside the exe;
+   after that it just finds the pad on the USB cable and starts sending.
+
+Over USB there's no Wi-Fi, `kabuto.local` or PIN involved: having the pad
+plugged in is the permission. Without a cable, it uses Wi-Fi instead.
+
+**From source (any OS):**
+
 ```bash
-pip install mss pynput
-python tools/screen_stats.py --setup        # hover things, press F8
-python tools/screen_stats.py --pin 123456   # or set KABUTO_PIN
+pip install mss pynput pyserial
+python tools/screen_stats.py                # USB if plugged in, else kabuto.local
+python tools/screen_stats.py --pin 123456   # Wi-Fi with the PIN (or set KABUTO_PIN)
+python tools/screen_stats.py --setup        # redo setup
 ```
 
 Setup marks things by hovering and pressing **F8** (**Esc** skips):
@@ -180,9 +198,9 @@ raise its `tolerance` there, or check Windows display scaling. `--dry-run`
 prints readings without sending. **Restart the script after moving to a new
 map**: it learns the minimap when it starts.
 
-The PC reaches the pad at `kabuto.local` while it stays on your home Wi-Fi
-(PIN needed), or join the PC to the Kabuto-Setup hotspot (no PIN; use
-`--host 192.168.4.1`).
+Without a USB cable, the PC reaches the pad at `kabuto.local` while it stays on
+your home Wi-Fi (PIN needed), or join the PC to the Kabuto-Setup hotspot (no
+PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
 
 **On the pad:**
 

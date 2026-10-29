@@ -454,7 +454,7 @@
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details><summary>Screen awareness</summary>
     <div class="dynamic-main" id="dynamicAware"></div>
-    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs on one side only, then the turn chance. When stuck, it turns around once, then stops. Death and disconnects always stop playback.</p>
+    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs (the nearer side when both have some), then the turn chance. When stuck, it turns around once, then stops. Death and disconnects always stop playback.</p>
   </details>
   <details open><summary>HP &amp; Mana</summary>
     <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %, even mid-set. With its bar total and per tap set, it taps just enough to refill without waste (up to 10); otherwise it uses its taps. Without readings, or at 0%, it fires on its timer between sets, before skills.</p>

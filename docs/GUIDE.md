@@ -151,7 +151,7 @@ the address shown in the panel) from any device on that Wi-Fi:
 ### Live stats and screen awareness
 
 The pad can't see your screen, so a small script on the game PC does the
-looking. About once a second, `tools/screen_stats.py` samples a few small areas
+looking. Twice a second, `tools/screen_stats.py` samples a few small areas
 and sends a handful of numbers: HP, Mana and XP (bar fill %), your position on
 the minimap, which side mobs are on, and whether you're dead or disconnected.
 No screenshots leave your PC and there's no text reading. All
@@ -190,22 +190,29 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    reads short, raise its `fade` (default 30) in `kabuto-bars.json`.
 2. **Minimap:** its top-left corner, its bottom-right corner, then your own dot
    on it (it learns your dot's colour).
-3. **Mobs:** your character on screen, then up to 3 mobs of different kinds (it
-   learns their colours). **Esc** when done. With mob sprites (below), you
-   only mark your character.
+3. **Mobs:** your **hitbox** first: your character's head, then its feet,
+   then how far your attack reaches to one side. Mobs are looked for in that
+   box either side of you (e.g. 120 px tall, 400 px each way), skipping your
+   own character in the middle. Then up to 3 mobs of different kinds (it learns
+   their colours); **Esc** when done. With mob sprites (below), you only mark
+   the hitbox.
 
 **Mob sprites** pick far better colours than one hovered pixel. Put PNGs of the
 mobs you fight, with **transparent backgrounds** (a frame or two each, any
 size), in a `mobs` folder next to the script and `pip install pillow`. Setup
-then asks you to stand somewhere with no mobs near and mark your character.
-It takes each sprite's main colours (up to 5), leaves out the black outline,
-white and greys every sprite has, and drops any colour that shows up at all
-around you on the map. It prints what it kept, for example:
+asks for your hitbox, then watches the map for 4 s (mobs walking about are
+fine: it goes by the quietest moment). It takes each sprite's main colours (up
+to 5), leaves out the black outline, white and greys every sprite has, and
+keeps colours that are much commoner on the mob than on the map. Detection
+then looks for a **clump** of mob colour about the size of your smallest mob,
+so stray matching pixels spread over the scenery don't count; the map's
+busiest patch sets how big a clump must be. It prints what it kept:
 
 ```
-  boar.png: skipped [102, 51, 34] (32% of it, but 14.5% of the background)
-  boar.png: [255, 255, 17] (8% of it)
-  stump.png: no colour of its own - it looks too much like the background to spot
+  boar.png: skipped [102, 51, 34] (32% of it, but the map has it too: 14.5%, up to 100 hits in one patch)
+  boar.png: [255, 255, 17] (8% of it, 0.3% of the map)
+  stump.png: no colour of its own - it looks too much like the map to spot
+  A mob needs 11 hits in a 28 px patch (the map's busiest patch had 4)
 ```
 
 A mob that's the same colours as the map (a brown stump on brown dirt) can't
@@ -266,15 +273,18 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   - **Turn at map edges (%)**, 12% by default: within that distance of the
     minimap's left or right edge, it turns back, even mid-set. On a sliding
     minimap your dot only gets there at the map's real edges.
-  - **Face mobs**: when mobs show on one side only, it turns to face them.
-    Edges come first, then mobs, then the pattern's turn chance.
+  - **Face mobs**: turns to face mobs in your hitbox; with mobs on both
+    sides, the nearer one. Edges come first, then mobs, then the pattern's
+    turn chance. It checks before every attack, so a mob that spawns behind
+    you is faced within about a second (readings every 0.5 s; `--interval
+    0.25` for faster).
   - **Stuck after (s)**, 20 s by default: if your place on the map doesn't
     change for that long, it turns around; still stuck after another wait, it
     stops. It goes by the map position (slide plus dot), so a dot that stays
     centred while the minimap slides isn't "stuck".
-- The mob detector is colour-based: it looks for the mob colours left and
-  right of where your character was marked (checking finely enough for the
-  smallest sprite). It suits maps with one or two
+- The mob detector is colour-based: it looks for clumps of mob colour in
+  your hitbox either side of where your character was marked (checking
+  finely enough for the smallest sprite). It suits maps with one or two
   mob types; bright skill effects in the same colours can fool it, and when
   the camera stops following you at a map edge, your character isn't where it
   was marked.

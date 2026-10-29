@@ -6,7 +6,7 @@ and show up in the pad's **Updates** panel.
 ## 1.16.0
 
 - 📊 **Live HP, Mana and XP from your screen**: `tools/screen_stats.py` reads
-  the bars on your PC (one pixel row each, about once a second, gradient bars
+  the bars on your PC (one pixel row each, twice a second, gradient bars
   included) and the pad shows them with XP per hour/minute and time to level
 - 🩸 Potions can **drink below a %** of their live bar (HP 50%, Mana 30%), even
   mid-set, falling back to their timers when there's no reading
@@ -17,9 +17,11 @@ and show up in the pad's **Updates** panel.
 - 🗺️ **Minimap position**: turn back at map edges and turn around (then stop)
   when stuck. **Sliding minimaps** work: the script follows the slide, so a
   dot that stays centred while you walk isn't stuck
-- 👾 **Mob detector**: turns to face mobs seen on one side only. Give it mob
-  **sprites** (PNGs in a `mobs` folder) and it learns their colours, leaving
-  out outlines and anything the map itself has
+- 👾 **Mob detector**: turns to face mobs in your **hitbox** (your height,
+  your attack's reach each side), the nearer side when both have mobs. Give
+  it mob **sprites** (PNGs in a `mobs` folder) and it learns their colours,
+  leaving out outlines and what the map itself has, and looks for clumps so
+  stray pixels don't count
 - 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
   (no Wi-Fi or PIN) and sets itself up on first run
 

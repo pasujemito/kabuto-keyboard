@@ -65,12 +65,14 @@ inline const char* liveStopReason(uint8_t state) {
     }
 }
 
-// Mob sides from the screen reader: bit 0 = left of you, bit 1 = right.
-const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2;
+// Mob sides from the screen reader: bit 0 = left of you, bit 1 = right,
+// bit 2 = with both, the right one is nearer (sent as "RL"; "LR" = left nearer).
+const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4;
 
 // Which way to face from live data: -1 left, +1 right, 0 no opinion (the
 // pattern's own turn chance decides). Keeping off a map edge comes first;
-// then facing mobs that are on one side only. x is the minimap position in
+// then facing the mob: the only side with mobs, or the nearer one when both
+// sides have some. x is the minimap position in
 // tenths of a percent (-1: not read).
 inline int liveFacing(bool fresh, int x, uint16_t edgeMarginTenths, bool faceMobs, uint8_t mobSides) {
     if (!fresh) return 0;
@@ -78,9 +80,10 @@ inline int liveFacing(bool fresh, int x, uint16_t edgeMarginTenths, bool faceMob
         if (x < edgeMarginTenths) return +1;
         if (x > 1000 - edgeMarginTenths) return -1;
     }
-    if (faceMobs && mobSides == MOB_LEFT) return -1;
-    if (faceMobs && mobSides == MOB_RIGHT) return +1;
-    return 0;
+    if (!faceMobs) return 0;
+    bool left = mobSides & MOB_LEFT, right = mobSides & MOB_RIGHT;
+    if (left && right) return mobSides & MOB_RIGHT_NEARER ? +1 : -1;
+    return left ? -1 : right ? +1 : 0;
 }
 
 // Map position (wx/wy): where you are on the whole map, in tenths of a
@@ -136,7 +139,9 @@ inline uint8_t statsState(const char* text) {
     return LIVE_OK;
 }
 inline uint8_t statsMobs(const char* text) {
-    return text ? (uint8_t)((strchr(text, 'L') ? MOB_LEFT : 0) | (strchr(text, 'R') ? MOB_RIGHT : 0)) : 0;
+    if (!text) return 0;
+    uint8_t sides = (strchr(text, 'L') ? MOB_LEFT : 0) | (strchr(text, 'R') ? MOB_RIGHT : 0);
+    return sides == (MOB_LEFT | MOB_RIGHT) && text[0] == 'R' ? sides | MOB_RIGHT_NEARER : sides;
 }
 
 struct StatsReading {

@@ -12,7 +12,7 @@ struct LiveStats {
     uint8_t state = LIVE_OK;     // LiveState: dead/offline stop playback
     int x = -1, y = -1;          // your dot on the minimap
     int wx = LIVE_NO_POS, wy = LIVE_NO_POS;   // your place on the whole map (stats_logic.h)
-    uint8_t mobs = 0;            // MOB_LEFT | MOB_RIGHT
+    uint8_t mobs = 0;            // MOB_LEFT | MOB_RIGHT | MOB_RIGHT_NEARER
     uint32_t ageMs = 0;          // since the last reading
     bool fresh = false;          // a reading within LIVE_STATS_STALE_MS
     int32_t xpPerHour = -1;      // tenths of a percent of a level per hour

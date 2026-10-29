@@ -2,7 +2,7 @@
 """
 screen_stats.py - read your game screen and send what matters to Kabuto.
 
-Runs on the PC with the game. About once a second it samples a few small
+Runs on the PC with the game. Twice a second it samples a few small
 areas of the screen and sends a handful of numbers to the pad: HP, Mana and
 XP (bar fill %), your position on the minimap, which side mobs are on, and
 whether you're dead or disconnected. Nothing else leaves
@@ -17,7 +17,8 @@ cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
     python screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
     # right end; the minimap's top-left and bottom-right corners, then your
-    # dot on it; your character, then up to 3 mobs (Esc when done).
+    # dot on it; your character's head, feet and attack reach (the hitbox
+    # mobs are looked for in), then up to 3 mobs (Esc when done).
 Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
 mob) in a "mobs" folder here; setup learns their colours instead of asking
 you to mark mobs (needs pip install pillow). After adding sprites:
@@ -169,21 +170,80 @@ class MinimapTracker:
         x, y = dot
         return (round(self.ox * 1000.0 / max(w - 1, 1) + x * 10), round(self.oy * 1000.0 / max(h - 1, 1) + y * 10))
 
-def mob_sides(raw, w, h, colors, tolerance=40, gap=40, mid=None, step_x=6, step_y=8, min_hits=3):
-    """Which sides of you have mob-coloured pixels: 'L', 'R', 'LR' or ''.
-    `mid` is your character's x in the area (default: its centre); `gap` px
-    either side of it are skipped so your own character doesn't count."""
-    t2, left, right = tolerance ** 2, 0, 0
-    mid = w // 2 if mid is None else mid
-    for y in range(0, h, step_y):
-        for x in range(0, w, step_x):
+_tables = {}
+
+def color_table(colors, tolerance=40):
+    """For every colour at 5 bits per channel, a bitmask of which `colors` it's
+    within `tolerance` of: checking a pixel is then one lookup, however many
+    mob colours there are. Built once per colour set."""
+    key = (tuple(map(tuple, colors)), tolerance)
+    if key not in _tables:
+        t2, table = tolerance ** 2, [0] * 32768
+        for bit, (r, g, b) in enumerate(colors):
+            span = lambda v: range(max(0, (v - tolerance) >> 3), min(31, (v + tolerance) >> 3) + 1)
+            for r5 in span(r):
+                for g5 in span(g):
+                    for b5 in span(b):
+                        if (r5 * 8 + 4 - r) ** 2 + (g5 * 8 + 4 - g) ** 2 + (b5 * 8 + 4 - b) ** 2 <= t2:
+                            table[r5 << 10 | g5 << 5 | b5] |= 1 << bit
+        _tables[key] = table
+    return _tables[key]
+
+def mob_samples(raw, w, h, table, gap, mid, step, cell):
+    """The checks that hit a mob colour: [((right side?, cell x, cell y), colour bits, x), ...]."""
+    out = []
+    for y in range(0, h, step):
+        row = y * w
+        for x in range(0, w, step):
             if abs(x - mid) <= gap:
                 continue
-            i = (y * w + x) * 3
-            if any(near(raw, i, c, t2) for c in colors):
-                if x < mid: left += 1
-                else: right += 1
-    return ("L" if left >= min_hits else "") + ("R" if right >= min_hits else "")
+            i = (row + x) * 3
+            bits = table[raw[i] >> 3 << 10 | raw[i + 1] >> 3 << 5 | raw[i + 2] >> 3]
+            if bits:
+                out.append(((x >= mid, x // cell, y // cell), bits, x))
+    return out
+
+def patches(samples, mask=-1):
+    """Hits per patch (2 x 2 cells, about a mob's size), from samples whose
+    colour bits are in `mask`: {(side, cell x, cell y): (hits, nearest x)}."""
+    cells = {}
+    for key, bits, x in samples:
+        if bits & mask:
+            n, xs = cells.get(key, (0, []))
+            cells[key] = (n + 1, xs + [x])
+    out = {}
+    for side, cx, cy in cells:
+        parts = [cells[k] for k in ((side, cx + dx, cy + dy) for dx in (0, 1) for dy in (0, 1)) if k in cells]
+        out[(side, cx, cy)] = (sum(n for n, _ in parts), [x for _, xs in parts for x in xs])
+    return out
+
+def mob_sides(raw, w, h, colors, tolerance=40, gap=40, mid=None, step_x=6, step_y=8, min_hits=3, cell=None):
+    """Which sides of you have mobs: 'L', 'R', both nearest first ('LR': the
+    left one is nearer, 'RL': the right one), or ''. `mid` is your
+    character's x in the area (default: its centre); `gap` px either side of
+    it are skipped so your own character doesn't count. With `cell`, hits are
+    counted in patches about a mob's size, so it takes a clump of mob colour,
+    not stray pixels spread over the scenery; without it (older setups), all
+    of a side's hits count together, checked every step_x by step_y px."""
+    mid = w // 2 if mid is None else mid
+    table = color_table(colors, tolerance)
+    if cell:
+        found = {}
+        for (side, _, _), (n, xs) in patches(mob_samples(raw, w, h, table, gap, mid, step_x, cell)).items():
+            if n >= min_hits:
+                d = min(abs(x - mid) for x in xs)
+                found[side] = min(found.get(side, d), d)
+    else:
+        hits, found = {}, {}
+        for y in range(0, h, step_y):
+            for x in range(0, w, step_x):
+                i = (y * w + x) * 3
+                if abs(x - mid) > gap and table[raw[i] >> 3 << 10 | raw[i + 1] >> 3 << 5 | raw[i + 2] >> 3]:
+                    side = x >= mid
+                    hits[side] = hits.get(side, 0) + 1
+                    found[side] = min(found.get(side, w), abs(x - mid))
+        found = {side: d for side, d in found.items() if hits[side] >= min_hits}
+    return "".join("R" if side else "L" for side in sorted(found, key=lambda s: (found[s], s)))
 
 def plain(color):
     """Outline black, highlight white and greys: every sprite and map has them,
@@ -209,37 +269,61 @@ def sprite_palette(pixels, max_colors=5, min_share=0.03, bucket=24):
             out.append((rgb, share))
     return out
 
-def color_share(raw, w, h, color, tolerance=40, step=3):
-    """How much of an area (every `step`th pixel) is near a colour, 0-1."""
-    t2, hits, n = tolerance ** 2, 0, 0
-    for y in range(0, h, step):
-        for x in range(0, w, step):
-            n += 1
-            hits += near(raw, (y * w + x) * 3, color, t2)
-    return hits / max(n, 1)
-
-def learn_mob_colors(sprites, background, w, h, tolerance=40, margin=12):
-    """Mob colours from sprites ({name: (width, height, rgba pixels)}),
-    dropping any seen at all in `background` (the area around you with no
-    mobs in it), checked as finely as detection will and with `margin` more
-    tolerance, so a near miss on the map can't add up to a false mob.
-    Returns (colours, step, report lines). The step is how finely to check:
-    the smallest sprite still gets plenty of checks."""
-    colors, report = [], []
-    step = max(2, min(6, min([min(sw, sh) for sw, sh, _ in sprites.values()] or [48]) // 8))
+def learn_mob_colors(sprites, backgrounds, w, h, tolerance=40, gap=40, mid=None):
+    """Mob colours from sprites ({name: (width, height, rgba pixels)}) and a
+    few shots of the area around you (`backgrounds`, taken a moment apart, so
+    a mob walking through one shot doesn't count: each check takes the
+    quietest shot). A colour must be at least 4x commoner on its mob than on
+    the map. Then the map's busiest patch decides how many hits a patch needs
+    to be a mob (twice that, and at least 3 more); while that's too many for
+    the smallest mob to reach, the colour the map shows most is dropped.
+    Returns (settings, report): colours, step, patch cell size, min hits."""
+    smallest = min([min(sw, sh) for sw, sh, _ in sprites.values()] or [48])
+    step, cell = max(2, min(6, smallest // 8)), max(8, smallest // 2)
+    mid = w // 2 if mid is None else mid
+    report, colors, owners = [], [], {}
     for name, (sw, sh, pixels) in sorted(sprites.items()):
-        kept = []
         for rgb, share in sprite_palette(pixels):
-            seen = color_share(background, w, h, rgb, tolerance + margin, step)
-            if seen > 0:
-                report.append("  %s: skipped %s (%d%% of it, but %.1f%% of the background)" % (name, rgb, share * 100, seen * 100))
+            if rgb not in colors:
+                colors.append(rgb)
+            owners.setdefault(name, []).append((colors.index(rgb), share))
+    table = color_table(colors, tolerance)
+    shots = [mob_samples(bg, w, h, table, gap, mid, step, cell) for bg in backgrounds]
+    total = max(1, len(range(0, h, step)) * len(range(0, w, step)))
+    share_on_map = [min([sum(1 for _, bits, _ in ss if bits >> i & 1) / total for ss in shots] or [0]) for i in range(len(colors))]
+    kept = 0
+    for name, owned in owners.items():
+        for i, share in owned:
+            if share_on_map[i] <= share / 4:
+                kept |= 1 << i
+    # Checks landing on each sprite, as colour bits, and how many fit in one patch.
+    fit = {name: min(1.0, (2 * cell) ** 2 / float(sw * sh)) for name, (sw, sh, _) in sprites.items()}
+    on_sprite = {name: [table[p[0] >> 3 << 10 | p[1] >> 3 << 5 | p[2] >> 3] for y in range(0, sh, step) for x in range(0, sw, step)
+                        for p in (pixels[y * sw + x],) if p[3] >= 200] for name, (sw, sh, pixels) in sprites.items()}
+    peak = lambda mask: min([max([n for n, _ in patches(ss, mask).values()] or [0]) for ss in shots] or [0])
+    while True:
+        expected = {name: sum(1 for bits in on_sprite[name] if bits & kept & sum(1 << i for i, _ in owners[name])) * fit[name]
+                    for name in owners}
+        live = [e for e in expected.values() if e > 0]
+        need = peak(kept) * 2 + 3
+        if not live or need <= 0.6 * min(live):
+            break
+        worst = max((i for i in range(len(colors)) if kept >> i & 1), key=lambda i: peak(1 << i))
+        kept &= ~(1 << worst)
+    for name, owned in sorted(owners.items()):
+        mine = [(colors[i], share) for i, share in owned if kept >> i & 1]
+        for i, share in owned:
+            if kept >> i & 1:
+                report.append("  %s: %s (%d%% of it, %.1f%% of the map)" % (name, colors[i], share * 100, share_on_map[i] * 100))
             else:
-                kept.append(rgb)
-                report.append("  %s: %s (%d%% of it)" % (name, rgb, share * 100))
-        if not kept:
-            report.append("  %s: no colour of its own - it looks too much like the background to spot" % name)
-        colors += [c for c in kept if c not in colors]
-    return colors, step, report
+                report.append("  %s: skipped %s (%d%% of it, but the map has it too: %.1f%%, up to %d hits in one patch)"
+                              % (name, colors[i], share * 100, share_on_map[i] * 100, peak(1 << i)))
+        if not mine:
+            report.append("  %s: no colour of its own - it looks too much like the map to spot" % name)
+    chosen = [c for i, c in enumerate(colors) if kept >> i & 1]
+    if chosen:
+        report.append("  A mob needs %d hits in a %d px patch (the map's busiest patch had %d)" % (need, 2 * cell, peak(kept)))
+    return {"colors": chosen, "step": step, "cell": cell, "min_hits": need}, report
 
 SPRITE_TYPES = (".png", ".gif", ".webp", ".bmp")
 
@@ -342,15 +426,11 @@ class Screen:
                 world = self.minimap.world(dot, w, h)
         mobs, mb = "", c.get("mobs")
         if mb and mb.get("colors"):
-            # The area either side of your character, clipped to the screen.
-            reach, band, screen = mb.get("reach", 350), mb.get("band", 80), self.sct.monitors[0]
-            left, top = max(screen["left"], mb["x"] - reach), max(screen["top"], mb["y"] - band)
-            right = min(screen["left"] + screen["width"], mb["x"] + reach)
-            bottom = min(screen["top"] + screen["height"], mb["y"] + band)
-            w, h = right - left, bottom - top
+            left, top, w, h = mob_area(mb, self.sct.monitors[0])
             raw = grab(self.sct, left, top, w, h)
             mobs = mob_sides(raw, w, h, mb["colors"], mb.get("tolerance", 40), mb.get("gap", 40), mid=mb["x"] - left,
-                             step_x=mb.get("step_x", 6), step_y=mb.get("step_y", 8))
+                             step_x=mb.get("step_x", 6), step_y=mb.get("step_y", 8),
+                             min_hits=mb.get("min_hits", 3), cell=mb.get("cell"))
         watches = {}
         for name, mark in c.get("watch", {}).items():
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
@@ -382,33 +462,57 @@ def mark_points(prompt, count):
 def pixel(sct, x, y):
     return list(grab(sct, x, y, 1, 1)[:3])
 
+def mob_area(mb, screen):
+    """The hitbox either side of your character, clipped to the screen: as
+    tall as your character (head to feet, when marked; else `band` px above
+    and below), `reach` px to each side. Returns (left, top, width, height)."""
+    reach = mb.get("reach", 350)
+    top = mb["top"] if "top" in mb else mb["y"] - mb.get("band", 80)
+    bottom = mb["bottom"] if "bottom" in mb else mb["y"] + mb.get("band", 80)
+    left, top = max(screen["left"], mb["x"] - reach), max(screen["top"], top)
+    right = min(screen["left"] + screen["width"], mb["x"] + reach)
+    bottom = min(screen["top"] + screen["height"], bottom)
+    return left, top, right - left, bottom - top
+
+def hitbox(head, feet, reach_point):
+    """Mob settings from your character's head and feet and how far your
+    attack reaches to one side (all screen points)."""
+    x, top, bottom = (head[0] + feet[0]) // 2, min(head[1], feet[1]), max(head[1], feet[1])
+    return {"x": x, "y": (top + bottom) // 2, "top": top, "bottom": bottom,
+            "reach": max(abs(reach_point[0] - x), 40), "gap": max(20, (bottom - top) // 3)}
+
 def setup_mobs(sct, config, sprites_dir):
     """The mob detector: from sprite PNGs in `sprites_dir` if there are any,
-    else from up to 3 mobs marked on screen."""
+    else from up to 3 mobs marked on screen. Either way it starts with your
+    hitbox: your character's head and feet, and how far your attack reaches."""
     sprites = load_sprites(sprites_dir)
-    mobs = {"reach": 350, "band": 80, "gap": 40, "tolerance": 40}
+    mobs = {"tolerance": 40}
+    box = "Hitbox: hover YOUR character's HEAD, F8; its FEET, F8; then how far your attack reaches to one side, F8"
     if sprites:
         print("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
-        pts = mark_points("Mobs: stand where no mobs are near, hover YOUR character, F8 (Esc skips)", 1)
-        if not pts:
+        pts = mark_points(box + " (Esc skips). Mobs nearby are fine.", 3)
+        if len(pts) < 3:
             print("  skipped"); return
-        (cx, cy), screen = pts[0], sct.monitors[0]
-        left, top = max(screen["left"], cx - mobs["reach"]), max(screen["top"], cy - mobs["band"])
-        w = min(screen["left"] + screen["width"], cx + mobs["reach"]) - left
-        h = min(screen["top"] + screen["height"], cy + mobs["band"]) - top
-        colors, step, report = learn_mob_colors(sprites, grab(sct, left, top, w, h), w, h, mobs["tolerance"])
+        mobs.update(hitbox(*pts))
+        left, top, w, h = mob_area(mobs, sct.monitors[0])
+        print("  Hitbox: %d px tall, %d px to each side. Looking at the map for 4 s..." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
+        shots = []
+        for _ in range(5):
+            shots.append(grab(sct, left, top, w, h))
+            time.sleep(0.8)
+        learned, report = learn_mob_colors(sprites, shots, w, h, mobs["tolerance"], mobs["gap"], mobs["x"] - left)
         print("\n".join(report))
-        if not colors:
+        if not learned["colors"]:
             print("  No usable mob colours: mob detection is off."); return
-        mobs.update(x=cx, y=cy, colors=colors, step_x=step, step_y=step, sprites=sorted(sprites))
+        mobs.update(colors=learned["colors"], step_x=learned["step"], step_y=learned["step"],
+                    cell=learned["cell"], min_hits=learned["min_hits"], sprites=sorted(sprites))
     else:
         if os.path.isdir(sprites_dir) and any(n.lower().endswith(SPRITE_TYPES) for n in os.listdir(sprites_dir)):
             print("No readable sprites in %s, so mark mobs on screen instead." % sprites_dir)
-        pts = mark_points("Mobs: hover YOUR character, F8; then up to 3 mobs (different kinds), F8 each; Esc when done", 4)
-        if len(pts) < 2:
+        pts = mark_points(box + "; then up to 3 mobs (different kinds), F8 each; Esc when done", 6)
+        if len(pts) < 4:
             print("  skipped"); return
-        (cx, cy), marked = pts[0], pts[1:]
-        mobs.update(x=cx, y=cy, colors=[pixel(sct, x, y) for x, y in marked])
+        mobs.update(hitbox(*pts[:3]), colors=[pixel(sct, x, y) for x, y in pts[3:]])
     config["mobs"] = mobs
 
 def setup(path, sprites_dir="mobs"):
@@ -685,31 +789,54 @@ def selftest():
         if x0 is not None:
             paint(zone, 700, x0, 50, x0 + 40, 110, green)
         assert mob_sides(zone, 700, 160, [green]) == want, want
+    # Hitbox: head and feet set its height, the reach point how far it goes each side.
+    hb = hitbox((402, 300), (398, 420), (800, 410))
+    assert hb == {"x": 400, "y": 360, "top": 300, "bottom": 420, "reach": 400, "gap": 40}, hb
+    assert mob_area(hb, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 300, 800, 120)   # 800 x 120 px
+    assert mob_area(hb, {"left": 0, "top": 0, "width": 700, "height": 1080}) == (0, 300, 700, 120)    # clipped to the screen
+    assert mob_area({"x": 400, "y": 360}, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (50, 280, 700, 160)   # older setups
     # Character near the screen edge: the area is clipped, so "you" aren't in its middle.
     clipped = canvas(450, 160, grey); paint(clipped, 450, 80, 40, 120, 120, green); paint(clipped, 450, 300, 50, 340, 110, green)
     assert mob_sides(clipped, 450, 160, [green], mid=100) == "R"
     both = canvas(700, 160, grey); paint(both, 700, 50, 50, 90, 110, green); paint(both, 700, 600, 50, 640, 110, green)
-    assert mob_sides(both, 700, 160, [(1, 2, 3), green]) == "LR"
-    # Mob sprites: outline black and white left out, a colour the map also has
-    # is dropped, and what's left finds the mob on the right side only.
+    assert mob_sides(both, 700, 160, [(1, 2, 3), green]) == "RL"            # both: the right one is nearer (250 vs 260 px)
+    paint(both, 700, 250, 50, 290, 110, green)
+    assert mob_sides(both, 700, 160, [(1, 2, 3), green]) == "LR"            # a left one walks closer
+    # Mob sprites: outline black and white left out, a colour much of the map
+    # also has is dropped, and what's left finds the mob on the right side only.
     # A 20x20 sprite: transparent border, black outline, pink body, green feet.
     sprite = [(0, 0, 0, 0) if not (2 <= x < 18 and 2 <= y < 18) else (0, 0, 0, 255) if x in (2, 17) or y in (2, 17)
               else (60, 200, 60, 255) if y >= 14 else (200, 40, 160, 255) for y in range(20) for x in range(20)]
     palette = sprite_palette(sprite)
     assert [c for c, _ in palette] == [[200, 40, 160], [60, 200, 60]], palette
     field = canvas(300, 60, grey); paint(field, 300, 0, 50, 300, 60, green)   # grass along the bottom
-    colors, step, report = learn_mob_colors({"blob.png": (20, 20, sprite)}, field, 300, 60)
-    assert colors == [[200, 40, 160]] and step == 2 and any("skipped [60, 200, 60]" in r for r in report), (colors, report)
-    for x in range(20):
+    def put(raw, x0, y0):
         for y in range(20):
-            if sprite[y * 20 + x][3]:
-                field[((30 + y) * 300 + 220 + x) * 3:((30 + y) * 300 + 221 + x) * 3] = bytes(sprite[y * 20 + x][:3])
-    assert mob_sides(field, 300, 60, colors, step_x=step, step_y=step) == "R"
+            for x in range(20):
+                if sprite[y * 20 + x][3]:
+                    raw[((y0 + y) * 300 + x0 + x) * 3:((y0 + y) * 300 + x0 + x + 1) * 3] = bytes(sprite[y * 20 + x][:3])
+    # A mob walking through one of the setup shots doesn't spoil its colours.
+    busy = bytearray(field); put(busy, 40, 20)
+    learned, report = learn_mob_colors({"blob.png": (20, 20, sprite)}, [busy, field, field], 300, 60)
+    assert learned["colors"] == [[200, 40, 160]] and learned["step"] == 2 and learned["cell"] == 10, (learned, report)
+    assert any("skipped [60, 200, 60]" in r for r in report) and learned["min_hits"] == 3, report
+    # Stray pink pixels over the map (about 2%): learned from the map, they
+    # raise the hits a patch needs, so they aren't a mob; a real one still is.
+    rnd, noisy = random.Random(4), bytearray(field)
+    for k in range(300 * 50):
+        if rnd.random() < 0.02:
+            noisy[k * 3:k * 3 + 3] = bytes((200, 40, 160))
+    learned, _ = learn_mob_colors({"blob.png": (20, 20, sprite)}, [noisy], 300, 60)
+    sides = dict(colors=learned["colors"], step_x=2, step_y=2, min_hits=learned["min_hits"], cell=learned["cell"])
+    assert learned["min_hits"] > 3 and mob_sides(noisy, 300, 60, **sides) == "", learned
+    assert len(mob_sides(noisy, 300, 60, learned["colors"], step_x=2, step_y=2)) == 2   # the old way counted every stray
+    put(noisy, 220, 30)
+    assert mob_sides(noisy, 300, 60, **sides) == "R"
     assert sniff(b"") == "an empty file" and sniff(b"<!DOCTYPE html>").startswith("a web page")
     assert sniff(b"\x89PNG\r\n\x1a\n").startswith("a damaged") and sniff(b"RIFF\0\0\0\0WEBPVP8 ").startswith("a WebP")
     assert sniff(b"\0\0\0\x1cftypavif").startswith("an AVIF") and sniff(b"hello") == "not an image Pillow knows"
-    _, _, report = learn_mob_colors({"grass.png": (20, 20, [(60, 200, 60, 255)] * 400)}, field, 300, 60)
-    assert "looks too much like the background" in report[-1]
+    learned, report = learn_mob_colors({"grass.png": (20, 20, [(60, 200, 60, 255)] * 400)}, [field], 300, 60)
+    assert not learned["colors"] and "looks too much like the map" in report[-1]
     # Marked patches.
     ref = bytes([10, 20, 30] * 25)
     assert patch_matches(bytes([12, 18, 33] * 25), ref) and not patch_matches(bytes([200, 200, 200] * 25), ref)
@@ -828,7 +955,7 @@ def main():
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
     ap.add_argument("--host", default="kabuto.local", help="the pad's Wi-Fi address (default kabuto.local)")
     ap.add_argument("--pin", default=os.environ.get("KABUTO_PIN"), help="access PIN (or set KABUTO_PIN)")
-    ap.add_argument("--interval", type=float, default=1.0, help="seconds between readings (default 1)")
+    ap.add_argument("--interval", type=float, default=0.5, help="seconds between readings (default 0.5)")
     ap.add_argument("--config", default=CONFIG, help="setup file (default %s)" % CONFIG)
     ap.add_argument("--dry-run", action="store_true", help="print readings without sending")
     ap.add_argument("--selftest", action="store_true", help="run built-in tests and exit")

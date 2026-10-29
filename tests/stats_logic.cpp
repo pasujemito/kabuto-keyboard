@@ -31,7 +31,8 @@ int main(){
     assert(liveFacing(true,50,120,true,MOB_LEFT)==1);      // near the left edge: face right, even with a mob left
     assert(liveFacing(true,950,120,true,MOB_RIGHT)==-1);   // near the right edge
     assert(liveFacing(true,500,120,true,MOB_LEFT)==-1&&liveFacing(true,500,120,true,MOB_RIGHT)==1);
-    assert(liveFacing(true,500,120,true,MOB_LEFT|MOB_RIGHT)==0&&liveFacing(true,500,120,true,0)==0);
+    assert(liveFacing(true,500,120,true,MOB_LEFT|MOB_RIGHT)==-1&&liveFacing(true,500,120,true,MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER)==1);   // both: the nearer
+    assert(liveFacing(true,500,120,true,0)==0&&liveFacing(true,50,120,true,MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER)==1);
     assert(liveFacing(true,500,120,false,MOB_LEFT)==0&&liveFacing(true,50,0,true,0)==0);   // features off
     assert(liveFacing(true,-1,120,true,0)==0&&liveFacing(false,50,120,true,MOB_LEFT)==0);   // no position / stale
     // Stuck: still for the window -> 1 (turn), still again -> 2 (stop); moving resets.
@@ -44,7 +45,7 @@ int main(){
     assert(statsTenths("72.5")==725&&statsTenths("0")==0&&statsTenths("100")==1000);
     assert(statsTenths("")==-1&&statsTenths(nullptr)==-1&&statsTenths("abc")==-1&&statsTenths("7x")==-1&&statsTenths("101")==-1&&statsTenths("-1")==-1&&statsTenths("nan")==-1);
     assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("map")==LIVE_OK&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
-    assert(statsMobs("LR")==(MOB_LEFT|MOB_RIGHT)&&statsMobs("R")==MOB_RIGHT&&statsMobs("")==0);
+    assert(statsMobs("LR")==(MOB_LEFT|MOB_RIGHT)&&statsMobs("RL")==(MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER)&&statsMobs("R")==MOB_RIGHT&&statsMobs("")==0);
     assert(statsPos("1415")==1415&&statsPos("-250")==-250&&statsPos("0")==0&&statsPos("100000")==100000);
     assert(statsPos("")==LIVE_NO_POS&&statsPos(nullptr)==LIVE_NO_POS&&statsPos("12.5")==LIVE_NO_POS&&statsPos("x")==LIVE_NO_POS&&statsPos("100001")==LIVE_NO_POS);
     StatsReading r=parseStatsForm("hp=72.0&xp=63.2&x=41.5&y=70.0&wx=-1585&wy=740&state=dead&mobs=L");

@@ -360,9 +360,11 @@ int main() {
         q.edgeMarginPermille=0;q.faceMobs=true;aware.setPattern(q);
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_RIGHT);});
         assert((dirs()==std::vector<uint8_t>{L,R,R}));
-        // Mobs on both sides: no opinion, so the (zero) turn chance keeps facing left.
+        // Mobs on both sides: face the nearer one (left nearer: stays left; right nearer: turns right).
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_LEFT|MOB_RIGHT);});
         assert((dirs()==std::vector<uint8_t>{L,L}));
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));
         // Stuck on the same spot: turns around once, then stops.
         q.faceMobs=false;q.stuckAfterMs=1500;aware.setPattern(q);
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,400,300);});

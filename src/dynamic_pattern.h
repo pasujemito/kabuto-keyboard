@@ -45,7 +45,9 @@ struct DynamicPattern {
     // Screen awareness (needs tools/screen_stats.py); off in older patterns.
     uint16_t edgeMarginPermille = 0;  // turn back within this far of a minimap edge
     uint32_t stuckAfterMs = 0;        // minimap dot still this long: turn, then stop
-    bool faceMobs = false;            // turn towards mobs seen on one side only
+    bool faceMobs = false;            // turn towards mobs (the nearer side when both)
+    bool smart = false;               // no mobs: wait for them; drifted: walk back home
+    uint16_t homeRangePermille = 0;   // smart: how far from home you may drift (0 = no home)
     // Defaults match patterns saved before keys were configurable.
     DynamicKey jump = dynamicModifier(0x04);     // KM_LALT
     DynamicKey attack = dynamicModifier(0x01);   // KM_LCTRL

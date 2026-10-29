@@ -283,7 +283,7 @@ void webServerBegin() {
         auto field = [&](const char* name) { return req->hasParam(name, true) ? req->getParam(name, true)->value() : String(); };
         if (liveStatsUpdate(statsTenths(field("hp").c_str()), statsTenths(field("mana").c_str()), statsTenths(field("xp").c_str()),
                             statsState(field("state").c_str()), statsTenths(field("x").c_str()), statsTenths(field("y").c_str()),
-                            statsMobs(field("mobs").c_str()), statsPos(field("wx").c_str()), statsPos(field("wy").c_str())))
+                            req->hasParam("mobs", true) ? statsMobs(field("mobs").c_str()) : 0, statsPos(field("wx").c_str()), statsPos(field("wy").c_str())))
             Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
         sendJson(req, 200, "{\"ok\":true}");
     });

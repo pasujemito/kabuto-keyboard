@@ -273,8 +273,22 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   - **Turn at map edges (%)**, 12% by default: within that distance of the
     minimap's left or right edge, it turns back, even mid-set. On a sliding
     minimap your dot only gets there at the map's real edges.
+  - **Smart** (on for new patterns) makes the pattern follow the mobs:
+    - it faces the mobs in your hitbox (the nearer side when both have some)
+      before every attack;
+    - with **no mobs** in the hitbox it stops attacking and waits, still
+      drinking potions, until some appear (the log says "smart: waiting for
+      mobs");
+    - **Home range** (10% of the minimap by default): home is where you stood
+      when the pattern started. Drift further than that with no mobs around,
+      or twice that whatever's around, and it walks back (holding the
+      direction key) until it's within half the range. If it can't get there
+      in 10 s, that spot becomes home. 0 = no home.
+    It needs the mob detector set up in the script; without it, or without
+    fresh readings, the pattern plays as normal. To stop while it waits, press
+    the key again as usual.
   - **Face mobs**: turns to face mobs in your hitbox; with mobs on both
-    sides, the nearer one. Edges come first, then mobs, then the pattern's
+    sides, the nearer one (Smart does this too). Edges come first, then mobs, then the pattern's
     turn chance. It checks before every attack, so a mob that spawns behind
     you is faced within about a second (readings every 0.5 s; `--interval
     0.25` for faster).

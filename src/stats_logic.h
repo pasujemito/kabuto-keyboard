@@ -66,14 +66,33 @@ inline const char* liveStopReason(uint8_t state) {
 }
 
 // Mob sides from the screen reader: bit 0 = left of you, bit 1 = right,
-// bit 2 = with both, the right one is nearer (sent as "RL"; "LR" = left nearer).
-const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4;
+// bit 2 = with both, the right one is nearer (sent as "RL"; "LR" = left
+// nearer), bit 3 = the mob detector is set up (the reading has "mobs"), so
+// no side bits really means no mobs rather than "not looking".
+const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4, MOB_READ = 8;
 
 // Which way to face from live data: -1 left, +1 right, 0 no opinion (the
 // pattern's own turn chance decides). Keeping off a map edge comes first;
 // then facing the mob: the only side with mobs, or the nearer one when both
 // sides have some. x is the minimap position in
 // tenths of a percent (-1: not read).
+// Smart mode, before each attack: attack, wait for mobs, or walk back home.
+// Home is your position when the pattern started; you may drift `range`
+// either way (same units as the position: tenths of a minimap width; 0 = no
+// home). Out of range with no mobs, or twice out of range whatever's around,
+// it walks back, and once walking keeps on until within half the range.
+// No fresh reading or no mob detector: just attack, as without smart mode.
+enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT };
+inline uint8_t smartAction(bool fresh, uint8_t mobs, bool havePos, int pos, bool haveHome, int home, uint16_t range, bool homing) {
+    if (!fresh) return SMART_ATTACK;
+    bool any = mobs & (MOB_LEFT | MOB_RIGHT);
+    if (havePos && haveHome && range) {
+        int off = pos - home, dist = off < 0 ? -off : off;
+        if (dist > (homing ? range / 2 : range) && (!any || dist > 2 * range)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
+    }
+    return (mobs & MOB_READ) && !any ? SMART_WAIT : SMART_ATTACK;
+}
+
 inline int liveFacing(bool fresh, int x, uint16_t edgeMarginTenths, bool faceMobs, uint8_t mobSides) {
     if (!fresh) return 0;
     if (edgeMarginTenths && x >= 0) {
@@ -139,9 +158,9 @@ inline uint8_t statsState(const char* text) {
     return LIVE_OK;
 }
 inline uint8_t statsMobs(const char* text) {
-    if (!text) return 0;
+    if (!text) return 0;   // no "mobs" in the reading: no detector
     uint8_t sides = (strchr(text, 'L') ? MOB_LEFT : 0) | (strchr(text, 'R') ? MOB_RIGHT : 0);
-    return sides == (MOB_LEFT | MOB_RIGHT) && text[0] == 'R' ? sides | MOB_RIGHT_NEARER : sides;
+    return MOB_READ | (sides == (MOB_LEFT | MOB_RIGHT) && text[0] == 'R' ? sides | MOB_RIGHT_NEARER : sides);
 }
 
 struct StatsReading {

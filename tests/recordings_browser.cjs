@@ -133,6 +133,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('2');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'Stuck after: enter 0 (off) or 3 to 600 seconds.');
   await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('30');
+  // Smart mode: on with a 10% home range for new patterns; over 50% is refused.
+  assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'10');
+  await page.getByLabel('Home range (%)',{exact:true}).fill('60');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Home range: enter a percentage from 0 to 50.');
+  await page.getByLabel('Home range (%)',{exact:true}).fill('10');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses

@@ -377,6 +377,26 @@ int main() {
         // The map position standing still while the dot doesn't move either: stuck as before.
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0,-2400,500);});
         assert((dirs()==std::vector<uint8_t>{L,R,R})&&attacks()==6&&engine.stopFlag_);engine.stopFlag_=false;
+        // Smart mode: no mobs in the hitbox -> no attacks until some appear, then face them.
+        q.stuckAfterMs=0;q.smart=true;q.homeRangePermille=100;q.sets={1,1};q.attacksPerSet={3,3};aware.setPattern(q);
+        auto firstAttack=[&]{for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)return e.at;return 0u;};
+        uint32_t mobsAt=millis()+2000;
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,millis()>=mobsAt?MOB_READ|MOB_RIGHT:MOB_READ);});
+        assert(attacks()==3&&firstAttack()>=mobsAt&&dirs().back()==R&&!engine.stopFlag_);
+        // Drifted from home with no mobs: walks back (holds left), then waits; mobs return once home.
+        // (The first tap sets the facing; any left press after it is the walk.)
+        bool walked=false;int calls=0;
+        play([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}   // home: map x 300
+                 auto d=dirs();walked=walked||(d.size()>=2&&d.back()==L);
+                 liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});   // drifted to 450
+        assert(walked&&attacks()==3);
+        // Stop pressed while waiting for mobs: returns at once, nothing held.
+        uint32_t stopAt=millis()+1500;
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ);if(millis()>=stopAt)engine.stopFlag_=true;});
+        assert(attacks()==0&&held.empty()&&!heldMods&&engine.stopFlag_);engine.stopFlag_=false;
+        // Without a mob detector (no "mobs" in the readings) smart mode just attacks.
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0);});
+        assert(attacks()==3);
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

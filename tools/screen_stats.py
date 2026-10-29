@@ -424,7 +424,7 @@ class Screen:
             if dot:                      # a login or loading screen isn't the map
                 self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
-        mobs, mb = "", c.get("mobs")
+        mobs, mb = None, c.get("mobs")   # None: no mob detector, so the pad doesn't wait for mobs
         if mb and mb.get("colors"):
             left, top, w, h = mob_area(mb, self.sct.monitors[0])
             raw = grab(self.sct, left, top, w, h)
@@ -571,10 +571,10 @@ def save_config(path, config):
 # ---- talking to the pad -------------------------------------------------------
 
 def form_fields(readings):
-    """What to POST: unread values are left out, so the pad treats them as not read."""
-    fields = {k: v for k, v in readings.items() if v is not None and k not in ("mobs", "state")}
+    """What to POST: unread values are left out, so the pad treats them as not
+    read. "mobs" is sent (maybe empty) only with a mob detector set up."""
+    fields = {k: v for k, v in readings.items() if v is not None and k != "state"}
     fields["state"] = readings.get("state", "ok")
-    fields["mobs"] = readings.get("mobs", "")
     return fields
 
 class Pad:
@@ -676,8 +676,8 @@ def describe(r):
     parts = ["%s %5.1f%%" % (label, r[name]) for name, label in BARS if r.get(name) is not None]
     if r.get("x") is not None:
         parts.append("map %4.1f,%4.1f" % (r["x"], r["y"]))
-    if r.get("mobs"):
-        parts.append("mobs " + r["mobs"])
+    if r.get("mobs") is not None:
+        parts.append("mobs " + (r["mobs"] or "-"))
     if r.get("state", "ok") != "ok":
         parts.append("!! " + r["state"].upper())
     return "  ".join(parts)
@@ -850,9 +850,11 @@ def selftest():
     assert GameState().update(80, 50, True, True, {"death": True}) == "dead"
     assert GameState().update(80, 50, True, True, {"login": True, "death": True}) == "offline"
     assert GameState().update(None, None, False, False, {}) == "ok"   # nothing set up: no false alarms
-    # What's posted: unread values left out, state and mobs always sent.
+    # What's posted: unread values left out, state always sent, mobs (even
+    # empty: "none around") only with a mob detector.
     assert form_fields({"hp": 72.0, "mana": None, "xp": 63.2, "x": None, "y": None, "mobs": "", "state": "ok"}) == \
         {"hp": 72.0, "xp": 63.2, "state": "ok", "mobs": ""}
+    assert form_fields({"hp": 72.0, "mobs": None, "state": "ok"}) == {"hp": 72.0, "state": "ok"}
     assert form_fields({"hp": 0.0, "x": 41.5, "y": 70.0, "mobs": "L", "state": "dead"}) == \
         {"hp": 0.0, "x": 41.5, "y": 70.0, "state": "dead", "mobs": "L"}
 
@@ -909,7 +911,7 @@ def selftest():
     assert pad and pad.version == "1.16.0" and pad.where == "USB COM9" and silent.closed, pad
     kabuto.replies = [b"KABUTO ok\n"]
     pad.send({"hp": 0.0, "x": 41.5, "y": 70.0, "mobs": "L", "state": "dead"})
-    assert kabuto.sent[-1] == b"KABUTO stats hp=0.0&x=41.5&y=70.0&state=dead&mobs=L\n", kabuto.sent
+    assert kabuto.sent[-1] == b"KABUTO stats hp=0.0&x=41.5&y=70.0&mobs=L&state=dead\n", kabuto.sent
     assert find_usb_pad([Port("COM1", 0x1234)], opener=lambda d: 1 / 0) is None   # no Espressif port: not opened
 
     # Login on 401, then the readings go through.
@@ -936,8 +938,8 @@ def selftest():
     pad = Pad(host, "246810")
     pad.send({"hp": 72.0, "mana": None, "xp": 63.2, "state": "ok", "mobs": ""})
     pad.send({"hp": 0.0, "mana": 40.0, "x": 41.5, "y": 70.0, "state": "dead", "mobs": "R"})
-    assert seen == [(False, "hp=72.0&xp=63.2&state=ok&mobs="), (True, "hp=72.0&xp=63.2&state=ok&mobs="),
-                    (True, "hp=0.0&mana=40.0&x=41.5&y=70.0&state=dead&mobs=R")], seen
+    assert seen == [(False, "hp=72.0&xp=63.2&mobs=&state=ok"), (True, "hp=72.0&xp=63.2&mobs=&state=ok"),
+                    (True, "hp=0.0&mana=40.0&x=41.5&y=70.0&mobs=R&state=dead")], seen
     try:
         Pad(host, "000000").send({"hp": 1.0}); raise AssertionError("wrong PIN accepted")
     except SystemExit as e:

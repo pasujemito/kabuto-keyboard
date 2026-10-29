@@ -22,6 +22,8 @@ and show up in the pad's **Updates** panel.
   it mob **sprites** (PNGs in a `mobs` folder) and it learns their colours,
   leaving out outlines and what the map itself has, and looks for clumps so
   stray pixels don't count
+- 🧠 **Smart mode** for dynamic patterns: attacks towards the mobs, waits
+  when there are none, and walks back to its home spot when it drifts
 - 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
   (no Wi-Fi or PIN) and sets itself up on first run
 

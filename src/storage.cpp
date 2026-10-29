@@ -80,6 +80,11 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (p.stuckAfterMs && (p.stuckAfterMs<3000 || p.stuckAfterMs>600000)) return false;
     if (!o["face_mobs"].isNull() && !o["face_mobs"].is<bool>()) return false;
     p.faceMobs = o["face_mobs"] | false;
+    // Smart mode: wait for mobs, and walk back within "home_range" (a fraction
+    // of the minimap, up to 50%; 0 = no home) of where the pattern started.
+    if (!o["smart"].isNull() && !o["smart"].is<bool>()) return false;
+    p.smart = o["smart"] | false;
+    if (!chance(o["home_range"],p.homeRangePermille) || p.homeRangePermille>500) return false;
     // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
     // keys keep the defaults, so older patterns play exactly as before.
     auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
@@ -391,6 +396,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
+            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;
             auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
             JsonObject keys=d["keys"].to<JsonObject>();
             keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);

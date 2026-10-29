@@ -79,13 +79,13 @@ int main(){
     assert(pattern&&pattern->potions[1].cooldown.max==45000&&pattern->potions[0].after.max==700&&pattern->shuffleSkills);
     // Custom movement keys survive a round trip; potions and skills keep separate shapes.
     String customKeys(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"k","keys":{"jump":"SPACE","attack":"X","left":"A","right":"D"},)"
-                      R"("edge_margin":0.12,"stuck_after_ms":20000,"face_mobs":true,"potions":[{"id":"mana","key":"V","below":35,"bar_max":5000,"per_tap":800,"every_ms":[1000,2000]}],"skills":[{"id":"s","key":"Q","chance":0.5,"cooldown_ms":3000}]}}]}]}]})");
+                      R"("edge_margin":0.12,"stuck_after_ms":20000,"face_mobs":true,"smart":true,"home_range":0.1,"potions":[{"id":"mana","key":"V","below":35,"bar_max":5000,"per_tap":800,"every_ms":[1000,2000]}],"skills":[{"id":"s","key":"Q","chance":0.5,"cooldown_ms":3000}]}}]}]}]})");
     assert(saveRawJson(customKeys,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
     pattern=roundtrip.layers[0].keys[0].steps[0].pattern();
     assert(pattern->jump.keycode==0x2C&&!pattern->jump.mods&&pattern->attack.keycode==0x1B&&pattern->left.keycode==0x04&&pattern->right.keycode==0x07);
     assert(pattern->potions.size()==1&&pattern->potions[0].id=="mana"&&pattern->potions[0].cooldown.max==2000&&pattern->potions[0].chancePermille==1000);
     assert(pattern->potions[0].belowPercent==35&&pattern->potions[0].barMax==5000&&pattern->potions[0].perTap==800);
-    assert(pattern->edgeMarginPermille==120&&pattern->stuckAfterMs==20000&&pattern->faceMobs);
+    assert(pattern->edgeMarginPermille==120&&pattern->stuckAfterMs==20000&&pattern->faceMobs&&pattern->smart&&pattern->homeRangePermille==100);
     assert(pattern->skills[0].keycode==0x14&&pattern->skills[0].cooldown.min==3000&&pattern->skills[0].chancePermille==500);
     {std::string saved=readRawJson();assert(saved.find("\"jump\":\"SPACE\"")!=std::string::npos&&saved.find("\"every_ms\"")!=std::string::npos);}
     // Presets saved with the old batch keys keep their values and are rewritten with the new names.
@@ -142,7 +142,9 @@ int main(){
       R"({"id":"p","potions":[{"id":"hp","key":"C","bar_max":20000000,"per_tap":800}],"skills":[]})",
       R"({"id":"p","edge_margin":0.5,"skills":[]})",
       R"({"id":"p","stuck_after_ms":1000,"skills":[]})",
-      R"({"id":"p","face_mobs":"yes","skills":[]})"
+      R"({"id":"p","face_mobs":"yes","skills":[]})",
+      R"({"id":"p","smart":1,"skills":[]})",
+      R"({"id":"p","home_range":0.6,"skills":[]})"
     };
     for(auto bad:badPatterns){
       String raw(std::string("{\"layers\":[{\"keys\":[{\"steps\":[{\"type\":\"dynamic\",\"pattern\":")+bad+"}]}]}]}");

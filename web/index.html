@@ -454,7 +454,7 @@
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details><summary>Screen awareness</summary>
     <div class="dynamic-main" id="dynamicAware"></div>
-    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs (the nearer side when both have some), then the turn chance. When stuck, it turns around once, then stops. Death and disconnects always stop playback.</p>
+    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs (the nearer side when both have some), then the turn chance. When stuck, it turns around once, then stops. <b>Smart</b> also waits (no attacks) while no mobs are in your hitbox, and walks back to where the pattern started once you drift past the home range. Death and disconnects always stop playback.</p>
   </details>
   <details open><summary>HP &amp; Mana</summary>
     <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %, even mid-set. With its bar total and per tap set, it taps just enough to refill without waste (up to 10); otherwise it uses its taps. Without readings, or at 0%, it fires on its timer between sets, before skills.</p>
@@ -831,7 +831,7 @@ const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
   return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.1,skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -848,6 +848,8 @@ function normalizeDynamicPattern(p){
   if(p.edge_margin===undefined)p.edge_margin=0;
   if(p.stuck_after_ms===undefined)p.stuck_after_ms=0;
   if(p.face_mobs===undefined)p.face_mobs=false;
+  if(p.smart===undefined)p.smart=false;
+  if(p.home_range===undefined)p.home_range=0;
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -871,6 +873,8 @@ function validateDynamicPattern(p){
   if(typeof p.edge_margin!=='number'||!(p.edge_margin>=0&&p.edge_margin<=.4))throw new Error('Turn at map edges: enter a percentage from 0 to 40.');
   if(!Number.isInteger(p.stuck_after_ms)||(p.stuck_after_ms&&(p.stuck_after_ms<3000||p.stuck_after_ms>600000)))throw new Error('Stuck after: enter 0 (off) or 3 to 600 seconds.');
   if(typeof p.face_mobs!=='boolean')throw new Error('Choose whether to face mobs.');
+  if(typeof p.smart!=='boolean')throw new Error('Choose whether to use smart mode.');
+  if(typeof p.home_range!=='number'||!(p.home_range>=0&&p.home_range<=.5))throw new Error('Home range: enter a percentage from 0 to 50.');
   if(!Array.isArray(p.potions)||p.potions.length>2||new Set(p.potions.map(x=>x.id)).size!==p.potions.length||p.potions.some(x=>!POTION_LABELS[x.id]))throw new Error('Use one HP and one Mana entry.');
   for(const x of p.potions){
     const label=POTION_LABELS[x.id];
@@ -935,7 +939,10 @@ function renderDynamicAware(){
   box.appendChild(dynamicNumber('Turn at map edges (%)',Math.round(p.edge_margin*1000)/10,0,40,1,n=>p.edge_margin=n/100,'Turn at map edges (%) · 0 = off'));
   box.appendChild(dynamicNumber('Stuck after (seconds)',p.stuck_after_ms/1000,0,600,1,n=>p.stuck_after_ms=Number.isFinite(n)?Math.round(n*1000):NaN,'Stuck after (s) · 0 = off'));
   const mobs=el('label','dynamic-field'),check=el('input');check.type='checkbox';check.checked=p.face_mobs;check.setAttribute('aria-label','Face mobs');
-  check.onchange=()=>{p.face_mobs=check.checked;dynamicDirty=true;};mobs.append(check,' Turn to face mobs on one side');box.appendChild(mobs);
+  check.onchange=()=>{p.face_mobs=check.checked;dynamicDirty=true;};mobs.append(check,' Turn to face mobs');box.appendChild(mobs);
+  const smart=el('label','dynamic-field'),smartCheck=el('input');smartCheck.type='checkbox';smartCheck.checked=p.smart;smartCheck.setAttribute('aria-label','Smart mode');
+  smartCheck.onchange=()=>{p.smart=smartCheck.checked;dynamicDirty=true;};smart.append(smartCheck,' Smart: face mobs, wait when there are none, walk back home');box.appendChild(smart);
+  box.appendChild(dynamicNumber('Home range (%)',Math.round(p.home_range*1000)/10,0,50,1,n=>p.home_range=n/100,'Home range (% of minimap) · 0 = no home'));
 }
 function renderDynamicPotions(){
   const list=$('#dynamicPotions');list.replaceChildren();

@@ -18,6 +18,10 @@ cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
     # right end; the minimap's top-left and bottom-right corners, then your
     # dot on it; your character, then up to 3 mobs (Esc when done).
+Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
+mob) in a "mobs" folder here; setup learns their colours instead of asking
+you to mark mobs (needs pip install pillow). After adding sprites:
+    python screen_stats.py --mobs
 Optional, while that screen is showing, for exact detection:
     python screen_stats.py --mark death    # e.g. hover the respawn button
     python screen_stats.py --mark login    # e.g. hover the login box
@@ -181,6 +185,79 @@ def mob_sides(raw, w, h, colors, tolerance=40, gap=40, mid=None, step_x=6, step_
                 else: right += 1
     return ("L" if left >= min_hits else "") + ("R" if right >= min_hits else "")
 
+def plain(color):
+    """Outline black, highlight white and greys: every sprite and map has them,
+    so they can't tell a mob apart."""
+    return max(color) < 50 or min(color) > 215 or max(color) - min(color) < 24
+
+def sprite_palette(pixels, max_colors=5, min_share=0.03, bucket=24):
+    """A sprite's main colours from its (r, g, b, a) pixels, leaving out
+    transparent and plain ones and grouping near shades. Returns
+    [(rgb, share of the sprite's solid pixels), ...], biggest first."""
+    solid = [p[:3] for p in pixels if p[3] >= 200]
+    groups = {}
+    for c in solid:
+        if not plain(c):
+            g = groups.setdefault((c[0] // bucket, c[1] // bucket, c[2] // bucket), [0, 0, 0, 0])
+            g[0] += c[0]; g[1] += c[1]; g[2] += c[2]; g[3] += 1
+    out = []
+    for g in sorted(groups.values(), key=lambda g: -g[3]):
+        rgb, share = [g[0] // g[3], g[1] // g[3], g[2] // g[3]], g[3] / len(solid)
+        if share < min_share or len(out) == max_colors:
+            break
+        if all(sum((a - b) ** 2 for a, b in zip(rgb, kept)) > 30 ** 2 for kept, _ in out):
+            out.append((rgb, share))
+    return out
+
+def color_share(raw, w, h, color, tolerance=40, step=3):
+    """How much of an area (every `step`th pixel) is near a colour, 0-1."""
+    t2, hits, n = tolerance ** 2, 0, 0
+    for y in range(0, h, step):
+        for x in range(0, w, step):
+            n += 1
+            hits += near(raw, (y * w + x) * 3, color, t2)
+    return hits / max(n, 1)
+
+def learn_mob_colors(sprites, background, w, h, tolerance=40, margin=12):
+    """Mob colours from sprites ({name: (width, height, rgba pixels)}),
+    dropping any seen at all in `background` (the area around you with no
+    mobs in it), checked as finely as detection will and with `margin` more
+    tolerance, so a near miss on the map can't add up to a false mob.
+    Returns (colours, step, report lines). The step is how finely to check:
+    the smallest sprite still gets plenty of checks."""
+    colors, report = [], []
+    step = max(2, min(6, min([min(sw, sh) for sw, sh, _ in sprites.values()] or [48]) // 8))
+    for name, (sw, sh, pixels) in sorted(sprites.items()):
+        kept = []
+        for rgb, share in sprite_palette(pixels):
+            seen = color_share(background, w, h, rgb, tolerance + margin, step)
+            if seen > 0:
+                report.append("  %s: skipped %s (%d%% of it, but %.1f%% of the background)" % (name, rgb, share * 100, seen * 100))
+            else:
+                kept.append(rgb)
+                report.append("  %s: %s (%d%% of it)" % (name, rgb, share * 100))
+        if not kept:
+            report.append("  %s: no colour of its own - it looks too much like the background to spot" % name)
+        colors += [c for c in kept if c not in colors]
+    return colors, step, report
+
+def load_sprites(folder):
+    """{file name: (width, height, rgba pixels)} for the PNGs in `folder`."""
+    if not os.path.isdir(folder):
+        return {}
+    names = sorted(n for n in os.listdir(folder) if n.lower().endswith(".png"))
+    if not names:
+        return {}
+    try:
+        from PIL import Image
+    except ImportError:
+        raise SystemExit("Reading mob sprites needs Pillow: pip install pillow")
+    out = {}
+    for n in names:
+        im = Image.open(os.path.join(folder, n)).convert("RGBA")
+        out[n] = (im.width, im.height, list(getattr(im, "get_flattened_data", im.getdata)()))
+    return out
+
 def patch_matches(raw, reference, tolerance=30):
     """Whether a small patch looks like the one captured with --mark."""
     if len(raw) != len(reference) or not raw:
@@ -248,7 +325,8 @@ class Screen:
             bottom = min(screen["top"] + screen["height"], mb["y"] + band)
             w, h = right - left, bottom - top
             raw = grab(self.sct, left, top, w, h)
-            mobs = mob_sides(raw, w, h, mb["colors"], mb.get("tolerance", 40), mb.get("gap", 40), mid=mb["x"] - left)
+            mobs = mob_sides(raw, w, h, mb["colors"], mb.get("tolerance", 40), mb.get("gap", 40), mid=mb["x"] - left,
+                             step_x=mb.get("step_x", 6), step_y=mb.get("step_y", 8))
         watches = {}
         for name, mark in c.get("watch", {}).items():
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
@@ -280,7 +358,34 @@ def mark_points(prompt, count):
 def pixel(sct, x, y):
     return list(grab(sct, x, y, 1, 1)[:3])
 
-def setup(path):
+def setup_mobs(sct, config, sprites_dir):
+    """The mob detector: from sprite PNGs in `sprites_dir` if there are any,
+    else from up to 3 mobs marked on screen."""
+    sprites = load_sprites(sprites_dir)
+    mobs = {"reach": 350, "band": 80, "gap": 40, "tolerance": 40}
+    if sprites:
+        print("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
+        pts = mark_points("Mobs: stand where no mobs are near, hover YOUR character, F8 (Esc skips)", 1)
+        if not pts:
+            print("  skipped"); return
+        (cx, cy), screen = pts[0], sct.monitors[0]
+        left, top = max(screen["left"], cx - mobs["reach"]), max(screen["top"], cy - mobs["band"])
+        w = min(screen["left"] + screen["width"], cx + mobs["reach"]) - left
+        h = min(screen["top"] + screen["height"], cy + mobs["band"]) - top
+        colors, step, report = learn_mob_colors(sprites, grab(sct, left, top, w, h), w, h, mobs["tolerance"])
+        print("\n".join(report))
+        if not colors:
+            print("  No usable mob colours: mob detection is off."); return
+        mobs.update(x=cx, y=cy, colors=colors, step_x=step, step_y=step, sprites=sorted(sprites))
+    else:
+        pts = mark_points("Mobs: hover YOUR character, F8; then up to 3 mobs (different kinds), F8 each; Esc when done", 4)
+        if len(pts) < 2:
+            print("  skipped"); return
+        (cx, cy), marked = pts[0], pts[1:]
+        mobs.update(x=cx, y=cy, colors=[pixel(sct, x, y) for x, y in marked])
+    config["mobs"] = mobs
+
+def setup(path, sprites_dir="mobs"):
     import mss                         # first: on Windows this makes the process DPI-aware,
     sct, config = mss.mss(), {"bars": {}}   # so pointer positions and pixels agree
     for name, label in BARS:
@@ -295,16 +400,19 @@ def setup(path):
         (ax, ay), (bx, by), (dx, dy) = pts
         config["minimap"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by),
                              "dot": pixel(sct, dx, dy), "tolerance": 40, "map_mismatch": 0.6}
-    pts = mark_points("Mobs: hover YOUR character, F8; then up to 3 mobs (different kinds), F8 each; Esc when done", 4)
-    if len(pts) >= 2:
-        (cx, cy), mobs = pts[0], pts[1:]
-        config["mobs"] = {"x": cx, "y": cy, "reach": 350, "band": 80, "gap": 40, "tolerance": 40,
-                          "colors": [pixel(sct, x, y) for x, y in mobs]}
+    setup_mobs(sct, config, sprites_dir)
     old = load_config(path, required=False)
     if old.get("watch"):
         config["watch"] = old["watch"]   # keep death/login marks from --mark
     save_config(path, config)
     print("Saved", path, "- if something reads wrong, raise its tolerance there.")
+
+def relearn_mobs(path, sprites_dir):
+    import mss
+    config = load_config(path)
+    setup_mobs(mss.mss(), config, sprites_dir)
+    save_config(path, config)
+    print("Saved", path)
 
 def mark(path, what):
     import mss
@@ -449,7 +557,7 @@ def run(args):
     config = load_config(args.config, required=False)
     if not (config.get("bars") or config.get("minimap") or config.get("mobs")):
         print("First run: let's mark your bars, minimap and mobs (hover, then F8).")
-        setup(args.config)
+        setup(args.config, args.sprites)
         config = load_config(args.config)
     screen, pad = Screen(mss.mss(), config), None
     while True:
@@ -556,6 +664,23 @@ def selftest():
     assert mob_sides(clipped, 450, 160, [green], mid=100) == "R"
     both = canvas(700, 160, grey); paint(both, 700, 50, 50, 90, 110, green); paint(both, 700, 600, 50, 640, 110, green)
     assert mob_sides(both, 700, 160, [(1, 2, 3), green]) == "LR"
+    # Mob sprites: outline black and white left out, a colour the map also has
+    # is dropped, and what's left finds the mob on the right side only.
+    # A 20x20 sprite: transparent border, black outline, pink body, green feet.
+    sprite = [(0, 0, 0, 0) if not (2 <= x < 18 and 2 <= y < 18) else (0, 0, 0, 255) if x in (2, 17) or y in (2, 17)
+              else (60, 200, 60, 255) if y >= 14 else (200, 40, 160, 255) for y in range(20) for x in range(20)]
+    palette = sprite_palette(sprite)
+    assert [c for c, _ in palette] == [[200, 40, 160], [60, 200, 60]], palette
+    field = canvas(300, 60, grey); paint(field, 300, 0, 50, 300, 60, green)   # grass along the bottom
+    colors, step, report = learn_mob_colors({"blob.png": (20, 20, sprite)}, field, 300, 60)
+    assert colors == [[200, 40, 160]] and step == 2 and any("skipped [60, 200, 60]" in r for r in report), (colors, report)
+    for x in range(20):
+        for y in range(20):
+            if sprite[y * 20 + x][3]:
+                field[((30 + y) * 300 + 220 + x) * 3:((30 + y) * 300 + 221 + x) * 3] = bytes(sprite[y * 20 + x][:3])
+    assert mob_sides(field, 300, 60, colors, step_x=step, step_y=step) == "R"
+    _, _, report = learn_mob_colors({"grass.png": (20, 20, [(60, 200, 60, 255)] * 400)}, field, 300, 60)
+    assert "looks too much like the background" in report[-1]
     # Marked patches.
     ref = bytes([10, 20, 30] * 25)
     assert patch_matches(bytes([12, 18, 33] * 25), ref) and not patch_matches(bytes([200, 200, 200] * 25), ref)
@@ -667,6 +792,8 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser(description="Send what your game screen shows to Kabuto.")
     ap.add_argument("--setup", action="store_true", help="mark the bars, minimap and mobs")
+    ap.add_argument("--mobs", action="store_true", help="redo just the mob detector (e.g. after adding sprites)")
+    ap.add_argument("--sprites", default="mobs", help="folder of mob sprite PNGs (default mobs)")
     ap.add_argument("--mark", choices=["death", "login"], help="capture a spot only that screen has")
     ap.add_argument("--via", choices=["auto", "usb", "wifi"], default="auto",
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
@@ -680,7 +807,9 @@ def main():
     if a.selftest:
         selftest()
     elif a.setup:
-        setup(a.config)
+        setup(a.config, a.sprites)
+    elif a.mobs:
+        relearn_mobs(a.config, a.sprites)
     elif a.mark:
         mark(a.config, a.mark)
     else:

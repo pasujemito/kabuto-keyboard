@@ -11,3 +11,5 @@ __pycache__/
 *signing-key*.pem
 # Bar positions for tools/screen_stats.py (your screen layout)
 kabuto-bars.json
+# Mob sprites for tools/screen_stats.py (game art: keep them local)
+mobs/

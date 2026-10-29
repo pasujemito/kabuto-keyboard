@@ -191,7 +191,27 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
 2. **Minimap:** its top-left corner, its bottom-right corner, then your own dot
    on it (it learns your dot's colour).
 3. **Mobs:** your character on screen, then up to 3 mobs of different kinds (it
-   learns their colours). **Esc** when done.
+   learns their colours). **Esc** when done. With mob sprites (below), you
+   only mark your character.
+
+**Mob sprites** pick far better colours than one hovered pixel. Put PNGs of the
+mobs you fight, with **transparent backgrounds** (a frame or two each, any
+size), in a `mobs` folder next to the script and `pip install pillow`. Setup
+then asks you to stand somewhere with no mobs near and mark your character.
+It takes each sprite's main colours (up to 5), leaves out the black outline,
+white and greys every sprite has, and drops any colour that shows up at all
+around you on the map. It prints what it kept, for example:
+
+```
+  boar.png: skipped [102, 51, 34] (32% of it, but 14.5% of the background)
+  boar.png: [255, 255, 17] (8% of it)
+  stump.png: no colour of its own - it looks too much like the background to spot
+```
+
+A mob that's the same colours as the map (a brown stump on brown dirt) can't
+be spotted by colour and is left out rather than causing false alarms. After
+adding sprites or moving to a map with different scenery, run
+`python screen_stats.py --mobs` to redo just this step.
 
 Optionally, while that screen is showing, run `--mark death` (hover e.g. the
 respawn button) or `--mark login` (e.g. the login box) for exact detection.
@@ -249,8 +269,9 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
     change for that long, it turns around; still stuck after another wait, it
     stops. It goes by the map position (slide plus dot), so a dot that stays
     centred while the minimap slides isn't "stuck".
-- The mob detector is colour-based: it looks for the sampled mob colours left
-  and right of where your character was marked. It suits maps with one or two
+- The mob detector is colour-based: it looks for the mob colours left and
+  right of where your character was marked (checking finely enough for the
+  smallest sprite). It suits maps with one or two
   mob types; bright skill effects in the same colours can fool it, and when
   the camera stops following you at a map edge, your character isn't where it
   was marked.

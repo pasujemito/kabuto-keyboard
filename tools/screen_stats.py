@@ -241,11 +241,29 @@ def learn_mob_colors(sprites, background, w, h, tolerance=40, margin=12):
         colors += [c for c in kept if c not in colors]
     return colors, step, report
 
+SPRITE_TYPES = (".png", ".gif", ".webp", ".bmp")
+
+def sniff(head):
+    """What a file really is, from its first bytes, for a helpful message."""
+    if not head:
+        return "an empty file"
+    if head.lstrip()[:1] == b"<":
+        return "a web page, not an image (save the image itself, e.g. right-click > Save image as)"
+    for magic, kind in ((b"\x89PNG", "PNG"), (b"GIF8", "GIF"), (b"\xff\xd8", "JPEG"), (b"BM", "BMP")):
+        if head.startswith(magic):
+            return "a damaged or cut-off %s (download it again)" % kind
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "a WebP that this Pillow can't read (pip install --upgrade pillow)"
+    if head[4:12] in (b"ftypavif", b"ftypheic", b"ftypmif1"):
+        return "an AVIF/HEIC image (re-save it as PNG)"
+    return "not an image Pillow knows"
+
 def load_sprites(folder):
-    """{file name: (width, height, rgba pixels)} for the PNGs in `folder`."""
+    """{file name: (width, height, rgba pixels)} for the images in `folder`.
+    Files that can't be read are skipped with a reason, not fatal."""
     if not os.path.isdir(folder):
         return {}
-    names = sorted(n for n in os.listdir(folder) if n.lower().endswith(".png"))
+    names = sorted(n for n in os.listdir(folder) if n.lower().endswith(SPRITE_TYPES))
     if not names:
         return {}
     try:
@@ -254,8 +272,14 @@ def load_sprites(folder):
         raise SystemExit("Reading mob sprites needs Pillow: pip install pillow")
     out = {}
     for n in names:
-        im = Image.open(os.path.join(folder, n)).convert("RGBA")
-        out[n] = (im.width, im.height, list(getattr(im, "get_flattened_data", im.getdata)()))
+        path = os.path.join(folder, n)
+        try:
+            with Image.open(path) as im:
+                im = im.convert("RGBA")
+                out[n] = (im.width, im.height, list(getattr(im, "get_flattened_data", im.getdata)()))
+        except Exception:
+            with open(path, "rb") as f:
+                print("  skipped %s: it's %s" % (path, sniff(f.read(16))))
     return out
 
 def patch_matches(raw, reference, tolerance=30):
@@ -378,6 +402,8 @@ def setup_mobs(sct, config, sprites_dir):
             print("  No usable mob colours: mob detection is off."); return
         mobs.update(x=cx, y=cy, colors=colors, step_x=step, step_y=step, sprites=sorted(sprites))
     else:
+        if os.path.isdir(sprites_dir) and any(n.lower().endswith(SPRITE_TYPES) for n in os.listdir(sprites_dir)):
+            print("No readable sprites in %s, so mark mobs on screen instead." % sprites_dir)
         pts = mark_points("Mobs: hover YOUR character, F8; then up to 3 mobs (different kinds), F8 each; Esc when done", 4)
         if len(pts) < 2:
             print("  skipped"); return
@@ -679,6 +705,9 @@ def selftest():
             if sprite[y * 20 + x][3]:
                 field[((30 + y) * 300 + 220 + x) * 3:((30 + y) * 300 + 221 + x) * 3] = bytes(sprite[y * 20 + x][:3])
     assert mob_sides(field, 300, 60, colors, step_x=step, step_y=step) == "R"
+    assert sniff(b"") == "an empty file" and sniff(b"<!DOCTYPE html>").startswith("a web page")
+    assert sniff(b"\x89PNG\r\n\x1a\n").startswith("a damaged") and sniff(b"RIFF\0\0\0\0WEBPVP8 ").startswith("a WebP")
+    assert sniff(b"\0\0\0\x1cftypavif").startswith("an AVIF") and sniff(b"hello") == "not an image Pillow knows"
     _, _, report = learn_mob_colors({"grass.png": (20, 20, [(60, 200, 60, 255)] * 400)}, field, 300, 60)
     assert "looks too much like the background" in report[-1]
     # Marked patches.

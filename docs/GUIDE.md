@@ -212,6 +212,9 @@ A mob that's the same colours as the map (a brown stump on brown dirt) can't
 be spotted by colour and is left out rather than causing false alarms. After
 adding sprites or moving to a map with different scenery, run
 `python screen_stats.py --mobs` to redo just this step.
+PNG, GIF, WebP and BMP all work. A file that can't be read is skipped with
+the reason (most often a web page saved instead of the image: open the image
+on its own and use **Save image as**).
 
 Optionally, while that screen is showing, run `--mark death` (hover e.g. the
 respawn button) or `--mark login` (e.g. the login box) for exact detection.

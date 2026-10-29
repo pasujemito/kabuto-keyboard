@@ -153,8 +153,8 @@ the address shown in the panel) from any device on that Wi-Fi:
 The pad can't see your screen, so a small script on the game PC does the
 looking. About once a second, `tools/screen_stats.py` samples a few small areas
 and sends a handful of numbers: HP, Mana and XP (bar fill %), your position on
-the minimap, which side mobs are on, and whether you're dead, disconnected or
-on another map. No screenshots leave your PC and there's no text reading. All
+the minimap, which side mobs are on, and whether you're dead or disconnected.
+No screenshots leave your PC and there's no text reading. All
 the work happens on the PC; the pad only keeps a few numbers (about 30 bytes).
 
 **Plug and play on a game laptop:**
@@ -197,17 +197,15 @@ Optionally, while that screen is showing, run `--mark death` (hover e.g. the
 respawn button) or `--mark login` (e.g. the login box) for exact detection.
 Everything goes in `kabuto-bars.json` (gitignored). If something reads wrong,
 raise its `tolerance` there, or check Windows display scaling. `--dry-run`
-prints readings without sending. **Restart the script after moving to a new
-map**: it learns the minimap when it starts.
+prints readings without sending.
 
 **Sliding minimaps** are fine. Many games keep your dot in the middle and slide
 the minimap under it as you walk, until you near the map's edge, where the
 minimap stops and the dot moves instead. The script lines each reading up with
 the last one (up to a quarter of the minimap per reading) and adds up how far
 it has slid, so it always knows where you are on the whole map. A view that
-won't line up two readings in a row (another map, a teleport, a respawn
-elsewhere) counts as a map change. If a busy minimap is flagged wrongly, raise
-`map_mismatch` (default 0.6) under `minimap` in `kabuto-bars.json`.
+won't line up (a teleport, a respawn, another map) adds no slide; it just
+carries on from the new view. Changing maps doesn't stop playback.
 
 Without a USB cable, the PC reaches the pad at `kabuto.local` while it stays on
 your home Wi-Fi (PIN needed), or join the PC to the Kabuto-Setup hotspot (no
@@ -223,15 +221,21 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   30%. While fresh readings arrive, a potion drinks as soon as its bar is under
   that, even between attacks in a set, at most every 3 s. With no reading for
   5 s, a bar that isn't read, or 0%, the potion uses its timer as before.
+- **Bar total** and **per tap** make it drink just enough: enter your real
+  max (e.g. HP 5000) and what one potion restores (e.g. 800). Below the
+  threshold it works out what's missing and taps that many potions, rounded
+  down so none is wasted: at 30% (3500 missing) that's 4 taps, where a 5th
+  would overheal. It always takes at least 1 (you're below the threshold) and
+  at most 10. Leave both 0 to use the **taps** range instead. The screen
+  reader still reads %; the pad does the maths, so update the total when you
+  level up.
 - XP is a percentage of the bar, not points: exact XP numbers would need text
   reading (OCR), which isn't light.
-- **Death, disconnects and map changes stop playback at once**, and a pattern
-  won't start until the game is back. Dead means the HP bar reads 0% twice in
-  a row (or the `--mark death` spot shows); disconnected means the bars and the
-  minimap have gone (or the `--mark login` spot shows); a map change means the
-  minimap jumped somewhere it can't line up with for two readings in a row
-  (sliding as you walk doesn't count). It stays flagged until you restart the
-  script. The Buttons screen says why it stopped. Without a minimap set up, disconnects show up as death.
+- **Death and disconnects stop playback at once**, and a pattern won't start
+  until the game is back. Dead means the HP bar reads 0% twice in a row (or the
+  `--mark death` spot shows); disconnected means the bars and the minimap have
+  gone (or the `--mark login` spot shows). The Buttons screen says why it
+  stopped. Without a minimap set up, disconnects show up as death.
 - Your **minimap position** shows on the Buttons screen, with ◀ ▶ when mobs are
   on that side.
 - Each dynamic pattern has **Screen awareness** (on for new patterns, off for

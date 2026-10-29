@@ -20,8 +20,13 @@ int main(){
     assert(liveDecides(50,true)&&!liveDecides(0,true)&&!liveDecides(50,false));
     assert(liveWantsPotion(50,499,false,0)&&!liveWantsPotion(50,500,false,0)&&!liveWantsPotion(50,-1,false,0));
     assert(!liveWantsPotion(50,100,true,LIVE_POTION_GAP_MS-1)&&liveWantsPotion(50,100,true,LIVE_POTION_GAP_MS));
+    // Real amounts: taps that fill the gap without waste, at least 1, at most 10; 0 = not set.
+    assert(livePotionTaps(400,5000,800)==3);      // 3000 missing / 800 = 3 (a 4th would waste 200)
+    assert(livePotionTaps(450,5000,4000)==1);     // one big potion: still drinks once below the threshold
+    assert(livePotionTaps(0,100000,100)==LIVE_POTION_MAX_TAPS&&livePotionTaps(400,0,800)==0&&livePotionTaps(400,5000,0)==0&&livePotionTaps(-1,5000,800)==0);
+    assert(livePotionTaps(1000,10000000,1)==1);   // full bar (no overflow on big totals)
     // Game state: anything but OK names a stop reason.
-    assert(!liveStopReason(LIVE_OK)&&std::string(liveStopReason(LIVE_DEAD))=="you died"&&liveStopReason(LIVE_OFFLINE)&&liveStopReason(LIVE_MAP_CHANGED));
+    assert(!liveStopReason(LIVE_OK)&&std::string(liveStopReason(LIVE_DEAD))=="you died"&&liveStopReason(LIVE_OFFLINE));
     // Facing: map edges first, then mobs on one side only; stale data has no opinion.
     assert(liveFacing(true,50,120,true,MOB_LEFT)==1);      // near the left edge: face right, even with a mob left
     assert(liveFacing(true,950,120,true,MOB_RIGHT)==-1);   // near the right edge
@@ -38,7 +43,7 @@ int main(){
     // Readings: Wi-Fi and USB share one parser; blanks and junk are "not read".
     assert(statsTenths("72.5")==725&&statsTenths("0")==0&&statsTenths("100")==1000);
     assert(statsTenths("")==-1&&statsTenths(nullptr)==-1&&statsTenths("abc")==-1&&statsTenths("7x")==-1&&statsTenths("101")==-1&&statsTenths("-1")==-1&&statsTenths("nan")==-1);
-    assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("map")==LIVE_MAP_CHANGED&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
+    assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("map")==LIVE_OK&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
     assert(statsMobs("LR")==(MOB_LEFT|MOB_RIGHT)&&statsMobs("R")==MOB_RIGHT&&statsMobs("")==0);
     assert(statsPos("1415")==1415&&statsPos("-250")==-250&&statsPos("0")==0&&statsPos("100000")==100000);
     assert(statsPos("")==LIVE_NO_POS&&statsPos(nullptr)==LIVE_NO_POS&&statsPos("12.5")==LIVE_NO_POS&&statsPos("x")==LIVE_NO_POS&&statsPos("100001")==LIVE_NO_POS);

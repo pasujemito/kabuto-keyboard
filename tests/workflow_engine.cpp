@@ -326,10 +326,16 @@ int main() {
         assert(pressCount(6)==0&&pressCount(0x19)==0);
         liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});
         assert(pressCount(6)==1&&pressCount(0x19)==1);   // stale reading: timers, once each
+        // Real amounts: HP 5000 at 30% is 3500 short; 800 a tap = 4 taps (a 5th would waste).
+        q.potions[0].barMax=5000;q.potions[0].perTap=800;q.attacksPerSet={1,1};live.setPattern(q);drink(300,-1);
+        assert(pressCount(6)==4);
+        liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});
+        assert(pressCount(6)==1);   // stale reading: its timer and taps range, not the amounts
+        q.potions[0].barMax=q.potions[0].perTap=0;q.attacksPerSet={8,8};
         q.potions[0].belowPercent=0;live.setPattern(q);drink(100,-1);
         assert(pressCount(6)==1);   // no threshold: timer only, whatever the bar says
     }
-    // Screen awareness: stop on death/login/map change, face away from edges
+    // Screen awareness: stop on death/login, face away from edges
     // and towards mobs, and turn then stop when the minimap dot is stuck.
     {
         DynamicPattern q=p;q.sets={2,2};q.attacksPerSet={6,6};q.skills.clear();q.potions.clear();q.turnChancePermille=0;

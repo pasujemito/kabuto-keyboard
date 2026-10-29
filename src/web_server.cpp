@@ -277,7 +277,7 @@ void webServerBegin() {
     // Readings from tools/screen_stats.py as a form body: hp, mana, xp and the
     // minimap x/y in percent (decimals allowed; missing or out of range = not
     // read), map position wx/wy (whole numbers, see stats_logic.h), state
-    // (ok/dead/offline/map) and mobs (L, R, LR or empty). A state turning bad
+    // (ok/dead/offline) and mobs (L, R, LR or empty). A state turning bad
     // stops playback at once.
     api("/api/stats", HTTP_POST, [](AsyncWebServerRequest* req) {
         auto field = [&](const char* name) { return req->hasParam(name, true) ? req->getParam(name, true)->value() : String(); };

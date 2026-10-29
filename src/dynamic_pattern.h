@@ -27,6 +27,7 @@ struct DynamicSkill {
     DynamicRange after{880,1130};
     DynamicRange cooldown{0,0}; // wait after each use; a fresh draw every time
     uint8_t belowPercent = 0;   // potions: with live bars, drink below this % (0 = timer only)
+    uint32_t barMax = 0, perTap = 0;   // potions: the bar's real total and what one tap restores (0 = taps range)
 };
 struct DynamicPattern {
     std::string id;

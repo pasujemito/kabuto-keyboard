@@ -442,11 +442,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     return skill.enabled && (timer==dynamicSkillTimers_.end() || (uint32_t)(millis()-timer->second.lastRun)>=timer->second.wait) &&
                            random(1000L)<skill.chancePermille;
                 };
-                auto use=[&](const DynamicSkill& skill,const std::string& key){
+                auto use=[&](const DynamicSkill& skill,const std::string& key,uint32_t taps=0){
                     Step skillEntry=s;skillEntry.keycode=skill.keycode;
                     uint32_t started=millis();
                     uint32_t id=logStep(skillEntry,pc,started,0,false,skill.id.c_str());
-                    uint32_t repeats=sample(skill.repeats);
+                    uint32_t repeats=taps?taps:sample(skill.repeats);
                     for(uint32_t repeat=0;repeat<repeats&&!stop;++repeat)tap(dynamicKeycode(skill.keycode),skill.hold,skill.after);
                     // Even an interrupted use starts its cooldown; each wait is drawn fresh.
                     dynamicSkillTimers_[key]={millis(),sample(skill.cooldown)};
@@ -465,7 +465,12 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     auto timer=dynamicSkillTimers_.find(key);bool drunk=timer!=dynamicSkillTimers_.end();
                     return potion.enabled&&liveWantsPotion(potion.belowPercent,value,drunk,drunk?(uint32_t)(millis()-timer->second.lastRun):0);
                 };
-                // Between attacks: stop on a death/login screen or map change,
+                // With real amounts set, a live drink taps just enough to refill without waste.
+                auto drink=[&](const DynamicSkill& potion){
+                    int value;uint32_t taps=potionLive(potion,value)?livePotionTaps(value,potion.barMax,potion.perTap):0;
+                    use(potion,potionKey(potion),taps);
+                };
+                // Between attacks: stop on a death or login screen,
                 // turn for map edges and mobs, and turn (then stop) when stuck.
                 StuckWatch stuck;
                 auto screenCheck=[&]{
@@ -499,7 +504,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(screenCheck())break;
                         // Live potions can't wait for the end of the set: drink between attacks.
                         int value;
-                        for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))use(potion,potionKey(potion));
+                        for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                         if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
                         uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
                         std::vector<Step> actions{
@@ -511,7 +516,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     }
                     updateLogDuration(setLog,millis()-started,true);
                     if(stop)break;
-                    for(const auto& potion:pattern->potions)if(!stop&&potionDue(potion))use(potion,potionKey(potion));
+                    for(const auto& potion:pattern->potions)if(!stop&&potionDue(potion))drink(potion);
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i)
                         if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))skills.push_back(i);

@@ -9,7 +9,7 @@
 
 struct LiveStats {
     int hp = -1, mana = -1, xp = -1;
-    uint8_t state = LIVE_OK;     // LiveState: dead/offline/map changed stop playback
+    uint8_t state = LIVE_OK;     // LiveState: dead/offline stop playback
     int x = -1, y = -1;          // your dot on the minimap
     int wx = LIVE_NO_POS, wy = LIVE_NO_POS;   // your place on the whole map (stats_logic.h)
     uint8_t mobs = 0;            // MOB_LEFT | MOB_RIGHT

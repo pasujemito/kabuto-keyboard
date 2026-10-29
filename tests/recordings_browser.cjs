@@ -117,6 +117,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Mana drink below (%)',{exact:true}).fill('101');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'Mana drink below: enter a percentage from 0 to 100.');
   await page.getByLabel('Mana drink below (%)',{exact:true}).fill('25');
+  // Real amounts: both or neither, per tap no more than the total.
+  assert.equal(await page.getByLabel('HP bar total',{exact:true}).inputValue(),'0');
+  await page.getByLabel('HP bar total',{exact:true}).fill('5000');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'HP amounts: set both the bar total and per tap (no more than the total), or both 0.');
+  await page.getByLabel('HP per tap',{exact:true}).fill('800');
   // Screen awareness: on for new patterns; out-of-range values are refused.
   await page.locator('summary',{hasText:'Screen awareness'}).click();
   assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'12');

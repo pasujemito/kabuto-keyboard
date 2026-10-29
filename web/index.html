@@ -454,10 +454,10 @@
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details><summary>Screen awareness</summary>
     <div class="dynamic-main" id="dynamicAware"></div>
-    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs on one side only, then the turn chance. When stuck, it turns around once, then stops. Death, disconnects and map changes always stop playback.</p>
+    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs on one side only, then the turn chance. When stuck, it turns around once, then stops. Death and disconnects always stop playback.</p>
   </details>
   <details open><summary>HP &amp; Mana</summary>
-    <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %, even mid-set. Otherwise, or at 0%, it fires on its timer between sets, before skills.</p>
+    <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %, even mid-set. With its bar total and per tap set, it taps just enough to refill without waste (up to 10); otherwise it uses its taps. Without readings, or at 0%, it fires on its timer between sets, before skills.</p>
     <div id="dynamicPotions"></div>
   </details>
   <details open><summary>Skills</summary>
@@ -829,7 +829,7 @@ const DYNAMIC_KEY_SLOTS=[['jump','Jump'],['attack','Attack'],['left','Turn left'
 const DYNAMIC_DEFAULT_KEYS={jump:'ALT',attack:'CTRL',left:'LEFT',right:'RIGHT'};
 const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
-  return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
+  return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
 function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
@@ -843,7 +843,7 @@ function normalizeDynamicPattern(p){
   for(const [slot,name] of Object.entries(DYNAMIC_DEFAULT_KEYS))if(!p.keys[slot])p.keys[slot]=name;
   if(!Array.isArray(p.potions))p.potions=[];
   p.potions=['hp','mana'].map(id=>p.potions.find(x=>x?.id===id)||defaultPotion(id,false));
-  for(const x of p.potions)if(x.below===undefined)x.below=0;   // saved before live bars: timer only
+  for(const x of p.potions){if(x.below===undefined)x.below=0;if(x.bar_max===undefined)x.bar_max=0;if(x.per_tap===undefined)x.per_tap=0;}   // saved before live bars / amounts
   // Saved before screen awareness: all off.
   if(p.edge_margin===undefined)p.edge_margin=0;
   if(p.stuck_after_ms===undefined)p.stuck_after_ms=0;
@@ -878,6 +878,8 @@ function validateDynamicPattern(p){
     tapKey(x.key,label+' key');range(x.repeats,label+' taps',1,10);
     if(!Number.isInteger(x.below)||x.below<0||x.below>100)throw new Error(label+' drink below: enter a percentage from 0 to 100.');range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
     try{range(x.every_ms,'',0,86400000);}catch(e){throw new Error(label+' every: enter an ordered range from 0 to 86400 seconds.');}
+    for(const v of [x.bar_max,x.per_tap])if(!Number.isInteger(v)||v<0||v>10000000)throw new Error(label+' amounts: enter whole numbers from 0 to 10,000,000.');
+    if(!x.bar_max!==!x.per_tap||x.per_tap>x.bar_max)throw new Error(label+' amounts: set both the bar total and per tap (no more than the total), or both 0.');
   }
   chance(p.turn_chance,'Turn chance');if(typeof p.tempo_drift!=='number'||!(p.tempo_drift>=0&&p.tempo_drift<=.3))throw new Error('Tempo drift: enter a percentage from 0 to 30.');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
   if(!Array.isArray(p.skills)||p.skills.length>8)throw new Error('Use at most 8 skills.');
@@ -943,6 +945,8 @@ function renderDynamicPotions(){
     check.onchange=()=>{potion.enabled=check.checked;dynamicDirty=true;};on.append(check,' '+label);head.appendChild(on);
     head.appendChild(dynamicKeySelect(label+' key',potion.key,dynamicTapKeys(),v=>potion.key=v));card.appendChild(head);
     card.append(dynamicNumber(label+' drink below (%)',potion.below,0,100,1,n=>potion.below=Number.isFinite(n)?Math.round(n):NaN,label+' drink below (%) · 0 = timer only'),
+      dynamicNumber(label+' bar total',potion.bar_max,0,10000000,1,n=>potion.bar_max=Number.isFinite(n)?Math.round(n):NaN,label+' bar total (e.g. 5000) · 0 = off'),
+      dynamicNumber(label+' per tap',potion.per_tap,0,10000000,1,n=>potion.per_tap=Number.isFinite(n)?Math.round(n):NaN,label+' restored per tap (e.g. 800)'),
       dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),dynamicRange(label+' taps',potion.repeats,1,10));
     const details=el('details'),summary=el('summary');summary.textContent='Tap timing';details.appendChild(summary);
     details.append(dynamicRange(label+' hold (ms)',potion.hold,1,90000),dynamicRange(label+' gap after tap (ms)',potion.after,0,90000));

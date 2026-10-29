@@ -5,7 +5,7 @@ screen_stats.py - read your game screen and send what matters to Kabuto.
 Runs on the PC with the game. About once a second it samples a few small
 areas of the screen and sends a handful of numbers to the pad: HP, Mana and
 XP (bar fill %), your position on the minimap, which side mobs are on, and
-whether you're dead, disconnected or on another map. Nothing else leaves
+whether you're dead or disconnected. Nothing else leaves
 your PC: no screenshots, no reading text. All the work happens here, so the
 pad only stores a few numbers.
 
@@ -30,8 +30,7 @@ PC joined to the Kabuto-Setup hotspot (no PIN, --host 192.168.4.1):
     python screen_stats.py --host 192.168.1.42 --pin 123456
     python screen_stats.py --dry-run             # just print readings
 Set KABUTO_PIN instead of --pin to keep the PIN out of your shell history.
-Restart it after moving to a new map: it learns the map's minimap at start.
-A minimap that slides as you walk is followed, so that isn't a new map.
+A minimap that slides as you walk is followed, so your map position keeps up.
 
 Run the self-test (no screen or pad needed):
     python screen_stats.py --selftest
@@ -146,27 +145,19 @@ def find_slide(prev, cur, w, h, max_dx, max_dy):
 class MinimapTracker:
     """Follows a minimap that slides as you walk. Keeps how far it has slid
     since the start, so your map position is slide + dot (the dot can sit in
-    the middle while you walk). A view that two readings in a row can't line
-    up with the last good one means a new map, teleport or respawn."""
+    the middle while you walk). A view that can't be lined up (a teleport, a
+    respawn, another map) adds no slide: the new view is just followed on."""
     def __init__(self, threshold=0.6, max_slide=0.25):
         self.threshold, self.max_slide = threshold, max_slide
-        self.prev, self.ox, self.oy, self.misses, self.changed = None, 0, 0, 0, False
+        self.prev, self.ox, self.oy = None, 0, 0
 
     def update(self, raw, w, h):
-        if self.prev is None:
-            self.prev = raw
-            return self.changed
-        dx, dy, mismatch = find_slide(self.prev, raw, w, h, max(1, int(w * self.max_slide)), max(1, int(h * self.max_slide)))
-        if mismatch > self.threshold:
-            self.misses += 1                 # keep the last good view to compare against
-            if self.misses >= 2:
-                self.changed = True          # stays until the script restarts
-        else:
-            self.misses = 0
-            self.ox += dx
-            self.oy += dy
-            self.prev = raw
-        return self.changed
+        if self.prev is not None:
+            dx, dy, mismatch = find_slide(self.prev, raw, w, h, max(1, int(w * self.max_slide)), max(1, int(h * self.max_slide)))
+            if mismatch <= self.threshold:
+                self.ox += dx
+                self.oy += dy
+        self.prev = raw
 
     def world(self, dot, w, h):
         """Your position on the whole map in tenths of a minimap width/height
@@ -198,12 +189,12 @@ def patch_matches(raw, reference, tolerance=30):
     return total / len(raw) <= tolerance
 
 class GameState:
-    """ok / dead / offline / map from the readings, needing a couple of
+    """ok / dead / offline from the readings, needing a couple of
     agreeing readings so one odd frame doesn't stop the pad."""
     def __init__(self):
         self.zero_hp = self.gone = 0
 
-    def update(self, hp, mana, dot_seen, minimap_used, watches, map_changed):
+    def update(self, hp, mana, dot_seen, minimap_used, watches):
         if watches.get("login"):
             return "offline"
         if watches.get("death"):
@@ -215,8 +206,6 @@ class GameState:
             return "offline"          # no bars and no minimap: login screen or disconnected
         if self.zero_hp >= 2:
             return "dead"
-        if map_changed:               # MinimapTracker already wants two readings
-            return "map"
         return "ok"
 
 # ---- screen access ----------------------------------------------------------
@@ -237,19 +226,18 @@ class Screen:
     def __init__(self, sct, config):
         mm = config.get("minimap") or {}
         self.sct, self.config, self.state = sct, config, GameState()
-        self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))   # "map_threshold" was the old check's: ignored
+        self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
 
     def read(self):
         c = self.config
         out = read_bars(self.sct, c.get("bars", {}))
-        dot, world, map_changed, mm = None, None, False, c.get("minimap")
+        dot, world, mm = None, None, c.get("minimap")
         if mm:
             w, h = mm["x2"] - mm["x1"] + 1, mm["y2"] - mm["y1"] + 1
             raw = grab(self.sct, mm["x1"], mm["y1"], w, h)
             dot = find_dot(raw, w, h, mm["dot"], mm.get("tolerance", 40))
-            # Only while your dot shows: a login or loading screen isn't the map.
-            map_changed = self.minimap.update(raw, w, h) if dot else self.minimap.changed
-            if dot:
+            if dot:                      # a login or loading screen isn't the map
+                self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
         mobs, mb = "", c.get("mobs")
         if mb and mb.get("colors"):
@@ -264,7 +252,7 @@ class Screen:
         watches = {}
         for name, mark in c.get("watch", {}).items():
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
-        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, map_changed)
+        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches)
         out["x"], out["y"] = dot if dot else (None, None)
         out["wx"], out["wy"] = world if world else (None, None)   # for stuck: moves even when the dot doesn't
         out["mobs"] = mobs
@@ -535,24 +523,21 @@ def selftest():
     positions = []
     for ox, oy, dot in ((0, 40, (50, 20)), (12, 40, (50, 20)), (30, 44, (50, 20)), (55, 44, (50, 20))):
         raw = view(ox, oy, dot)
-        assert not t.update(raw, 100, 40), (ox, oy)
+        t.update(raw, 100, 40)
         d = find_dot(raw, 100, 40, yellow)
         positions.append(t.world(d, 100, 40))
     # Slides of 12, 18 and 25 px (and 4 down) are tracked: map position moves even though the dot doesn't.
     assert (t.ox, t.oy) == (55, 4), (t.ox, t.oy)
     assert positions[0][0] < positions[1][0] < positions[2][0] < positions[3][0], positions
     assert abs(positions[3][0] - positions[0][0] - round(55 * 1000 / 99)) <= 2
-    # A far jump (300 px is more than a quarter of the minimap) can't be lined up: two of those = map changed.
+    # A view that can't be lined up (teleport, another map) adds no slide; the new view is followed on.
     t2 = MinimapTracker()
     t2.update(view(0, 40, (50, 20)), 100, 40)
     t2.update(view(10, 40, (50, 20)), 100, 40)
-    other_map = textured(400, 120, 999)
-    assert not t2.update(view(10, 40, (50, 20), other_map), 100, 40)      # one odd reading: not yet
-    assert not t2.update(view(14, 40, (50, 20)), 100, 40)                 # back to normal: forgiven
-    assert t2.ox == 14 and t2.misses == 0
-    assert not t2.update(view(0, 0, None, other_map), 100, 40)
-    assert t2.update(view(4, 0, None, other_map), 100, 40) and t2.changed # two in a row: new map, latched
-    assert t2.update(view(14, 40, (50, 20)), 100, 40)                     # stays until the script restarts
+    t2.update(view(10, 40, (50, 20), textured(400, 120, 999)), 100, 40)
+    assert (t2.ox, t2.oy) == (10, 0), (t2.ox, t2.oy)
+    t2.update(view(14, 40, (50, 20), textured(400, 120, 999)), 100, 40)
+    assert t2.ox == 14
     # At the map's edge the view stops sliding; the dot moving still moves you.
     t3 = MinimapTracker()
     for dot_x in (40, 60, 80):
@@ -577,14 +562,13 @@ def selftest():
     assert not patch_matches(b"", ref)
     # Game state needs agreeing readings; marks win straight away.
     g = GameState()
-    assert g.update(0, 50, True, True, {}, False) == "ok" and g.update(0, 50, True, True, {}, False) == "dead"
-    assert g.update(70, 50, True, True, {}, False) == "ok"
-    g = GameState(); g.update(0, 0, False, True, {}, False)
-    assert g.update(None, 0, False, True, {}, False) == "offline"
-    assert GameState().update(80, 50, True, True, {}, True) == "map"   # the tracker already confirmed it
-    assert GameState().update(80, 50, True, True, {"death": True}, False) == "dead"
-    assert GameState().update(80, 50, True, True, {"login": True, "death": True}, False) == "offline"
-    assert GameState().update(None, None, False, False, {}, False) == "ok"   # nothing set up: no false alarms
+    assert g.update(0, 50, True, True, {}) == "ok" and g.update(0, 50, True, True, {}) == "dead"
+    assert g.update(70, 50, True, True, {}) == "ok"
+    g = GameState(); g.update(0, 0, False, True, {})
+    assert g.update(None, 0, False, True, {}) == "offline"
+    assert GameState().update(80, 50, True, True, {"death": True}) == "dead"
+    assert GameState().update(80, 50, True, True, {"login": True, "death": True}) == "offline"
+    assert GameState().update(None, None, False, False, {}) == "ok"   # nothing set up: no false alarms
     # What's posted: unread values left out, state and mobs always sent.
     assert form_fields({"hp": 72.0, "mana": None, "xp": 63.2, "x": None, "y": None, "mobs": "", "state": "ok"}) == \
         {"hp": 72.0, "xp": 63.2, "state": "ok", "mobs": ""}
@@ -622,12 +606,9 @@ def selftest():
     paint(fake.px, 800, 100, 580, 250, 584, grey)            # HP gone: dead after two readings
     assert screen.read()["state"] == "ok" and screen.read()["state"] == "dead"
     paint(fake.px, 800, 100, 580, 250, 584, red)
-    paint(fake.px, 800, 600, 10, 760, 90, (40, 40, 40))      # minimap gone (loading): not compared, not a new map
-    assert [screen.read()["state"] for _ in range(3)] == ["ok"] * 3
-    paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # a different minimap: map changed on the second reading
+    paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # another map: no stop, the new view is followed
     paint(fake.px, 800, 680, 50, 684, 54, yellow)
-    states = [screen.read()["state"] for _ in range(2)]
-    assert states == ["ok", "map"], states
+    assert [screen.read()["state"] for _ in range(3)] == ["ok"] * 3
 
     # USB: finds the Espressif port that answers, sends one line per reading.
     class FakeSerial:

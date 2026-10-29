@@ -42,17 +42,25 @@ struct XpTracker {
 // under the threshold, at most every LIVE_POTION_GAP_MS. Returns false when
 // the timer should decide instead (no threshold, or that bar isn't being read).
 inline bool liveDecides(uint8_t belowPercent, bool freshReadingOfThisBar) { return belowPercent && freshReadingOfThisBar; }
+// With the bar's real total and what one tap restores: how many taps fill the
+// gap without wasting any (rounded down), at least 1, at most
+// LIVE_POTION_MAX_TAPS. 0 = amounts not set (use the potion's taps range).
+const uint32_t LIVE_POTION_MAX_TAPS = 10;
+inline uint32_t livePotionTaps(int valueTenths, uint32_t barMax, uint32_t perTap) {
+    if (!barMax || !perTap || valueTenths < 0 || valueTenths > 1000) return 0;
+    uint64_t taps = (uint64_t)barMax * (uint32_t)(1000 - valueTenths) / 1000 / perTap;
+    return taps < 1 ? 1 : taps > LIVE_POTION_MAX_TAPS ? LIVE_POTION_MAX_TAPS : (uint32_t)taps;
+}
 inline bool liveWantsPotion(uint8_t belowPercent, int valueTenths, bool drunkBefore, uint32_t msSinceDrink) {
     return valueTenths >= 0 && valueTenths < belowPercent * 10 && (!drunkBefore || msSinceDrink >= LIVE_POTION_GAP_MS);
 }
 
 // Game state reported by the screen reader. Anything but OK stops playback.
-enum LiveState : uint8_t { LIVE_OK = 0, LIVE_DEAD = 1, LIVE_OFFLINE = 2, LIVE_MAP_CHANGED = 3 };
+enum LiveState : uint8_t { LIVE_OK = 0, LIVE_DEAD = 1, LIVE_OFFLINE = 2 };
 inline const char* liveStopReason(uint8_t state) {
     switch (state) {
         case LIVE_DEAD: return "you died";
         case LIVE_OFFLINE: return "the game is disconnected or at the login screen";
-        case LIVE_MAP_CHANGED: return "the map changed";
         default: return nullptr;
     }
 }
@@ -125,7 +133,6 @@ inline uint8_t statsState(const char* text) {
     if (!text) return LIVE_OK;
     if (!strcmp(text, "dead")) return LIVE_DEAD;
     if (!strcmp(text, "offline")) return LIVE_OFFLINE;
-    if (!strcmp(text, "map")) return LIVE_MAP_CHANGED;
     return LIVE_OK;
 }
 inline uint8_t statsMobs(const char* text) {
@@ -138,7 +145,7 @@ struct StatsReading {
 };
 
 // Parses the form without allocating. Unknown keys are ignored; values the
-// script sends never need escaping (numbers, ok/dead/offline/map, L/R).
+// script sends never need escaping (numbers, ok/dead/offline, L/R).
 inline StatsReading parseStatsForm(const char* form) {
     StatsReading r;
     while (form && *form) {

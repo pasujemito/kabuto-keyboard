@@ -10,11 +10,13 @@ and show up in the pad's **Updates** panel.
   included) and the pad shows them with XP per hour/minute and time to level
 - 🩸 Potions can **drink below a %** of their live bar (HP 50%, Mana 30%), even
   mid-set, falling back to their timers when there's no reading
-- ⛔ **Stops at once on death, disconnects and map changes**, and won't start
+- 🧮 **Just enough potions**: set the bar's real total and what one tap
+  restores, and it taps only as many as fit what's missing
+- ⛔ **Stops at once on death and disconnects**, and won't start
   a pattern until the game is back
 - 🗺️ **Minimap position**: turn back at map edges and turn around (then stop)
   when stuck. **Sliding minimaps** work: the script follows the slide, so a
-  dot that stays centred while you walk isn't stuck or a new map
+  dot that stays centred while you walk isn't stuck
 - 👾 **Mob detector**: turns to face mobs seen on one side only
 - 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
   (no Wi-Fi or PIN) and sets itself up on first run

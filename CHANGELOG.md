@@ -3,6 +3,15 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.17.1
+
+- 🗂️ **One mobs folder, one `map.json`**: every mob PNG is kept once in
+  `mobs`, and `mobs/map.json` lists which are on each map
+  (`{"Ellinia": ["slime.png", "snail.png"]}`), so a mob on several maps isn't
+  copied around. F9 and `--map` list the maps from it; a changed list says
+  to teach that map again; missing files and typos are reported. The older
+  folder-per-map layout still works without `map.json`
+
 ## 1.17.0
 
 - 🍁 **Game layer**: a strip over the game with what the screen reader sees

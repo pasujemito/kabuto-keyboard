@@ -10,6 +10,7 @@
     --ink:#e8eaed; --muted:#8b919e; --faint:#5b616c;
     --amber:#ffb020; --amber-dim:#5a4718;
     --live:#45d6b5; --stop:#ff5d5d; --rec:#ff4d57;
+    --hp:#ff5d5d; --mana:#4f8cff; --xp:#ffb020;
     --r:8px;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -266,6 +267,34 @@
   .storage .meter i{display:block;height:100%;background:var(--live)}
   .storage .meter i.warn{background:var(--amber)}
   .storage .meter i.full{background:var(--stop)}
+  .live-stats{display:grid;gap:6px;margin:10px 0 2px;padding:10px 12px;border:1px solid var(--edge);border-radius:var(--r);background:var(--panel);font-size:12px;color:var(--muted)}
+  .live-stats[hidden]{display:none}
+  .live-stats.stale{opacity:.55}
+  .live-row{display:grid;grid-template-columns:40px 1fr 52px;align-items:center;gap:8px}
+  .live-row b{color:var(--ink);font-family:var(--mono);font-weight:500;text-align:right}
+  .live-row .meter{height:6px;background:var(--edge);border-radius:3px;overflow:hidden}
+  .live-row .meter i{display:block;height:100%;transition:width .4s}
+  .live-stop{color:var(--stop);font-weight:600}
+  .live-row .track{position:relative;height:6px;background:var(--edge);border-radius:3px}
+  .live-row .track i{position:absolute;top:-2px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--xp)}
+  .live-row .track .home{position:absolute;top:0;bottom:0;border-radius:3px;background:rgba(69,214,181,.28);box-shadow:inset 0 0 0 1px rgba(69,214,181,.6)}
+  .live-row .track .home b{position:absolute;top:-3px;left:50%;width:2px;height:12px;margin-left:-1px;background:var(--live)}
+  .dash-head{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--edge);border-radius:999px;background:var(--panel2);color:var(--ink);font-size:12px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .chip.attack{border-color:var(--hp);color:var(--hp)}
+  .chip.wait,.chip.pause{border-color:var(--amber);color:var(--amber)}
+  .chip.home,.chip.approach{border-color:var(--live);color:var(--live)}
+  .chip.dim{color:var(--muted)}
+  .radar{position:relative;height:30px;background:var(--bg);border:1px solid var(--edge);border-radius:4px;overflow:hidden}
+  .radar .reach{position:absolute;top:0;bottom:0;background:rgba(255,93,93,.12);border-left:1px dashed rgba(255,93,93,.5);border-right:1px dashed rgba(255,93,93,.5)}
+  .radar .you{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--ink);font:600 12px/1 var(--mono)}
+  .radar .mob{position:absolute;top:50%;transform:translate(-50%,-50%);min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--amber);color:#1c1405;font:600 11px/18px var(--mono);text-align:center}
+  .radar .mob.in{background:var(--hp);color:#fff;box-shadow:0 0 6px var(--hp)}
+  .radar .side{position:absolute;bottom:1px;font:10px/1 var(--mono);color:var(--faint)}
+  .live-mobs{display:flex;flex-wrap:wrap;gap:4px 12px}
+  .live-mobs b{color:var(--ink);font-weight:500}
+  .live-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+  .live-foot .btn{margin-left:auto}
   .update-release{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--edge)}
   .update-release span{font-family:var(--mono);color:var(--ink)}
   .update-release small{color:var(--muted);margin-left:6px}
@@ -323,11 +352,12 @@
     <div class="keyshead">
       <h2>Buttons</h2>
       <div class="seg tiny icons" id="gridMode">
-        <button class="on" data-g="edit" title="Tap a button to edit its assignment"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>Edit</span></button>
-        <button data-g="run" title="Tap a button to play it on the host"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
+        <button data-g="edit" title="Tap a button to edit its assignment"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>Edit</span></button>
+        <button class="on" data-g="run" title="Tap a button to play it on the host"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
       </div>
     </div>
     <div class="grid" id="grid"></div>
+    <div class="live-stats" id="liveStats" aria-label="Live stats" hidden></div>
     <details class="monitor"><summary>Device activity</summary><div id="monitor">
       <div class="monitor-head">
         <h2>Macro execution log</h2>
@@ -438,8 +468,12 @@
     <p class="hint">Jump and attack can be Alt, Ctrl, Shift or any key. They overlap as a chord; turns are tapped between sets.</p>
   </details>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
+  <details><summary>Screen awareness</summary>
+    <div class="dynamic-main" id="dynamicAware"></div>
+    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs (the nearer side when both have some), then the turn chance. When stuck, it turns around once, then stops. <b>Smart</b> also waits (no attacks) while no mobs are in your hitbox, and walks back to where the pattern started (or arrived on a new map) once you drift past the home range. <b>Auto-pause</b> waits for respawn once most of the mobs you could see are killed (fewer than its % of the most seen lately), for up to 20 s. <b>Walk to mobs</b> heads for the nearer mobs in sight when none are in reach, staying within ¾ of the home range. Walking takes strides of a random length (Walking strides), each followed by the direction gap. Counts, distances and maps need the screen reader's mob sprites. Death and disconnects always stop playback.</p>
+  </details>
   <details open><summary>HP &amp; Mana</summary>
-    <p class="hint">Each fires on its own timer, between sets and before skills. Kabuto can't see your bars, so it drinks on time, not when you're low.</p>
+    <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %, even mid-set. With its bar total and per tap set, it taps just enough to refill without waste (up to 10); otherwise it uses its taps. Without readings, or at 0%, it fires on its timer between sets, before skills.</p>
     <div id="dynamicPotions"></div>
   </details>
   <details open><summary>Skills</summary>
@@ -742,7 +776,7 @@ function deleteLayer(){
 }
 
 /* grid */
-let gridMode="edit";
+let gridMode="run";   // Play by default; Edit to change assignments
 function recordingName(id){return cfg.workflows.find(w=>w.id===id)?.name;}
 function renderGrid(){
   const g=$("#grid");g.style.gridTemplateColumns=`repeat(${meta.cols||3},minmax(0,1fr))`;
@@ -811,9 +845,9 @@ const DYNAMIC_KEY_SLOTS=[['jump','Jump'],['attack','Attack'],['left','Turn left'
 const DYNAMIC_DEFAULT_KEYS={jump:'ALT',attack:'CTRL',left:'LEFT',right:'RIGHT'};
 const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
-  return {id,enabled,key:id==='hp'?'C':'V',every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
+  return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[280,650],skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -825,6 +859,16 @@ function normalizeDynamicPattern(p){
   for(const [slot,name] of Object.entries(DYNAMIC_DEFAULT_KEYS))if(!p.keys[slot])p.keys[slot]=name;
   if(!Array.isArray(p.potions))p.potions=[];
   p.potions=['hp','mana'].map(id=>p.potions.find(x=>x?.id===id)||defaultPotion(id,false));
+  for(const x of p.potions){if(x.below===undefined)x.below=0;if(x.bar_max===undefined)x.bar_max=0;if(x.per_tap===undefined)x.per_tap=0;}   // saved before live bars / amounts
+  // Saved before screen awareness: all off.
+  if(p.edge_margin===undefined)p.edge_margin=0;
+  if(p.stuck_after_ms===undefined)p.stuck_after_ms=0;
+  if(p.face_mobs===undefined)p.face_mobs=false;
+  if(p.smart===undefined)p.smart=false;
+  if(p.home_range===undefined)p.home_range=0;
+  if(p.auto_pause===undefined)p.auto_pause=0;   // saved before auto-pause / walking to mobs
+  if(p.approach===undefined)p.approach=false;
+  if(p.walk_hold===undefined)p.walk_hold=[280,650];
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -845,12 +889,23 @@ function validateDynamicPattern(p){
   if([k.left,k.right].some(x=>x===k.jump||x===k.attack))throw new Error('Turn keys must differ from jump and attack.');
   const movement=new Set([k.jump,k.attack,k.left,k.right]);
   const tapKey=(name,label)=>{if(!name||!meta.keys.includes(name))throw new Error(label+': choose a key.');if(movement.has(name))throw new Error(label+" can't use a movement key.");};
+  if(typeof p.edge_margin!=='number'||!(p.edge_margin>=0&&p.edge_margin<=.4))throw new Error('Turn at map edges: enter a percentage from 0 to 40.');
+  if(!Number.isInteger(p.stuck_after_ms)||(p.stuck_after_ms&&(p.stuck_after_ms<3000||p.stuck_after_ms>600000)))throw new Error('Stuck after: enter 0 (off) or 3 to 600 seconds.');
+  if(typeof p.face_mobs!=='boolean')throw new Error('Choose whether to face mobs.');
+  if(typeof p.smart!=='boolean')throw new Error('Choose whether to use smart mode.');
+  if(typeof p.home_range!=='number'||!(p.home_range>=0&&p.home_range<=.5))throw new Error('Home range: enter a percentage from 0 to 50.');
+  if(typeof p.auto_pause!=='number'||!(p.auto_pause>=0&&p.auto_pause<=.9))throw new Error('Auto-pause: enter a percentage from 0 to 90.');
+  if(typeof p.approach!=='boolean')throw new Error('Choose whether to walk to mobs.');
+  range(p.walk_hold,'Walking strides',50,5000);
   if(!Array.isArray(p.potions)||p.potions.length>2||new Set(p.potions.map(x=>x.id)).size!==p.potions.length||p.potions.some(x=>!POTION_LABELS[x.id]))throw new Error('Use one HP and one Mana entry.');
   for(const x of p.potions){
     const label=POTION_LABELS[x.id];
     if(typeof x.enabled!=='boolean')throw new Error('Choose whether '+label+' is on.');
-    tapKey(x.key,label+' key');range(x.repeats,label+' taps',1,10);range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
+    tapKey(x.key,label+' key');range(x.repeats,label+' taps',1,10);
+    if(!Number.isInteger(x.below)||x.below<0||x.below>100)throw new Error(label+' drink below: enter a percentage from 0 to 100.');range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
     try{range(x.every_ms,'',0,86400000);}catch(e){throw new Error(label+' every: enter an ordered range from 0 to 86400 seconds.');}
+    for(const v of [x.bar_max,x.per_tap])if(!Number.isInteger(v)||v<0||v>10000000)throw new Error(label+' amounts: enter whole numbers from 0 to 10,000,000.');
+    if(!x.bar_max!==!x.per_tap||x.per_tap>x.bar_max)throw new Error(label+' amounts: set both the bar total and per tap (no more than the total), or both 0.');
   }
   chance(p.turn_chance,'Turn chance');if(typeof p.tempo_drift!=='number'||!(p.tempo_drift>=0&&p.tempo_drift<=.3))throw new Error('Tempo drift: enter a percentage from 0 to 30.');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
   if(!Array.isArray(p.skills)||p.skills.length>8)throw new Error('Use at most 8 skills.');
@@ -883,7 +938,7 @@ function openDynamicEditor(id=null){
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
   normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';
-  renderDynamicFields();renderDynamicKeys();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+  renderDynamicFields();renderDynamicKeys();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
 }
 function dynamicKeySelect(label,value,options,change){
   const select=el('select');select.setAttribute('aria-label',label);
@@ -901,6 +956,20 @@ function renderDynamicKeys(){
   }
   $('#dynamicKeysSummary').textContent=`Keys · jump ${keys.jump}, attack ${keys.attack}, turn ${keys.left}/${keys.right}`;
 }
+function renderDynamicAware(){
+  const box=$('#dynamicAware'),p=dynamicDraft;box.replaceChildren();
+  box.appendChild(dynamicNumber('Turn at map edges (%)',Math.round(p.edge_margin*1000)/10,0,40,1,n=>p.edge_margin=n/100,'Turn at map edges (%) · 0 = off'));
+  box.appendChild(dynamicNumber('Stuck after (seconds)',p.stuck_after_ms/1000,0,600,1,n=>p.stuck_after_ms=Number.isFinite(n)?Math.round(n*1000):NaN,'Stuck after (s) · 0 = off'));
+  const mobs=el('label','dynamic-field'),check=el('input');check.type='checkbox';check.checked=p.face_mobs;check.setAttribute('aria-label','Face mobs');
+  check.onchange=()=>{p.face_mobs=check.checked;dynamicDirty=true;};mobs.append(check,' Turn to face mobs');box.appendChild(mobs);
+  const smart=el('label','dynamic-field'),smartCheck=el('input');smartCheck.type='checkbox';smartCheck.checked=p.smart;smartCheck.setAttribute('aria-label','Smart mode');
+  smartCheck.onchange=()=>{p.smart=smartCheck.checked;dynamicDirty=true;};smart.append(smartCheck,' Smart: face mobs, wait when there are none, walk back home');box.appendChild(smart);
+  box.appendChild(dynamicNumber('Home range (%)',Math.round(p.home_range*1000)/10,0,50,1,n=>p.home_range=n/100,'Home range (% of minimap) · 0 = no home'));
+  box.appendChild(dynamicNumber('Auto-pause (%)',Math.round(p.auto_pause*1000)/10,0,90,1,n=>p.auto_pause=n/100,'Auto-pause below (% of most mobs seen) · 0 = off'));
+  const approach=el('label','dynamic-field'),approachCheck=el('input');approachCheck.type='checkbox';approachCheck.checked=p.approach;approachCheck.setAttribute('aria-label','Walk to mobs');
+  approachCheck.onchange=()=>{p.approach=approachCheck.checked;dynamicDirty=true;};approach.append(approachCheck,' Walk to mobs you can see but not reach');box.appendChild(approach);
+  box.appendChild(dynamicRange('Walking strides (ms)',p.walk_hold,50,5000));
+}
 function renderDynamicPotions(){
   const list=$('#dynamicPotions');list.replaceChildren();
   for(const potion of dynamicDraft.potions){
@@ -908,7 +977,10 @@ function renderDynamicPotions(){
     const on=el('label'),check=el('input');check.type='checkbox';check.checked=potion.enabled;check.setAttribute('aria-label','Enable '+label);
     check.onchange=()=>{potion.enabled=check.checked;dynamicDirty=true;};on.append(check,' '+label);head.appendChild(on);
     head.appendChild(dynamicKeySelect(label+' key',potion.key,dynamicTapKeys(),v=>potion.key=v));card.appendChild(head);
-    card.append(dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),dynamicRange(label+' taps',potion.repeats,1,10));
+    card.append(dynamicNumber(label+' drink below (%)',potion.below,0,100,1,n=>potion.below=Number.isFinite(n)?Math.round(n):NaN,label+' drink below (%) · 0 = timer only'),
+      dynamicNumber(label+' bar total',potion.bar_max,0,10000000,1,n=>potion.bar_max=Number.isFinite(n)?Math.round(n):NaN,label+' bar total (e.g. 5000) · 0 = off'),
+      dynamicNumber(label+' per tap',potion.per_tap,0,10000000,1,n=>potion.per_tap=Number.isFinite(n)?Math.round(n):NaN,label+' restored per tap (e.g. 800)'),
+      dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),dynamicRange(label+' taps',potion.repeats,1,10));
     const details=el('details'),summary=el('summary');summary.textContent='Tap timing';details.appendChild(summary);
     details.append(dynamicRange(label+' hold (ms)',potion.hold,1,90000),dynamicRange(label+' gap after tap (ms)',potion.after,0,90000));
     card.appendChild(details);list.appendChild(card);
@@ -1805,6 +1877,79 @@ async function pollMacroLog(){
   try{renderMacroLog(await(await api("/api/log")).json());}catch(e){}
   setTimeout(pollMacroLog,800);
 }
+/* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
+// What a playing dynamic pattern is doing, as /api/status reports it.
+const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Walking home',approach:'🚶 Walking to mobs'};
+function runningLabel(){
+  const k=cfg?.layers[status.activeLayer]?.keys[status.runningKey];if(!k)return 'Button '+(status.runningKey+1);
+  const a=assignmentFor(k);return k.name||(a.ids.length?recordingName(a.ids[0]):'')||'Button '+(status.runningKey+1);
+}
+const mobName=n=>n.replace(/_/g,' ');
+function renderLiveStats(live,pattern=status.pattern){
+  const box=$('#liveStats');box.hidden=!live&&!pattern;if(box.hidden)return;
+  box.classList.toggle('stale',!!live&&!live.fresh);box.replaceChildren();
+  const fresh=live&&live.fresh;
+  if(fresh&&live.stopped){const stop=el('div','live-stop');stop.textContent='⛔ Stopped: '+live.stopped;box.appendChild(stop);}
+  // At a glance: what it's doing, which way it faces, where, which button.
+  const head=el('div','dash-head'),chip=(text,cls='',title='')=>{const c=el('span','chip '+cls);c.textContent=text;if(title)c.title=title;head.appendChild(c);};
+  if(pattern){chip(PATTERN_ACTIONS[pattern.action]||PATTERN_ACTIONS.attack,pattern.action);chip(pattern.facing==='left'?'◀ Facing left':'Facing right ▶','','Which way the character faces');}
+  else chip(status.running?'▶ Playing':'■ Idle','dim');
+  if(status.running&&status.runningKey>=0)chip('Button '+(status.runningKey+1)+' · '+runningLabel(),'dim');
+  if(fresh&&live.map)chip(live.map==='-'?'🗺 Map not taught':'🗺 '+mobName(live.map),live.map==='-'?'dim':'','The map the screen reader recognised by its name');
+  box.appendChild(head);
+  if(!live)return;
+  const pct=t=>(t/10).toFixed(t%10?1:0)+'%';
+  for(const [key,label,color] of [['hp','HP','--hp'],['mana','MP','--mana'],['xp','XP','--xp']]){
+    if(live[key]<0)continue;
+    const row=el('div','live-row'),name=el('span'),meter=el('div','meter'),fill=el('i'),value=el('b');
+    name.textContent=label;fill.style.width=live[key]/10+'%';fill.style.background=`var(${color})`;value.textContent=pct(live[key]);
+    meter.appendChild(fill);row.append(name,meter,value);box.appendChild(row);
+  }
+  if(live.x>=0){
+    const row=el('div','live-row'),name=el('span'),track=el('div','track'),dot=el('i'),value=el('b');
+    name.textContent='Map';dot.style.left=live.x/10+'%';
+    // Home and how far you may drift from it, on the minimap's scale.
+    if(pattern&&pattern.homeRange&&pattern.home!==undefined){
+      const at=pattern.homeOnMap?(live.wx!==undefined?live.x+pattern.home-live.wx:null):pattern.home;
+      if(at!==null){const band=el('span','home'),lo=Math.max(0,at-pattern.homeRange),hi=Math.min(1000,at+pattern.homeRange);
+        if(hi>lo){band.style.left=lo/10+'%';band.style.width=(hi-lo)/10+'%';band.title='Home range';if(at>=0&&at<=1000){const mark=el('b');mark.style.left=(at-lo)/(hi-lo)*100+'%';band.appendChild(mark);}track.appendChild(band);}}
+    }
+    track.appendChild(dot);
+    value.textContent=(live.mobs&1?'◀ ':'')+pct(live.x)+(live.mobs&2?' ▶':'');value.title='Your position on the minimap; arrows show mobs in reach on that side';
+    row.append(name,track,value);box.appendChild(row);
+  }
+  // Mobs in sight: the nearest each side (red when in reach) with how many
+  // that side has, around you; the shaded middle is your attack's reach.
+  if(live.ml>=0&&live.mr>=0){
+    const row=el('div','live-row'),name=el('span'),radar=el('div','radar'),value=el('b');name.textContent='Mobs';
+    radar.setAttribute('role','img');
+    const scale=Math.max(250,live.dl,live.dr)*1.08,at=d=>50+d/scale*50;
+    const reach=el('span','reach');reach.style.left=at(-100)+'%';reach.style.width=(at(100)-at(-100))+'%';radar.appendChild(reach);
+    const you=el('span','you');you.textContent=pattern?(pattern.facing==='left'?'◀●':'●▶'):'●';radar.appendChild(you);
+    for(const [side,count,dist,sign] of [['left',live.ml,live.dl,-1],['right',live.mr,live.dr,1]]){
+      if(count>0&&dist>=0){const m=el('span','mob'+(dist<=100?' in':''));m.style.left=at(sign*dist)+'%';m.textContent=count;m.title=`${count} ${side}, nearest ${dist}% of your reach`;radar.appendChild(m);}
+      const tag=el('span','side');tag.textContent=side==='left'?'◀ '+count:count+' ▶';tag.style[side]='4px';radar.appendChild(tag);
+    }
+    radar.setAttribute('aria-label',`Mobs: ${live.ml} left, ${live.mr} right`);
+    value.textContent=live.ml+live.mr;value.title='Mobs you can see';
+    row.append(name,radar,value);box.appendChild(row);
+    const info=el('div','live-mobs'),add=(label,text)=>{const span=el('span');span.append(label+' ');const b=el('b');b.textContent=text;span.appendChild(b);info.appendChild(span);};
+    const near=[['left',live.dl],['right',live.dr]].filter(([,d])=>d>=0).sort((a,b)=>a[1]-b[1])[0];
+    if(near)add(near[1]<=100?'Target':'Nearest',`${live.mob?mobName(live.mob)+' · ':''}${near[0]} · ${near[1]}% of reach${near[1]<=100?' (in reach)':''}`);
+    else add('Nearest','none in sight');
+    add('Seen',`${live.ml+live.mr} (${live.ml} ◀ · ▶ ${live.mr})`);
+    if(pattern&&pattern.peak>=0)add('Most lately',String(pattern.peak));
+    box.appendChild(info);
+  }
+  const foot=el('div','live-foot'),info=el('span');
+  const hours=m=>m<60?m+' min':Math.floor(m/60)+' h '+(m%60)+' min';
+  info.textContent=!live.fresh?`Screen reader stopped ${Math.round(live.ageMs/1000)} s ago; potions use their timers.`:
+    live.xpPerHour<0?(live.xp>=0?'XP rate after a minute of reading…':'Live from your PC.'):
+    `+${(live.xpPerHour/10).toFixed(1)}%/h · ${(live.xpPerHour/600).toFixed(2)}%/min`+(live.minutesToLevel>=0?` · level in ${hours(live.minutesToLevel)}`:'')+(live.levels?` · ${live.levels} level${live.levels>1?'s':''} up`:'');
+  foot.appendChild(info);
+  if(live.xp>=0){const reset=el('button','btn sm');reset.type='button';reset.textContent='Reset XP rate';reset.onclick=()=>api('/api/stats/reset',{method:'POST'}).catch(()=>{});foot.appendChild(reset);}
+  box.appendChild(foot);
+}
 async function pollStatus(){
   try{
     status=await(await api("/api/status")).json();
@@ -1814,6 +1959,7 @@ async function pollStatus(){
     $("#monCount").textContent=status.keyDownCount||0;
     const down=[];for(let i=0;i<meta.keyCount;i++)if(status.keyMask&(1<<i))down.push("#"+i);
     $("#monDown").textContent=down.length?down.join(" "):"none";
+    renderLiveStats(status.live);
     renderGrid();updateDirty();
   }catch(e){}
   setTimeout(pollStatus,700);

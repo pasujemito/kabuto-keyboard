@@ -7,6 +7,7 @@
 #include "updater.h"
 #include "home_wifi.h"
 #include "access.h"
+#include "live_stats.h"
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
@@ -105,6 +106,30 @@ static void handleStatus(AsyncWebServerRequest* req) {
     d["keyMask"]      = (uint32_t)g_keyMask;      // bitmask of keys down now
     d["lastKeyDown"]  = (int)g_lastKeyDown;       // last key index pressed
     d["keyDownCount"] = (uint32_t)g_keyDownCount; // total presses since boot
+    // Live bars from tools/screen_stats.py, in tenths of a percent (-1: not read).
+    LiveStats live = liveStatsSnapshot();
+    if (live.hp >= 0 || live.mana >= 0 || live.xp >= 0 || live.x >= 0 || live.mobs || live.ml >= 0 || live.map[0] || live.state != LIVE_OK) {
+        JsonObject l = d["live"].to<JsonObject>();
+        l["hp"] = live.hp; l["mana"] = live.mana; l["xp"] = live.xp;
+        l["x"] = live.x; l["y"] = live.y; l["mobs"] = live.mobs;
+        if (live.wx != LIVE_NO_POS) l["wx"] = live.wx;
+        l["ml"] = live.ml; l["mr"] = live.mr; l["dl"] = live.dl; l["dr"] = live.dr;
+        if (live.mob[0]) l["mob"] = live.mob;
+        if (live.map[0]) l["map"] = live.map;
+        if (const char* reason = liveStopReason(live.state)) l["stopped"] = reason;
+        l["ageMs"] = live.ageMs; l["fresh"] = live.fresh;
+        l["xpPerHour"] = live.xpPerHour; l["minutesToLevel"] = live.minutesToLevel; l["levels"] = live.levels;
+    }
+    // What a playing dynamic pattern is doing (the dashboard).
+    PatternView view = patternViewSnapshot();
+    if (view.active) {
+        JsonObject p = d["pattern"].to<JsonObject>();
+        static const char* const actions[] = {"attack", "wait", "home", "home", "pause", "approach", "approach"};
+        p["smart"] = view.smart; p["action"] = view.action < 7 ? actions[view.action] : "attack";
+        p["facing"] = view.facingLeft ? "left" : "right";
+        if (view.haveHome && view.homeRange) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; }
+        if (view.peak >= 0) p["peak"] = view.peak;
+    }
     String out; serializeJson(d, out);
     sendJson(req, 200, out);
 }
@@ -262,6 +287,26 @@ void webServerBegin() {
         JsonDocument d; d["ok"] = !err.length(); if (err.length()) d["error"] = err;
         String out; serializeJson(d, out);
         sendJson(req, err.length() ? 409 : 200, out);
+    });
+    // Readings from tools/screen_stats.py as a form body: hp, mana, xp and the
+    // minimap x/y in percent (decimals allowed; missing or out of range = not
+    // read), map position wx/wy (whole numbers), state (ok/dead/offline), mobs
+    // (L, R, both nearest first: LR or RL, or empty), mobs seen ml/mr, nearest
+    // dl/dr, its name mn and the map's name (see stats_logic.h). A state
+    // turning bad stops playback at once.
+    api("/api/stats", HTTP_POST, [](AsyncWebServerRequest* req) {
+        StatsReading r;
+        for (size_t i = 0; i < req->params(); ++i) {
+            const AsyncWebParameter* p = req->getParam(i);
+            if (p->isPost()) statsField(r, p->name().c_str(), p->value().c_str());
+        }
+        if (liveStatsUpdate(r))
+            Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
+        sendJson(req, 200, "{\"ok\":true}");
+    });
+    api("/api/stats/reset", HTTP_POST, [](AsyncWebServerRequest* req) {
+        liveStatsReset();
+        sendJson(req, 200, "{\"ok\":true}");
     });
     api("/api/log/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
         Macros.clearLog();

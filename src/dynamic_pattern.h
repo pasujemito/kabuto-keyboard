@@ -26,6 +26,8 @@ struct DynamicSkill {
     DynamicRange hold{85,110};
     DynamicRange after{880,1130};
     DynamicRange cooldown{0,0}; // wait after each use; a fresh draw every time
+    uint8_t belowPercent = 0;   // potions: with live bars, drink below this % (0 = timer only)
+    uint32_t barMax = 0, perTap = 0;   // potions: the bar's real total and what one tap restores (0 = taps range)
 };
 struct DynamicPattern {
     std::string id;
@@ -40,6 +42,15 @@ struct DynamicPattern {
     uint16_t turnChancePermille = 800;
     uint16_t tempoDriftPermille = 0;  // how far the gap after each attack may drift slower/faster
     bool shuffleSkills = true;
+    // Screen awareness (needs tools/screen_stats.py); off in older patterns.
+    uint16_t edgeMarginPermille = 0;  // turn back within this far of a minimap edge
+    uint32_t stuckAfterMs = 0;        // minimap dot still this long: turn, then stop
+    bool faceMobs = false;            // turn towards mobs (the nearer side when both)
+    bool smart = false;               // no mobs: wait for them; drifted: walk back home
+    uint16_t homeRangePermille = 0;   // smart: how far from home you may drift (0 = no home)
+    uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
+    bool approach = false;            // smart: walk to mobs you can see but not reach
+    DynamicRange walkHold{280,650};   // smart: each stride when walking (home or to mobs), then dir_after
     // Defaults match patterns saved before keys were configurable.
     DynamicKey jump = dynamicModifier(0x04);     // KM_LALT
     DynamicKey attack = dynamicModifier(0x01);   // KM_LCTRL

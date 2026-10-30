@@ -23,10 +23,12 @@ firmware updates from this repo's GitHub releases.
 | `src/access.*` | access PIN (salted hash) and login sessions |
 | `src/access_logic.h` | PIN rules, login lockout, cookie parsing (pure) |
 | `src/update_logic.h` | version/payload/rollback rules (pure) |
+| `src/live_stats.*` | latest readings from the PC (bars, game state, minimap x/y and map position, mob sides/counts/distances, map name) and what a playing pattern is doing (dashboard) |
+| `src/stats_logic.h` | XP rate, live potions, stop reasons, edge/mob facing, stuck, smart decisions, auto-pause (pure) |
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
-| `tools/` | build hooks, backup, release signing, recorder |
+| `tools/` | build hooks, backup, release signing, recorder, `screen_stats.py` (PC bar reader) |
 | `tests/` | host tests (C++ with Arduino stubs, Node/Chromium) |
 
 ## Build and test
@@ -43,7 +45,8 @@ quick set:
 g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/t && /tmp/t
 g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/t && /tmp/t
 g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o /tmp/t && /tmp/t
-g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp -o /tmp/t && /tmp/t
+g++ -std=c++11 -Wall -Wextra -Werror tests/stats_logic.cpp -o /tmp/t && /tmp/t
+g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp src/live_stats.cpp -o /tmp/t && /tmp/t
 python3 tools/next_version.py --selftest && python3 tools/release_index.py --selftest
 ```
 
@@ -71,6 +74,13 @@ release workflow runs all C++ and Python tests.
   page itself are open; hotspot clients need no PIN.
 - Never commit private keys (`*signing-key*.pem` is gitignored). Only
   `update_public_key.pem` belongs in the repo.
+- Screen reading stays on the PC (`tools/screen_stats.py`); the pad only gets
+  a few numbers per reading. Keep it that way: the pad has little RAM.
+  Readings arrive as the same form over Wi-Fi (`POST /api/stats`) or USB serial
+  (`KABUTO hello` / `KABUTO stats <form>` lines, `usbStatsPoll` in `main.cpp`),
+  parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). Mobs per map are
+  told apart on the PC by the map name's pixels (no OCR); the pad only gets the
+  name.
 - Keep the README light. Details go in `docs/GUIDE.md`, changes in
   `CHANGELOG.md`.
 

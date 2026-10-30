@@ -72,6 +72,26 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (p.jumpToAttack.max+p.attackToJumpUp.max>90000 || p.attackToJumpUp.max+p.jumpUpToAttackUp.max>90000) return false;
     if (!o["shuffle_skills"].isNull() && !o["shuffle_skills"].is<bool>()) return false;
     p.shuffleSkills = o["shuffle_skills"] | true;
+    // Screen awareness: edge margin as a fraction of the minimap (up to 40%),
+    // stuck time 0 (off) or 3 s-10 min, and facing mobs.
+    if (!chance(o["edge_margin"],p.edgeMarginPermille) || p.edgeMarginPermille>400) return false;
+    if (!o["stuck_after_ms"].isNull() && !o["stuck_after_ms"].is<uint32_t>()) return false;
+    p.stuckAfterMs = o["stuck_after_ms"] | 0U;
+    if (p.stuckAfterMs && (p.stuckAfterMs<3000 || p.stuckAfterMs>600000)) return false;
+    if (!o["face_mobs"].isNull() && !o["face_mobs"].is<bool>()) return false;
+    p.faceMobs = o["face_mobs"] | false;
+    // Smart mode: wait for mobs, and walk back within "home_range" (a fraction
+    // of the minimap, up to 50%; 0 = no home) of where the pattern started.
+    if (!o["smart"].isNull() && !o["smart"].is<bool>()) return false;
+    p.smart = o["smart"] | false;
+    if (!chance(o["home_range"],p.homeRangePermille) || p.homeRangePermille>500) return false;
+    // "auto_pause": with fewer than this share (up to 90%; 0 = off) of the most
+    // mobs seen lately left, wait for respawn. "approach": walk to mobs in
+    // sight but out of reach. "walk_hold": each stride's hold when walking.
+    if (!chance(o["auto_pause"],p.autoPausePermille) || p.autoPausePermille>900) return false;
+    if (!o["approach"].isNull() && !o["approach"].is<bool>()) return false;
+    p.approach = o["approach"] | false;
+    if (!range(o["walk_hold"],p.walkHold,50,5000)) return false;
     // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
     // keys keep the defaults, so older patterns play exactly as before.
     auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
@@ -97,6 +117,17 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         if (potion) skill.chancePermille=1000;
         else if (!chance(s["chance"],skill.chancePermille)) return false;
         if (!range(s["repeats"],skill.repeats,1,10) || !range(s["hold"],skill.hold,1,90000) || !range(s["after"],skill.after,0,90000)) return false;
+        if (potion) {
+            // "below": drink when the live bar is under this % (0 = timer only).
+            if (!s["below"].isNull() && (!s["below"].is<uint32_t>() || s["below"].as<uint32_t>() > 100)) return false;
+            skill.belowPercent = s["below"] | 0U;
+            // "bar_max"/"per_tap": the bar's real total and what one tap restores,
+            // both set or both 0 (taps range only).
+            for (const char* k : {"bar_max", "per_tap"})
+                if (!s[k].isNull() && (!s[k].is<uint32_t>() || s[k].as<uint32_t>() > 10000000U)) return false;
+            skill.barMax = s["bar_max"] | 0U; skill.perTap = s["per_tap"] | 0U;
+            if (!skill.barMax != !skill.perTap || skill.perTap > skill.barMax) return false;
+        }
         JsonVariantConst wait = s[potion ? "every_ms" : "cooldown_ms"];
         // A single number is the older fixed interval; a [min,max] range is drawn after each use.
         if (!potion && wait.is<uint32_t>()) skill.cooldown={wait.as<uint32_t>(),wait.as<uint32_t>()};
@@ -371,11 +402,14 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"dir_hold",p->directionHold);range(d,"dir_after",p->directionAfter);
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
+            d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
+            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;
+            range(d,"walk_hold",p->walkHold);
             auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
             JsonObject keys=d["keys"].to<JsonObject>();
             keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);
             JsonArray potions=d["potions"].to<JsonArray>();
-            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
+            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
             JsonArray skills=d["skills"].to<JsonArray>();
             for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;

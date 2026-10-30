@@ -3,6 +3,43 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.16.0
+
+- 📊 **Live HP, Mana and XP from your screen**: `tools/screen_stats.py` reads
+  the bars on your PC (one pixel row each, twice a second, gradient bars
+  included) and the pad shows them with XP per hour/minute and time to level
+- 🩸 Potions can **drink below a %** of their live bar (HP 50%, Mana 30%), even
+  mid-set, falling back to their timers when there's no reading
+- 🧮 **Just enough potions**: set the bar's real total and what one tap
+  restores, and it taps only as many as fit what's missing
+- ⛔ **Stops at once on death and disconnects**, and won't start
+  a pattern until the game is back
+- 🗺️ **Minimap position**: turn back at map edges and turn around (then stop)
+  when stuck. **Sliding minimaps** work: the script follows the slide, so a
+  dot that stays centred while you walk isn't stuck
+- 👾 **Mob detector**: turns to face mobs in your **hitbox** (your height,
+  your attack's reach each side), the nearer side when both have mobs. Give
+  it mob **sprites** (PNGs in a `mobs` folder) and it learns their colours,
+  leaving out outlines and what the map itself has, and looks for clumps so
+  stray pixels don't count
+- 🧠 **Smart mode** for dynamic patterns: attacks towards the mobs, waits
+  when there are none, and walks back to its home spot when it drifts
+  (home range 50% by default; a new map is a new home)
+- 🔭 **Mobs in sight**: the screen reader looks 2.5 reaches either side and
+  sends how many mobs it sees each side, how near the nearest is and its name
+- 🚶 **Walk to mobs** you can see but not reach, staying near home
+- ⏸ **Auto-pause**: once most mobs nearby are killed, wait for respawn (up to
+  20 s) instead of chasing the last few
+- 🦶 **Human walking**: strides of a random length (280–650 ms by default)
+  instead of fixed 250 ms taps
+- 🗺️ **Mobs per map**: a sprite folder per map; the map is recognised by its
+  name, compared as a picture (no OCR), so only that map's mobs are looked for
+- 📟 **Dashboard** under the buttons: what the pattern is doing, facing, map,
+  a mob radar with counts and the target mob, and the home range on the map
+- ▶️ Buttons open in **Play**; switch to Edit to change them
+- 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
+  (no Wi-Fi or PIN) and sets itself up on first run
+
 ## 1.15.0
 
 - ⌨️ **Choose your keys** for jump, attack and turning: Alt, Ctrl, Shift or any

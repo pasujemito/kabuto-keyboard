@@ -7,6 +7,7 @@
 #include "../src/macro_engine.h"
 #undef private
 #include "../src/hid_keyboard.h"
+#include "../src/live_stats.h"
 #include <cassert>
 #include <algorithm>
 #include <iostream>
@@ -306,6 +307,148 @@ int main() {
         for(auto e:hidEvents)if(e.key==6||e.key==0x19)assert(!e.mods);
         q.potions[0].enabled=false;drinking.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{drinking});
         assert(pressCount(6)==0&&pressCount(0x19)==3);
+    }
+    // Live bars: with a "drink below" threshold, HP follows the screen reading
+    // (between attacks, at most every LIVE_POTION_GAP_MS); stale or unread bars
+    // fall back to the timer.
+    {
+        DynamicPattern q=p;q.sets={1,1};q.attacksPerSet={8,8};q.skills.clear();
+        DynamicSkill hp;hp.id="hp";hp.keycode=6;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={1000000,1000000};hp.belowPercent=50;
+        DynamicSkill mana=hp;mana.id="mana";mana.keycode=0x19;mana.belowPercent=50;
+        q.potions={hp,mana};Step live=dynamic;live.setPattern(q);
+        auto drink=[&](int hpTenths,int manaTenths){engine.dynamicSkillTimers_.clear();hidEvents.clear();liveStatsUpdate(hpTenths,manaTenths,-1);run(engine,{live});};
+        drink(300,-1);      // HP low: drinks at once and again after the gap (~0.6 s/attack); Mana unread: its timer, once
+        assert(pressCount(6)>=2&&pressCount(0x19)==1);
+        uint32_t firstHp=0,secondHp=0;for(auto e:hidEvents)if(e.down&&e.key==6){if(!firstHp)firstHp=e.at;else if(!secondHp)secondHp=e.at;}
+        assert(secondHp-firstHp>=LIVE_POTION_GAP_MS);
+        for(auto e:hidEvents)if(e.key==6)assert(!e.mods);   // never inside the jump/attack chord
+        drink(800,900);     // both bars healthy: neither drinks, not even on the timer
+        assert(pressCount(6)==0&&pressCount(0x19)==0);
+        liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});
+        assert(pressCount(6)==1&&pressCount(0x19)==1);   // stale reading: timers, once each
+        // Real amounts: HP 5000 at 30% is 3500 short; 800 a tap = 4 taps (a 5th would waste).
+        q.potions[0].barMax=5000;q.potions[0].perTap=800;q.attacksPerSet={1,1};live.setPattern(q);drink(300,-1);
+        assert(pressCount(6)==4);
+        liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});
+        assert(pressCount(6)==1);   // stale reading: its timer and taps range, not the amounts
+        q.potions[0].barMax=q.potions[0].perTap=0;q.attacksPerSet={8,8};
+        q.potions[0].belowPercent=0;live.setPattern(q);drink(100,-1);
+        assert(pressCount(6)==1);   // no threshold: timer only, whatever the bar says
+    }
+    // Screen awareness: stop on death/login, face away from edges
+    // and towards mobs, and turn then stop when the minimap dot is stuck.
+    {
+        DynamicPattern q=p;q.sets={2,2};q.attacksPerSet={6,6};q.skills.clear();q.potions.clear();q.turnChancePermille=0;
+        Step aware=dynamic;
+        const uint8_t L=80,R=79;   // arrow keycodes
+        auto attacks=[&]{int n=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)++n;return n;};   // Ctrl down while Alt held
+        auto dirs=[&]{std::vector<uint8_t> d;for(auto e:hidEvents)if(e.down&&(e.key==L||e.key==R))d.push_back(e.key);return d;};
+        // Like the PC script, send a reading before starting and keep sending while it plays.
+        auto play=[&](std::function<void()> eachDelay){eachDelay();testRandomHook=[](long){return 0L;};testDelayHook=eachDelay;hidEvents.clear();run(engine,{aware});testDelayHook={};testRandomHook={};};
+        // Dead before starting: nothing is pressed.
+        aware.setPattern(q);liveStatsUpdate(500,500,-1,LIVE_DEAD);play([]{});
+        assert(std::none_of(hidEvents.begin(),hidEvents.end(),[](const HidEvent& e){return e.down;}));
+        // Dies mid-pattern: stops at once, nothing left held.
+        liveStatsUpdate(500,500,-1,LIVE_OK);uint32_t dieAt=millis()+1500;
+        play([&]{liveStatsUpdate(500,500,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});
+        assert(attacks()>=1&&attacks()<4&&held.empty()&&!heldMods&&engine.stopFlag_);engine.stopFlag_=false;
+        // Near the left edge while facing left (the first random draw): turns right before attacking.
+        q.edgeMarginPermille=120;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,50,500);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));   // between sets it taps the way it faces
+        // A mob on the right only: face it, and keep facing it at the set boundary.
+        q.edgeMarginPermille=0;q.faceMobs=true;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_RIGHT);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));
+        // Mobs on both sides: face the nearer one (left nearer: stays left; right nearer: turns right).
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_LEFT|MOB_RIGHT);});
+        assert((dirs()==std::vector<uint8_t>{L,L}));
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));
+        // Stuck on the same spot: turns around once, then stops.
+        q.faceMobs=false;q.stuckAfterMs=1500;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,400,300);});
+        // Start left, turn right when stuck, tap right between sets, stop early in set 2.
+        assert((dirs()==std::vector<uint8_t>{L,R,R})&&attacks()==6);
+        assert(engine.stopFlag_&&held.empty()&&!heldMods);engine.stopFlag_=false;
+        // A sliding minimap: the dot stays centred but the map position moves, so it isn't stuck.
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0,(int)(millis()/10),500);});
+        assert((dirs()==std::vector<uint8_t>{L,L})&&attacks()==12&&!engine.stopFlag_);
+        // The map position standing still while the dot doesn't move either: stuck as before.
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0,-2400,500);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R})&&attacks()==6&&engine.stopFlag_);engine.stopFlag_=false;
+        // Smart mode: no mobs in the hitbox -> no attacks until some appear, then face them.
+        q.stuckAfterMs=0;q.smart=true;q.homeRangePermille=100;q.sets={1,1};q.attacksPerSet={3,3};aware.setPattern(q);
+        auto firstAttack=[&]{for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)return e.at;return 0u;};
+        uint32_t mobsAt=millis()+2000;
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,millis()>=mobsAt?MOB_READ|MOB_RIGHT:MOB_READ);});
+        assert(attacks()==3&&firstAttack()>=mobsAt&&dirs().back()==R&&!engine.stopFlag_);
+        // Drifted from home with no mobs: walks back (holds left), then waits; mobs return once home.
+        // (The first tap sets the facing; any left press after it is the walk.)
+        bool walked=false;int calls=0;
+        play([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}   // home: map x 300
+                 auto d=dirs();walked=walked||(d.size()>=2&&d.back()==L);
+                 liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});   // drifted to 450
+        assert(walked&&attacks()==3);
+        // Stop pressed while waiting for mobs: returns at once, nothing held.
+        uint32_t stopAt=millis()+1500;
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ);if(millis()>=stopAt)engine.stopFlag_=true;});
+        assert(attacks()==0&&held.empty()&&!heldMods&&engine.stopFlag_);engine.stopFlag_=false;
+        // Without a mob detector (no "mobs" in the readings) smart mode just attacks.
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0);});
+        assert(attacks()==3);
+        // Readings with mobs in sight (counts, nearest distances) and the map's name.
+        auto seen=[&](uint8_t mobs,int ml,int mr,int dl,int dr,int wx=LIVE_NO_POS,const char* map=""){
+            StatsReading r;r.hp=r.mana=500;r.x=r.y=500;r.mobs=mobs;r.ml=ml;r.mr=mr;r.dl=dl;r.dr=dr;r.wx=wx;r.wy=wx==LIVE_NO_POS?LIVE_NO_POS:500;
+            statsName(map,r.map);liveStatsUpdate(r);};
+        auto holds=[&](uint8_t key,uint32_t ms){int n=0;uint32_t at=0;for(auto e:hidEvents)if(e.key==key){if(e.down)at=e.at;else if(e.at-at==ms)++n;}return n;};
+        // A broken change fails these rather than hanging: each run is stopped after 60 s.
+        auto bounded=[&](std::function<void()> each){uint32_t giveUp=millis()+60000;play([&,each]{each();if(millis()>=giveUp)engine.stopFlag_=true;});};
+        // Walking home takes strides of walk_hold (the test's draws give its
+        // minimum), not fixed 250 ms taps.
+        q.walkHold={400,900};aware.setPattern(q);walked=false;calls=0;
+        bounded([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}
+                 walked=walked||holds(L,400)>=2;
+                 liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});
+        assert(walked&&holds(L,250)==0&&attacks()==3);
+        // Approach: mobs in sight on the right, none in reach: walks right
+        // until they're in reach, then attacks. The dashboard sees it.
+        q.walkHold={280,650};q.approach=true;aware.setPattern(q);
+        bool viewed=false;
+        bounded([&]{bool near=holds(R,280)>=2;seen(near?MOB_READ|MOB_RIGHT:MOB_READ,0,2,-1,near?60:180);
+                 PatternView v=patternViewSnapshot();viewed=viewed||(v.active&&v.smart&&v.action==SMART_APPROACH_RIGHT&&!v.facingLeft);});
+        assert(holds(R,280)>=2&&attacks()==3&&firstAttack()>0&&viewed&&!patternViewSnapshot().active);
+        // Approach off: the same mobs out of reach are waited for, not walked to.
+        q.approach=false;aware.setPattern(q);stopAt=millis()+3000;
+        bounded([&]{seen(MOB_READ,0,2,-1,180);if(millis()>=stopAt)engine.stopFlag_=true;});
+        assert(holds(R,280)==0&&attacks()==0&&engine.stopFlag_);engine.stopFlag_=false;
+        // Auto-pause at 30%: 6 mobs, then 1 left (in reach): waits for respawn,
+        // and attacks again once they're back.
+        q.autoPausePermille=300;q.attacksPerSet={6,6};aware.setPattern(q);
+        auto attackTimes=[&]{std::vector<uint32_t> t;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)t.push_back(e.at);return t;};
+        uint32_t fewAt=millis()+1000,backAt=millis()+6000;
+        bounded([&]{uint32_t now=millis();seen(MOB_READ|MOB_RIGHT,0,now>=fewAt&&now<backAt?1:6,-1,50);});
+        auto times=attackTimes();
+        assert(times.size()==6&&times.front()<fewAt&&times.back()>=backAt);
+        for(uint32_t t:times)assert(t<fewAt+700||t>=backAt);
+        // The last few never respawn: after AUTO_PAUSE_MAX_MS they're attacked anyway.
+        fewAt=millis()+1000;
+        bounded([&]{seen(MOB_READ|MOB_RIGHT,0,millis()>=fewAt?1:6,-1,50);});
+        times=attackTimes();
+        assert(times.size()==6&&times.back()>=fewAt+AUTO_PAUSE_MAX_MS&&!engine.stopFlag_);
+        bool gap=false;for(size_t i=1;i<times.size();++i)gap=gap||times[i]-times[i-1]>=AUTO_PAUSE_MAX_MS;
+        assert(gap);
+        // A new map: home moves to where you arrive, so it doesn't walk back to the old map's spot.
+        q.autoPausePermille=0;q.attacksPerSet={3,3};aware.setPattern(q);calls=0;mobsAt=millis()+2500;
+        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
+                 seen(millis()>=mobsAt?MOB_READ|MOB_LEFT:MOB_READ,millis()>=mobsAt,0,millis()>=mobsAt?40:-1,-1,900,"Ellinia");});
+        assert(holds(L,280)==0&&holds(R,280)==0&&attacks()==3&&firstAttack()>=mobsAt);
+        // Same map, same drift: walks home.
+        calls=0;walked=false;
+        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
+                 walked=walked||holds(L,280)>=1;seen(walked?MOB_READ|MOB_LEFT:MOB_READ,walked,0,walked?40:-1,-1,walked?320:900,"Henesys");});
+        assert(walked&&attacks()==3);
+        liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.
     p.skills[0].chancePermille=1000;p.skills[0].cooldown={0,0};dynamic.setPattern(p);

@@ -12,6 +12,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Home Wi-Fi and PIN mocks; pinRequired acts like a page opened over the home network.
   const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true};
   const networkRequests=[];let pinRequired=false,loggedIn=false;
+  let liveState=null,patternState=null;const statsRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
@@ -25,6 +26,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    }
    if(url.pathname.startsWith('/api/')&&pinRequired&&!loggedIn)return route.fulfill({status:401,contentType:'application/json',body:'{"ok":false,"error":"PIN required"}'});
    if(url.pathname==='/api/network'&&route.request().method()==='POST'){networkRequests.push(route.request().postData());return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/stats/reset'){statsRequests.push(url.pathname);return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{}),...(patternState?{pattern:patternState}:{})})});
    if(url.pathname==='/api/network')return route.fulfill({contentType:'application/json',body:JSON.stringify(networkState)});
    if(url.pathname.startsWith('/api/update/')){
     updateRequests.push({path:url.pathname,version:url.searchParams.get('version'),body:route.request().postData()});
@@ -110,6 +113,42 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert(await page.getByLabel('Enable HP',{exact:true}).isChecked());
   assert.equal(await page.getByLabel('HP key',{exact:true}).inputValue(),'C');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   assert.equal(await page.getByLabel('HP every (seconds) minimum',{exact:true}).inputValue(),'40');
+  assert.equal(await page.getByLabel('HP drink below (%)',{exact:true}).inputValue(),'50');assert.equal(await page.getByLabel('Mana drink below (%)',{exact:true}).inputValue(),'30');
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('101');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Mana drink below: enter a percentage from 0 to 100.');
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('25');
+  // Real amounts: both or neither, per tap no more than the total.
+  assert.equal(await page.getByLabel('HP bar total',{exact:true}).inputValue(),'0');
+  await page.getByLabel('HP bar total',{exact:true}).fill('5000');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'HP amounts: set both the bar total and per tap (no more than the total), or both 0.');
+  await page.getByLabel('HP per tap',{exact:true}).fill('800');
+  // Screen awareness: on for new patterns; out-of-range values are refused.
+  await page.locator('summary',{hasText:'Screen awareness'}).click();
+  assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'12');
+  assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'20');
+  assert(await page.getByLabel('Face mobs',{exact:true}).isChecked());
+  await page.getByLabel('Turn at map edges (%)',{exact:true}).fill('50');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Turn at map edges: enter a percentage from 0 to 40.');
+  await page.getByLabel('Turn at map edges (%)',{exact:true}).fill('15');
+  await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('2');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Stuck after: enter 0 (off) or 3 to 600 seconds.');
+  await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('30');
+  // Smart mode: on with a 50% home range, 30% auto-pause, walking to mobs and
+  // 280-650 ms strides for new patterns; out-of-range values are refused.
+  assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'50');
+  await page.getByLabel('Home range (%)',{exact:true}).fill('60');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Home range: enter a percentage from 0 to 50.');
+  await page.getByLabel('Home range (%)',{exact:true}).fill('10');
+  assert.equal(await page.getByLabel('Auto-pause (%)',{exact:true}).inputValue(),'30');
+  assert(await page.getByLabel('Walk to mobs',{exact:true}).isChecked());
+  assert.equal(await page.getByLabel('Walking strides (ms) minimum',{exact:true}).inputValue(),'280');
+  await page.getByLabel('Auto-pause (%)',{exact:true}).fill('95');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Auto-pause: enter a percentage from 0 to 90.');
+  await page.getByLabel('Auto-pause (%)',{exact:true}).fill('25');
+  await page.getByLabel('Walking strides (ms) minimum',{exact:true}).fill('20');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Walking strides: enter an ordered range from 50 to 5000.');
+  await page.getByLabel('Walking strides (ms) minimum',{exact:true}).fill('300');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
@@ -151,7 +190,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await dynamicCard.getByRole('button',{name:'Edit',exact:true}).click();
   assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'75');
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
-  assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
+  assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');
+  assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'15');assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   await page.locator('#dynamicClose').click();
   // Updates: a newer release is announced; installing needs a confirmation.
   await page.locator('#tabRecordings').click();
@@ -169,6 +209,44 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   refuseInstall=true;page.once('dialog',d=>d.accept());
   await page.getByRole('button',{name:'Install v1.15.0'}).click();
   await page.locator('#toast.show.err').waitFor();assert.match(await page.locator('#toast').textContent(),/Stop playback/);
+  // Live bars from the PC screen reader appear on the pad screen with XP rates.
+  await page.locator('#tabKeys').click();
+  assert.equal(await page.locator('#gridMode button.on').getAttribute('data-g'),'run');   // buttons play when tapped, until Edit
+  assert(await page.locator('#liveStats').isHidden());
+  liveState={hp:723,mana:400,xp:632,ageMs:500,fresh:true,xpPerHour:53,minutesToLevel:416,levels:1};
+  await page.waitForFunction(()=>!document.querySelector('#liveStats').hidden);
+  const liveText=await page.locator('#liveStats').textContent();
+  assert.match(liveText,/HP72\.3%/);assert.match(liveText,/MP40%/);assert.match(liveText,/XP63\.2%/);
+  assert.match(liveText,/\+5\.3%\/h · 0\.09%\/min · level in 6 h 56 min · 1 level up/);
+  assert.equal(await page.locator('#liveStats .meter i').first().evaluate(e=>e.style.width),'72.3%');
+  await page.getByRole('button',{name:'Reset XP rate'}).click();await page.waitForTimeout(100);assert.deepEqual(statsRequests,['/api/stats/reset']);
+  // Death stops the pad: a red banner, plus your minimap position and a mob on the left.
+  liveState={hp:0,mana:400,xp:632,x:420,y:700,mobs:1,stopped:'you died',ageMs:400,fresh:true,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  await page.waitForFunction(()=>document.querySelector('#liveStats .live-stop'));
+  const deadText=await page.locator('#liveStats').textContent();
+  assert.match(deadText,/⛔ Stopped: you died/);assert.match(deadText,/Map◀ 42%/);
+  assert.equal(await page.locator('#liveStats .track i').evaluate(e=>e.style.left),'42%');
+  // The dashboard while a smart pattern plays: what it's doing and facing, the
+  // map, the mobs it sees (the nearest right one in reach, named) and home.
+  liveState={hp:723,mana:400,xp:632,x:420,y:700,wx:1420,mobs:10,ml:1,mr:3,dl:192,dr:52,mob:'Blue_Snail',map:'Henesys',ageMs:300,fresh:true,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  patternState={smart:true,action:'attack',facing:'right',home:1300,homeOnMap:true,homeRange:100,peak:6};
+  await page.waitForFunction(()=>document.querySelector('#liveStats .radar'));
+  const dashText=await page.locator('#liveStats').textContent();
+  assert.match(dashText,/⚔ Attacking/);assert.match(dashText,/Facing right ▶/);assert.match(dashText,/🗺 Henesys/);
+  assert.match(dashText,/Target Blue Snail · right · 52% of reach \(in reach\)/);assert.match(dashText,/Seen 4 \(1 ◀ · ▶ 3\)/);assert.match(dashText,/Most lately 6/);
+  assert.deepEqual(await page.locator('#liveStats .radar .mob').evaluateAll(ms=>ms.map(m=>[m.textContent,m.classList.contains('in')])),[['1',false],['3',true]]);
+  assert.deepEqual(await page.locator('#liveStats .track .home').evaluate(e=>[e.style.left,e.style.width]),['20%','20%']);   // home 1300 on the map is 30% across the minimap, ±10%
+  patternState={...patternState,action:'pause',facing:'left'};liveState={...liveState,mobs:8,ml:0,mr:1,dl:-1,dr:180,map:'-'};
+  await page.waitForFunction(()=>/Auto-pause/.test(document.querySelector('#liveStats').textContent));
+  const pauseText=await page.locator('#liveStats').textContent();
+  assert.match(pauseText,/◀ Facing left/);assert.match(pauseText,/Map not taught/);assert.match(pauseText,/Nearest Blue Snail · right · 180% of reach/);
+  patternState=null;
+  liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
+  assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);
+  assert.equal(await page.locator('#liveStats .live-row').count(),1);   // unread bars aren't shown
+  liveState=null;await page.waitForFunction(()=>document.querySelector('#liveStats').hidden);
+  await page.locator('#tabRecordings').click();
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();
   assert.match(await page.locator('#networkStatus').textContent(),/Saved: HomeNet\. Joined only to check for updates/);

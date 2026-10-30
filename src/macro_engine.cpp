@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "macro_engine.h"
+#include "live_stats.h"
 #include "hid_keyboard.h"
 #include "keymap.h"
 #include "storage.h"
@@ -418,6 +419,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 if (!pattern || depth>=8 || hasHeldInput() || state.combat) {
                     logStep(s,pc,stepStartedAt,0,true,"skipped: dynamic needs neutral input");break;
                 }
+                // Don't start attacking a death or login screen.
+                {LiveStats live=liveStatsSnapshot();const char* reason=live.fresh?liveStopReason(live.state):nullptr;
+                 if(reason){char label[80];std::snprintf(label,sizeof(label),"skipped: %s",reason);logStep(s,pc,stepStartedAt,0,true,label);break;}}
                 auto sample=[](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L));};
                 auto delay=[](uint32_t ms){Step step;step.type=StepType::DELAY;step.value=ms;step.maxValue=ms;return step;};
                 auto edge=[](bool down,uint8_t key,uint8_t mods){Step step;step.type=down?StepType::KEY_DOWN:StepType::KEY_UP;step.keycode=key;step.modifiers=mods;return step;};
@@ -431,7 +435,128 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 uint32_t sets=sample(pattern->sets);
                 const int32_t drift=pattern->tempoDriftPermille;
                 int32_t tempo=drift?(int32_t)random(2L*drift+1)-drift:0;
+                // Potions and skills share timers keyed by pattern; potions get a
+                // prefix so a skill can't share an HP/Mana timer by its id.
+                auto due=[&](const DynamicSkill& skill,const std::string& key){
+                    auto timer=dynamicSkillTimers_.find(key);
+                    return skill.enabled && (timer==dynamicSkillTimers_.end() || (uint32_t)(millis()-timer->second.lastRun)>=timer->second.wait) &&
+                           random(1000L)<skill.chancePermille;
+                };
+                auto use=[&](const DynamicSkill& skill,const std::string& key,uint32_t taps=0){
+                    Step skillEntry=s;skillEntry.keycode=skill.keycode;
+                    uint32_t started=millis();
+                    uint32_t id=logStep(skillEntry,pc,started,0,false,skill.id.c_str());
+                    uint32_t repeats=taps?taps:sample(skill.repeats);
+                    for(uint32_t repeat=0;repeat<repeats&&!stop;++repeat)tap(dynamicKeycode(skill.keycode),skill.hold,skill.after);
+                    // Even an interrupted use starts its cooldown; each wait is drawn fresh.
+                    dynamicSkillTimers_[key]={millis(),sample(skill.cooldown)};
+                    updateLogDuration(id,millis()-started,true);
+                };
+                // A potion with a "drink below" threshold follows its bar while
+                // tools/screen_stats.py sends fresh readings; otherwise its timer.
+                auto potionKey=[&](const DynamicSkill& potion){return pattern->id+"/potion:"+potion.id;};
+                auto potionLive=[&](const DynamicSkill& potion,int& value){
+                    LiveStats live=liveStatsSnapshot();value=potion.id=="hp"?live.hp:live.mana;
+                    return liveDecides(potion.belowPercent,live.fresh&&value>=0);
+                };
+                auto potionDue=[&](const DynamicSkill& potion){
+                    int value;std::string key=potionKey(potion);
+                    if(!potionLive(potion,value))return due(potion,key);
+                    auto timer=dynamicSkillTimers_.find(key);bool drunk=timer!=dynamicSkillTimers_.end();
+                    return potion.enabled&&liveWantsPotion(potion.belowPercent,value,drunk,drunk?(uint32_t)(millis()-timer->second.lastRun):0);
+                };
+                // With real amounts set, a live drink taps just enough to refill without waste.
+                auto drink=[&](const DynamicSkill& potion){
+                    int value;uint32_t taps=potionLive(potion,value)?livePotionTaps(value,potion.barMax,potion.perTap):0;
+                    use(potion,potionKey(potion),taps);
+                };
+                // Between attacks: stop on a death or login screen,
+                // turn for map edges and mobs, and turn (then stop) when stuck.
+                StuckWatch stuck;
+                // Smart mode: home is where you were when the pattern started or
+                // reached a new map (map position if the script sends it, else the minimap dot).
+                bool haveHome=false,homing=false,homeOnMap=false;int home=0;
+                std::string lastMap;
+                AutoPause autoPause;
+                bool approachOff=false;uint32_t approachOffAt=0;
+                auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
+                auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;};
+                // The map's name changed: home is wherever you arrive.
+                auto mapCheck=[&](const LiveStats& live){
+                    if(!live.fresh||!live.map[0]||lastMap==live.map)return;
+                    bool moved=!lastMap.empty();lastMap=live.map;
+                    if(moved&&haveHome){haveHome=false;logStep(s,pc,millis(),0,true,"smart: new map, new home");}
+                };
+                // What the dashboard shows.
+                auto publish=[&](uint8_t action){
+                    PatternView v;v.active=true;v.smart=pattern->smart;v.action=action;v.facingLeft=facingLeft;
+                    v.haveHome=haveHome;v.home=home;v.homeOnMap=homeOnMap;v.homeRange=pattern->homeRangePermille;
+                    v.peak=pattern->smart&&pattern->autoPausePermille?autoPause.peak:-1;patternViewSet(v);
+                };
+                auto smartInput=[&](const LiveStats& live,bool havePos,int pos){
+                    SmartInput in;in.fresh=live.fresh;in.mobs=live.mobs;in.seenLeft=live.ml;in.seenRight=live.mr;in.nearLeft=live.dl;in.nearRight=live.dr;
+                    in.havePos=havePos;in.pos=pos;in.haveHome=haveHome;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;
+                    in.approach=pattern->approach&&(!approachOff||millis()-approachOffAt>=10000);
+                    in.paused=autoPause.update(live.fresh&&live.ml>=0&&live.mr>=0?live.ml+live.mr:-1,pattern->autoPausePermille,millis());
+                    return in;
+                };
+                auto stopReason=[&](const LiveStats& live){
+                    const char* reason=live.fresh?liveStopReason(live.state):nullptr;
+                    if(reason){char label[80];std::snprintf(label,sizeof(label),"stopped: %s",reason);logStep(s,pc,millis(),0,true,label);stop=true;}
+                    return reason!=nullptr;
+                };
+                // No mobs in reach: wait (drinking live potions) until some
+                // come, or walk to ones in sight (approach). Most killed: wait for
+                // respawn (auto-pause). Drifted from home: walk back. Walking takes
+                // strides of walk_hold, then dir_after. Gives up on a home it can't
+                // reach in 10 s and makes this spot home instead, and on mobs it
+                // can't reach in 6 s (no walking to mobs for 10 s).
+                auto smartWait=[&]{
+                    static const char* const labels[]={"","smart: waiting for mobs","smart: walking home","smart: walking home",
+                        "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs"};
+                    int doing=-1;uint32_t walkStarted=0;   // the action under way (either way counts as one)
+                    while(!stop){
+                        LiveStats live=liveStatsSnapshot();
+                        if(stopReason(live))return;
+                        mapCheck(live);
+                        int pos=0;bool havePos=livePos(live,pos);
+                        if(havePos&&!haveHome)setHome(live,pos);
+                        uint8_t act=smartDecide(smartInput(live,havePos,pos));
+                        publish(act);
+                        if(act==SMART_ATTACK)break;
+                        homing=act==SMART_WALK_LEFT||act==SMART_WALK_RIGHT;
+                        bool toMobs=act==SMART_APPROACH_LEFT||act==SMART_APPROACH_RIGHT;
+                        int kind=act==SMART_WALK_RIGHT?(int)SMART_WALK_LEFT:act==SMART_APPROACH_RIGHT?(int)SMART_APPROACH_LEFT:(int)act;
+                        if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
+                        if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"smart: can't get home, home is here now");setHome(live,pos);homing=false;continue;}
+                        if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
+                        if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;tap(facing(),pattern->walkHold,pattern->directionAfter);}
+                        else{int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
+                             std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
+                    }
+                    homing=false;
+                    if(doing>=0){stuck=StuckWatch();if(!stop)logStep(s,pc,millis(),0,true,"smart: mobs found");}   // standing still on purpose isn't stuck
+                };
+                auto screenCheck=[&]{
+                    if(pattern->smart){smartWait();if(stop)return true;}
+                    LiveStats live=liveStatsSnapshot();
+                    if(!live.fresh)return false;
+                    if(stopReason(live))return true;
+                    int want=liveFacing(true,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
+                    if(want&&(want<0)!=facingLeft){facingLeft=want<0;tap(facing(),pattern->directionHold,pattern->directionAfter);}
+                    publish(SMART_ATTACK);
+                    if(pattern->stuckAfterMs){
+                        // Map position when the script sends it (the dot can stay centred while you walk), else the dot.
+                        bool map=live.wx!=LIVE_NO_POS&&live.wy!=LIVE_NO_POS;
+                        uint8_t verdict=map?stuck.update(true,live.wx,live.wy,millis(),pattern->stuckAfterMs):stuck.update(live.x>=0&&live.y>=0,live.x,live.y,millis(),pattern->stuckAfterMs);
+                        if(verdict==1){logStep(s,pc,millis(),0,true,"stuck: turning around");facingLeft=!facingLeft;tap(facing(),pattern->directionHold,pattern->directionAfter);}
+                        if(verdict==2){logStep(s,pc,millis(),0,true,"stopped: still stuck");stop=true;return true;}
+                    }
+                    return false;
+                };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
+                {LiveStats live=liveStatsSnapshot();int pos=0;if(pattern->smart&&livePos(live,pos))setHome(live,pos);if(live.fresh)lastMap=live.map;}
+                publish(SMART_ATTACK);
                 // Establish the actual initial facing before the first attack.
                 tap(facing(),pattern->directionHold,pattern->directionAfter);
                 for(uint32_t set=0;set<sets&&!stop;++set){
@@ -440,6 +565,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
                     uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
+                        if(screenCheck())break;
+                        // Live potions can't wait for the end of the set: drink between attacks.
+                        int value;
+                        for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                         if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
                         uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
                         std::vector<Step> actions{
@@ -451,27 +580,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     }
                     updateLogDuration(setLog,millis()-started,true);
                     if(stop)break;
-                    // Potions and skills share timers keyed by pattern; potions get a
-                    // prefix so a skill can't share an HP/Mana timer by its id.
-                    auto due=[&](const DynamicSkill& skill,const std::string& key){
-                        auto timer=dynamicSkillTimers_.find(key);
-                        return skill.enabled && (timer==dynamicSkillTimers_.end() || (uint32_t)(millis()-timer->second.lastRun)>=timer->second.wait) &&
-                               random(1000L)<skill.chancePermille;
-                    };
-                    auto use=[&](const DynamicSkill& skill,const std::string& key){
-                        Step skillEntry=s;skillEntry.keycode=skill.keycode;
-                        uint32_t started=millis();
-                        uint32_t id=logStep(skillEntry,pc,started,0,false,skill.id.c_str());
-                        uint32_t repeats=sample(skill.repeats);
-                        for(uint32_t repeat=0;repeat<repeats&&!stop;++repeat)tap(dynamicKeycode(skill.keycode),skill.hold,skill.after);
-                        // Even an interrupted use starts its cooldown; each wait is drawn fresh.
-                        dynamicSkillTimers_[key]={millis(),sample(skill.cooldown)};
-                        updateLogDuration(id,millis()-started,true);
-                    };
-                    for(const auto& potion:pattern->potions){
-                        std::string key=pattern->id+"/potion:"+potion.id;
-                        if(!stop&&due(potion,key))use(potion,key);
-                    }
+                    for(const auto& potion:pattern->potions)if(!stop&&potionDue(potion))drink(potion);
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i)
                         if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))skills.push_back(i);
@@ -482,10 +591,16 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     }
                     // No direction tap after the last set: it would only nudge the character.
                     if(stop||set+1==sets)break;
-                    if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
+                    // Live facing (map edge, mobs) wins; otherwise the turn chance.
+                    LiveStats live=liveStatsSnapshot();
+                    int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
+                    if(want)facingLeft=want<0;
+                    else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
+                    publish(SMART_ATTACK);
                     tap(facing(),pattern->directionHold,pattern->directionAfter);
                     if(!stop)yieldTick();
                 }
+                patternViewSet(PatternView());
                 releaseTracked();
                 logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,stop?"dynamic: stopped":"dynamic: finished");
                 break;

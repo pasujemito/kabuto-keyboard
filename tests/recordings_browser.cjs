@@ -240,6 +240,17 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.waitForFunction(()=>/Auto-pause/.test(document.querySelector('#liveStats').textContent));
   const pauseText=await page.locator('#liveStats').textContent();
   assert.match(pauseText,/◀ Facing left/);assert.match(pauseText,/Map not taught/);assert.match(pauseText,/Nearest Blue Snail · right · 180% of reach/);
+  // No mob readings (an untaught map): smart can't stop for mobs, and the dashboard says why.
+  patternState={...patternState,action:'attack'};liveState={...liveState,mobs:0,ml:-1,mr:-1,dl:-1,dr:-1,mob:undefined,map:'-'};
+  await page.waitForFunction(()=>/Mobs not counted/.test(document.querySelector('#liveStats').textContent));
+  const blindText=await page.locator('#liveStats').textContent();
+  assert.match(blindText,/⚠ Can't see mobs: attacking anyway/);assert.match(blindText,/this map isn't taught\. On it, press Which map \(F9\)/);
+  assert.equal(await page.locator('#liveStats .radar').count(),0);
+  liveState={...liveState,map:'Henesys'};
+  await page.waitForFunction(()=>/no mob detection on this map/.test(document.querySelector('#liveStats').textContent));
+  patternState={...patternState,smart:false};
+  await page.waitForFunction(()=>/Smart off/.test(document.querySelector('#liveStats').textContent));
+  assert.doesNotMatch(await page.locator('#liveStats').textContent(),/Can't see mobs/);
   patternState=null;
   liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
   await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));

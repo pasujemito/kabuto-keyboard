@@ -405,6 +405,13 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   - the **target** (the nearest mob, named, with its side and distance; "in
     reach" when it can be hit), how many you see each side, and the most seen
     lately (auto-pause's bar).
+  - **"Mobs not counted"** when there are no mob readings, with why: the map
+    isn't taught yet (press Which map / F9 on it), or there's no mob
+    detection on it. Smart can only stop for mobs it can see, so a playing
+    smart pattern then shows **⚠ Can't see mobs: attacking anyway**; a
+    pattern with Smart turned off shows **Smart off**. The game layer's strip
+    says the same in red ("new map, mobs not seen: F9", "not looking for
+    mobs").
 - Each dynamic pattern has **Screen awareness** (on for new patterns, off for
   older ones):
   - **Turn at map edges (%)**, 12% by default: within that distance of the

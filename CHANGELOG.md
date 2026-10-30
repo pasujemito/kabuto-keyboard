@@ -9,6 +9,10 @@ and show up in the pad's **Updates** panel.
   into: words in any order, any case, `2` finds `II`. Recently taught maps
   come first, taught ones are green and changed ones amber; ↑↓, Enter and
   Esc work, with a count of matches
+- 👾 **Says when mobs aren't being counted**, and why (map not taught, no mob
+  detection), on the dashboard and in red on the game strip. A smart pattern
+  that can't see mobs, and so keeps attacking, shows "⚠ Can't see mobs"; a
+  pattern with Smart off shows "Smart off"
 
 ## 1.17.2
 

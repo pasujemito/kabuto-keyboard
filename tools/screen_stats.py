@@ -1310,6 +1310,8 @@ def describe(r):
         parts.append("map %4.1f,%4.1f" % (r["x"], r["y"]))
     if r.get("mobs") is not None:
         parts.append("mobs " + (r["mobs"] or "-"))
+    if r.get("mobs") is None and r.get("state", "ok") == "ok":
+        parts.append("mobs: not looking" + (" (map not taught: F9)" if r.get("map") == "-" else ""))
     if r.get("ml") is not None:
         near = lambda side: "%d%%" % r["d" + side] if r.get("d" + side) is not None else "-"
         parts.append("seen L%d (%s) R%d (%s)" % (r["ml"], near("l"), r["mr"], near("r")) + (" " + r["mn"] if r.get("mn") else ""))
@@ -1417,7 +1419,7 @@ def layer_status(r, link, game=None, maps=(), hint=None):
     if r.get("state", "ok") != "ok":
         out.append((r["state"].upper(), RED))
     if r.get("map") == "-":
-        out.append(("new map: F9" if maps else "map not taught", AMBER))
+        out.append(("new map, mobs not seen: F9" if maps else "map not taught", RED))
     elif r.get("map"):
         out.append((r["map"].replace("_", " "), INK))
     if hint:
@@ -1431,6 +1433,8 @@ def layer_status(r, link, game=None, maps=(), hint=None):
                         RED if d <= 100 else DIM))
     elif r.get("mobs") is not None:
         out.append(("mobs " + (r["mobs"] or "-"), INK))
+    elif r.get("map") != "-":   # nothing to say how many: smart can't stop for them
+        out.append(("not looking for mobs" + (": F9 on this map" if maps else ""), RED))
     out.append(("F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
     return out
 
@@ -2046,8 +2050,12 @@ def selftest():
     assert texts[:5] == ["Kabuto \u00b7 MS", "USB COM9", "HP 72%", "MP 40%", "XP 63%"] and "Henesys Field" in texts, texts
     assert "\u25c01 \u00b7 3\u25b6" in texts and ("target Blue_Snail 52%", RED) in strip, strip
     strip = layer_status({"hp": 0.0, "state": "dead", "map": "-", "ml": 0, "mr": 0}, "can't reach Kabuto", None, ["A"])
-    assert ("DEAD", RED) in strip and ("new map: F9", AMBER) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
-    assert ("map not taught", AMBER) in layer_status({"map": "-"}, "USB", None, [])
+    assert ("DEAD", RED) in strip and ("new map, mobs not seen: F9", RED) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
+    assert ("map not taught", RED) in layer_status({"map": "-"}, "USB", None, [])
+    # No mob readings on a taught map (or without maps): said in red, since smart can't stop for mobs then.
+    assert ("not looking for mobs: F9 on this map", RED) in layer_status({"map": "Henesys", "mobs": None}, "USB", None, ["Henesys"])
+    assert ("not looking for mobs", RED) in layer_status({"hp": 50.0}, "USB") and not any("not looking" in t for t, _ in layer_status({"mobs": ""}, "USB"))
+    assert "mobs: not looking (map not taught: F9)" in describe({"map": "-", "state": "ok"}) and "not looking" not in describe({"mobs": "", "state": "ok"})
     shapes = layer_shapes({"mobs": {"x": 400, "y": 320, "top": 300, "bottom": 340, "reach": 100, "gap": 20, "cell": 10},
                            "minimap": {"x1": 600, "y1": 10, "x2": 760, "y2": 90}, "map_name": {"x1": 600, "y1": 92, "x2": 659, "y2": 105}},
                           {"left": 0, "top": 0, "width": 800, "height": 600}, [(450, 310, 470, 330, "Blue_Snail", 2)], {"x": 50.0, "y": 50.0})

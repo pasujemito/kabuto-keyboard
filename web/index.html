@@ -293,6 +293,7 @@
   .radar .side{position:absolute;bottom:1px;font:10px/1 var(--mono);color:var(--faint)}
   .live-mobs{display:flex;flex-wrap:wrap;gap:4px 12px}
   .live-mobs b{color:var(--ink);font-weight:500}
+  .live-warn{color:var(--amber)}
   .live-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
   .live-foot .btn{margin-left:auto}
   .update-release{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--edge)}
@@ -1919,7 +1920,10 @@ function renderLiveStats(live,pattern=status.pattern){
   if(fresh&&live.stopped){const stop=el('div','live-stop');stop.textContent='⛔ Stopped: '+live.stopped;box.appendChild(stop);}
   // At a glance: what it's doing, which way it faces, where, which button.
   const head=el('div','dash-head'),chip=(text,cls='',title='')=>{const c=el('span','chip '+cls);c.textContent=text;if(title)c.title=title;head.appendChild(c);};
-  if(pattern){chip(PATTERN_ACTIONS[pattern.action]||PATTERN_ACTIONS.attack,pattern.action);chip(pattern.facing==='left'?'◀ Facing left':'Facing right ▶','','Which way the character faces');}
+  if(pattern){chip(PATTERN_ACTIONS[pattern.action]||PATTERN_ACTIONS.attack,pattern.action);chip(pattern.facing==='left'?'◀ Facing left':'Facing right ▶','','Which way the character faces');
+    // Smart only stops for missing mobs when the screen reader is looking for them.
+    if(!pattern.smart)chip('Smart off','dim','This pattern attacks whatever is around: turn Smart on in its Screen awareness');
+    else if(live&&live.fresh&&!(live.mobs&8))chip('⚠ Can\'t see mobs: attacking anyway','attack','No mob readings on this map, so Smart can\'t tell when they are gone');}
   else chip(status.running?'▶ Playing':'■ Idle','dim');
   if(status.running&&status.runningKey>=0)chip('Button '+(status.runningKey+1)+' · '+runningLabel(),'dim');
   if(fresh&&live.map)chip(live.map==='-'?'🗺 Map not taught':'🗺 '+mobName(live.map),live.map==='-'?'dim':'','The map the screen reader recognised by its name');
@@ -1967,6 +1971,13 @@ function renderLiveStats(live,pattern=status.pattern){
     add('Seen',`${live.ml+live.mr} (${live.ml} ◀ · ▶ ${live.mr})`);
     if(pattern&&pattern.peak>=0)add('Most lately',String(pattern.peak));
     box.appendChild(info);
+  }else if(fresh){
+    // No counts: say why, so "keeps attacking" has an answer.
+    const warn=el('div','live-mobs live-warn');
+    warn.textContent='👾 Mobs not counted: '+(live.map==='-'?'this map isn\'t taught. On it, press Which map (F9) and pick it.':
+      !(live.mobs&8)?'no mob detection on this map. Teach it with Which map (F9), with its mobs in map.json.':
+      'only sides in reach (an older mob setup). Teach the map with mob sprites for counts and distances.');
+    box.appendChild(warn);
   }
   const foot=el('div','live-foot'),info=el('span');
   const hours=m=>m<60?m+' min':Math.floor(m/60)+' h '+(m%60)+' min';

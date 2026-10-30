@@ -12,7 +12,7 @@ w.eval(html.split('<script>')[1].split('</script>')[0].replace(/loadAll\(\)\.cat
 const evaluate=code=>w.testEval(code);
 const snapshot=()=>JSON.parse(evaluate('JSON.stringify(cfg)'));
 const selectMode=value=>{const option=w.document.querySelector(`[aria-label="Playback mode"] [data-mode="${value}"]`);assert(option);option.click();};
-evaluate(`meta={keyCount:6,maxLayers:8,keys:['A','W','H','LEFT','RIGHT','Z'],media:[]};cfg={version:1,layers:[{name:'Base',keys:[]}]};normalize();savedSnapshot=JSON.stringify(cfg);renderLayers();renderGrid();renderEditor();renderRecordings();`);
+evaluate(`meta={keyCount:6,maxLayers:8,keys:['A','W','H','LEFT','RIGHT','Z','C','V'],media:[]};cfg={version:1,layers:[{name:'Base',keys:[]}]};normalize();savedSnapshot=JSON.stringify(cfg);renderLayers();renderGrid();renderEditor();renderRecordings();`);
 async function main(){
   assert(!w.document.querySelector('#editor').textContent.match(/nano|micro|cooldown|‰/));
   const first=evaluate(`importRecordingObject({name:'Walk',steps:[{type:'down',key:'W'},{type:'delay',ms:300},{type:'up',key:'W'}]}).id`);

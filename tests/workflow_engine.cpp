@@ -397,6 +397,57 @@ int main() {
         // Without a mob detector (no "mobs" in the readings) smart mode just attacks.
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0);});
         assert(attacks()==3);
+        // Readings with mobs in sight (counts, nearest distances) and the map's name.
+        auto seen=[&](uint8_t mobs,int ml,int mr,int dl,int dr,int wx=LIVE_NO_POS,const char* map=""){
+            StatsReading r;r.hp=r.mana=500;r.x=r.y=500;r.mobs=mobs;r.ml=ml;r.mr=mr;r.dl=dl;r.dr=dr;r.wx=wx;r.wy=wx==LIVE_NO_POS?LIVE_NO_POS:500;
+            statsName(map,r.map);liveStatsUpdate(r);};
+        auto holds=[&](uint8_t key,uint32_t ms){int n=0;uint32_t at=0;for(auto e:hidEvents)if(e.key==key){if(e.down)at=e.at;else if(e.at-at==ms)++n;}return n;};
+        // A broken change fails these rather than hanging: each run is stopped after 60 s.
+        auto bounded=[&](std::function<void()> each){uint32_t giveUp=millis()+60000;play([&,each]{each();if(millis()>=giveUp)engine.stopFlag_=true;});};
+        // Walking home takes strides of walk_hold (the test's draws give its
+        // minimum), not fixed 250 ms taps.
+        q.walkHold={400,900};aware.setPattern(q);walked=false;calls=0;
+        bounded([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}
+                 walked=walked||holds(L,400)>=2;
+                 liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});
+        assert(walked&&holds(L,250)==0&&attacks()==3);
+        // Approach: mobs in sight on the right, none in reach: walks right
+        // until they're in reach, then attacks. The dashboard sees it.
+        q.walkHold={280,650};q.approach=true;aware.setPattern(q);
+        bool viewed=false;
+        bounded([&]{bool near=holds(R,280)>=2;seen(near?MOB_READ|MOB_RIGHT:MOB_READ,0,2,-1,near?60:180);
+                 PatternView v=patternViewSnapshot();viewed=viewed||(v.active&&v.smart&&v.action==SMART_APPROACH_RIGHT&&!v.facingLeft);});
+        assert(holds(R,280)>=2&&attacks()==3&&firstAttack()>0&&viewed&&!patternViewSnapshot().active);
+        // Approach off: the same mobs out of reach are waited for, not walked to.
+        q.approach=false;aware.setPattern(q);stopAt=millis()+3000;
+        bounded([&]{seen(MOB_READ,0,2,-1,180);if(millis()>=stopAt)engine.stopFlag_=true;});
+        assert(holds(R,280)==0&&attacks()==0&&engine.stopFlag_);engine.stopFlag_=false;
+        // Auto-pause at 30%: 6 mobs, then 1 left (in reach): waits for respawn,
+        // and attacks again once they're back.
+        q.autoPausePermille=300;q.attacksPerSet={6,6};aware.setPattern(q);
+        auto attackTimes=[&]{std::vector<uint32_t> t;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)t.push_back(e.at);return t;};
+        uint32_t fewAt=millis()+1000,backAt=millis()+6000;
+        bounded([&]{uint32_t now=millis();seen(MOB_READ|MOB_RIGHT,0,now>=fewAt&&now<backAt?1:6,-1,50);});
+        auto times=attackTimes();
+        assert(times.size()==6&&times.front()<fewAt&&times.back()>=backAt);
+        for(uint32_t t:times)assert(t<fewAt+700||t>=backAt);
+        // The last few never respawn: after AUTO_PAUSE_MAX_MS they're attacked anyway.
+        fewAt=millis()+1000;
+        bounded([&]{seen(MOB_READ|MOB_RIGHT,0,millis()>=fewAt?1:6,-1,50);});
+        times=attackTimes();
+        assert(times.size()==6&&times.back()>=fewAt+AUTO_PAUSE_MAX_MS&&!engine.stopFlag_);
+        bool gap=false;for(size_t i=1;i<times.size();++i)gap=gap||times[i]-times[i-1]>=AUTO_PAUSE_MAX_MS;
+        assert(gap);
+        // A new map: home moves to where you arrive, so it doesn't walk back to the old map's spot.
+        q.autoPausePermille=0;q.attacksPerSet={3,3};aware.setPattern(q);calls=0;mobsAt=millis()+2500;
+        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
+                 seen(millis()>=mobsAt?MOB_READ|MOB_LEFT:MOB_READ,millis()>=mobsAt,0,millis()>=mobsAt?40:-1,-1,900,"Ellinia");});
+        assert(holds(L,280)==0&&holds(R,280)==0&&attacks()==3&&firstAttack()>=mobsAt);
+        // Same map, same drift: walks home.
+        calls=0;walked=false;
+        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
+                 walked=walked||holds(L,280)>=1;seen(walked?MOB_READ|MOB_LEFT:MOB_READ,walked,0,walked?40:-1,-1,walked?320:900,"Henesys");});
+        assert(walked&&attacks()==3);
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

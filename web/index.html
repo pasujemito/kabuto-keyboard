@@ -277,6 +277,22 @@
   .live-stop{color:var(--stop);font-weight:600}
   .live-row .track{position:relative;height:6px;background:var(--edge);border-radius:3px}
   .live-row .track i{position:absolute;top:-2px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--xp)}
+  .live-row .track .home{position:absolute;top:0;bottom:0;border-radius:3px;background:rgba(69,214,181,.28);box-shadow:inset 0 0 0 1px rgba(69,214,181,.6)}
+  .live-row .track .home b{position:absolute;top:-3px;left:50%;width:2px;height:12px;margin-left:-1px;background:var(--live)}
+  .dash-head{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--edge);border-radius:999px;background:var(--panel2);color:var(--ink);font-size:12px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .chip.attack{border-color:var(--hp);color:var(--hp)}
+  .chip.wait,.chip.pause{border-color:var(--amber);color:var(--amber)}
+  .chip.home,.chip.approach{border-color:var(--live);color:var(--live)}
+  .chip.dim{color:var(--muted)}
+  .radar{position:relative;height:30px;background:var(--bg);border:1px solid var(--edge);border-radius:4px;overflow:hidden}
+  .radar .reach{position:absolute;top:0;bottom:0;background:rgba(255,93,93,.12);border-left:1px dashed rgba(255,93,93,.5);border-right:1px dashed rgba(255,93,93,.5)}
+  .radar .you{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--ink);font:600 12px/1 var(--mono)}
+  .radar .mob{position:absolute;top:50%;transform:translate(-50%,-50%);min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--amber);color:#1c1405;font:600 11px/18px var(--mono);text-align:center}
+  .radar .mob.in{background:var(--hp);color:#fff;box-shadow:0 0 6px var(--hp)}
+  .radar .side{position:absolute;bottom:1px;font:10px/1 var(--mono);color:var(--faint)}
+  .live-mobs{display:flex;flex-wrap:wrap;gap:4px 12px}
+  .live-mobs b{color:var(--ink);font-weight:500}
   .live-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
   .live-foot .btn{margin-left:auto}
   .update-release{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--edge)}
@@ -336,8 +352,8 @@
     <div class="keyshead">
       <h2>Buttons</h2>
       <div class="seg tiny icons" id="gridMode">
-        <button class="on" data-g="edit" title="Tap a button to edit its assignment"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>Edit</span></button>
-        <button data-g="run" title="Tap a button to play it on the host"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
+        <button data-g="edit" title="Tap a button to edit its assignment"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg><span>Edit</span></button>
+        <button class="on" data-g="run" title="Tap a button to play it on the host"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
       </div>
     </div>
     <div class="grid" id="grid"></div>
@@ -454,7 +470,7 @@
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details><summary>Screen awareness</summary>
     <div class="dynamic-main" id="dynamicAware"></div>
-    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs (the nearer side when both have some), then the turn chance. When stuck, it turns around once, then stops. <b>Smart</b> also waits (no attacks) while no mobs are in your hitbox, and walks back to where the pattern started once you drift past the home range. Death and disconnects always stop playback.</p>
+    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs (the nearer side when both have some), then the turn chance. When stuck, it turns around once, then stops. <b>Smart</b> also waits (no attacks) while no mobs are in your hitbox, and walks back to where the pattern started (or arrived on a new map) once you drift past the home range. <b>Auto-pause</b> waits for respawn once most of the mobs you could see are killed (fewer than its % of the most seen lately), for up to 20 s. <b>Walk to mobs</b> heads for the nearer mobs in sight when none are in reach, staying within ¾ of the home range. Walking takes strides of a random length (Walking strides), each followed by the direction gap. Counts, distances and maps need the screen reader's mob sprites. Death and disconnects always stop playback.</p>
   </details>
   <details open><summary>HP &amp; Mana</summary>
     <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %, even mid-set. With its bar total and per tap set, it taps just enough to refill without waste (up to 10); otherwise it uses its taps. Without readings, or at 0%, it fires on its timer between sets, before skills.</p>
@@ -760,7 +776,7 @@ function deleteLayer(){
 }
 
 /* grid */
-let gridMode="edit";
+let gridMode="run";   // Play by default; Edit to change assignments
 function recordingName(id){return cfg.workflows.find(w=>w.id===id)?.name;}
 function renderGrid(){
   const g=$("#grid");g.style.gridTemplateColumns=`repeat(${meta.cols||3},minmax(0,1fr))`;
@@ -831,7 +847,7 @@ const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
   return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.1,skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[280,650],skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -850,6 +866,9 @@ function normalizeDynamicPattern(p){
   if(p.face_mobs===undefined)p.face_mobs=false;
   if(p.smart===undefined)p.smart=false;
   if(p.home_range===undefined)p.home_range=0;
+  if(p.auto_pause===undefined)p.auto_pause=0;   // saved before auto-pause / walking to mobs
+  if(p.approach===undefined)p.approach=false;
+  if(p.walk_hold===undefined)p.walk_hold=[280,650];
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -875,6 +894,9 @@ function validateDynamicPattern(p){
   if(typeof p.face_mobs!=='boolean')throw new Error('Choose whether to face mobs.');
   if(typeof p.smart!=='boolean')throw new Error('Choose whether to use smart mode.');
   if(typeof p.home_range!=='number'||!(p.home_range>=0&&p.home_range<=.5))throw new Error('Home range: enter a percentage from 0 to 50.');
+  if(typeof p.auto_pause!=='number'||!(p.auto_pause>=0&&p.auto_pause<=.9))throw new Error('Auto-pause: enter a percentage from 0 to 90.');
+  if(typeof p.approach!=='boolean')throw new Error('Choose whether to walk to mobs.');
+  range(p.walk_hold,'Walking strides',50,5000);
   if(!Array.isArray(p.potions)||p.potions.length>2||new Set(p.potions.map(x=>x.id)).size!==p.potions.length||p.potions.some(x=>!POTION_LABELS[x.id]))throw new Error('Use one HP and one Mana entry.');
   for(const x of p.potions){
     const label=POTION_LABELS[x.id];
@@ -943,6 +965,10 @@ function renderDynamicAware(){
   const smart=el('label','dynamic-field'),smartCheck=el('input');smartCheck.type='checkbox';smartCheck.checked=p.smart;smartCheck.setAttribute('aria-label','Smart mode');
   smartCheck.onchange=()=>{p.smart=smartCheck.checked;dynamicDirty=true;};smart.append(smartCheck,' Smart: face mobs, wait when there are none, walk back home');box.appendChild(smart);
   box.appendChild(dynamicNumber('Home range (%)',Math.round(p.home_range*1000)/10,0,50,1,n=>p.home_range=n/100,'Home range (% of minimap) · 0 = no home'));
+  box.appendChild(dynamicNumber('Auto-pause (%)',Math.round(p.auto_pause*1000)/10,0,90,1,n=>p.auto_pause=n/100,'Auto-pause below (% of most mobs seen) · 0 = off'));
+  const approach=el('label','dynamic-field'),approachCheck=el('input');approachCheck.type='checkbox';approachCheck.checked=p.approach;approachCheck.setAttribute('aria-label','Walk to mobs');
+  approachCheck.onchange=()=>{p.approach=approachCheck.checked;dynamicDirty=true;};approach.append(approachCheck,' Walk to mobs you can see but not reach');box.appendChild(approach);
+  box.appendChild(dynamicRange('Walking strides (ms)',p.walk_hold,50,5000));
 }
 function renderDynamicPotions(){
   const list=$('#dynamicPotions');list.replaceChildren();
@@ -1852,10 +1878,26 @@ async function pollMacroLog(){
   setTimeout(pollMacroLog,800);
 }
 /* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
-function renderLiveStats(live){
-  const box=$('#liveStats');box.hidden=!live;if(!live)return;
-  box.classList.toggle('stale',!live.fresh);box.replaceChildren();
-  if(live.fresh&&live.stopped){const stop=el('div','live-stop');stop.textContent='⛔ Stopped: '+live.stopped;box.appendChild(stop);}
+// What a playing dynamic pattern is doing, as /api/status reports it.
+const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Walking home',approach:'🚶 Walking to mobs'};
+function runningLabel(){
+  const k=cfg?.layers[status.activeLayer]?.keys[status.runningKey];if(!k)return 'Button '+(status.runningKey+1);
+  const a=assignmentFor(k);return k.name||(a.ids.length?recordingName(a.ids[0]):'')||'Button '+(status.runningKey+1);
+}
+const mobName=n=>n.replace(/_/g,' ');
+function renderLiveStats(live,pattern=status.pattern){
+  const box=$('#liveStats');box.hidden=!live&&!pattern;if(box.hidden)return;
+  box.classList.toggle('stale',!!live&&!live.fresh);box.replaceChildren();
+  const fresh=live&&live.fresh;
+  if(fresh&&live.stopped){const stop=el('div','live-stop');stop.textContent='⛔ Stopped: '+live.stopped;box.appendChild(stop);}
+  // At a glance: what it's doing, which way it faces, where, which button.
+  const head=el('div','dash-head'),chip=(text,cls='',title='')=>{const c=el('span','chip '+cls);c.textContent=text;if(title)c.title=title;head.appendChild(c);};
+  if(pattern){chip(PATTERN_ACTIONS[pattern.action]||PATTERN_ACTIONS.attack,pattern.action);chip(pattern.facing==='left'?'◀ Facing left':'Facing right ▶','','Which way the character faces');}
+  else chip(status.running?'▶ Playing':'■ Idle','dim');
+  if(status.running&&status.runningKey>=0)chip('Button '+(status.runningKey+1)+' · '+runningLabel(),'dim');
+  if(fresh&&live.map)chip(live.map==='-'?'🗺 Map not taught':'🗺 '+mobName(live.map),live.map==='-'?'dim':'','The map the screen reader recognised by its name');
+  box.appendChild(head);
+  if(!live)return;
   const pct=t=>(t/10).toFixed(t%10?1:0)+'%';
   for(const [key,label,color] of [['hp','HP','--hp'],['mana','MP','--mana'],['xp','XP','--xp']]){
     if(live[key]<0)continue;
@@ -1865,9 +1907,39 @@ function renderLiveStats(live){
   }
   if(live.x>=0){
     const row=el('div','live-row'),name=el('span'),track=el('div','track'),dot=el('i'),value=el('b');
-    name.textContent='Map';dot.style.left=live.x/10+'%';track.appendChild(dot);
-    value.textContent=(live.mobs&1?'◀ ':'')+pct(live.x)+(live.mobs&2?' ▶':'');value.title='Your position on the minimap; arrows show mobs on that side';
+    name.textContent='Map';dot.style.left=live.x/10+'%';
+    // Home and how far you may drift from it, on the minimap's scale.
+    if(pattern&&pattern.homeRange&&pattern.home!==undefined){
+      const at=pattern.homeOnMap?(live.wx!==undefined?live.x+pattern.home-live.wx:null):pattern.home;
+      if(at!==null){const band=el('span','home'),lo=Math.max(0,at-pattern.homeRange),hi=Math.min(1000,at+pattern.homeRange);
+        if(hi>lo){band.style.left=lo/10+'%';band.style.width=(hi-lo)/10+'%';band.title='Home range';if(at>=0&&at<=1000){const mark=el('b');mark.style.left=(at-lo)/(hi-lo)*100+'%';band.appendChild(mark);}track.appendChild(band);}}
+    }
+    track.appendChild(dot);
+    value.textContent=(live.mobs&1?'◀ ':'')+pct(live.x)+(live.mobs&2?' ▶':'');value.title='Your position on the minimap; arrows show mobs in reach on that side';
     row.append(name,track,value);box.appendChild(row);
+  }
+  // Mobs in sight: the nearest each side (red when in reach) with how many
+  // that side has, around you; the shaded middle is your attack's reach.
+  if(live.ml>=0&&live.mr>=0){
+    const row=el('div','live-row'),name=el('span'),radar=el('div','radar'),value=el('b');name.textContent='Mobs';
+    radar.setAttribute('role','img');
+    const scale=Math.max(250,live.dl,live.dr)*1.08,at=d=>50+d/scale*50;
+    const reach=el('span','reach');reach.style.left=at(-100)+'%';reach.style.width=(at(100)-at(-100))+'%';radar.appendChild(reach);
+    const you=el('span','you');you.textContent=pattern?(pattern.facing==='left'?'◀●':'●▶'):'●';radar.appendChild(you);
+    for(const [side,count,dist,sign] of [['left',live.ml,live.dl,-1],['right',live.mr,live.dr,1]]){
+      if(count>0&&dist>=0){const m=el('span','mob'+(dist<=100?' in':''));m.style.left=at(sign*dist)+'%';m.textContent=count;m.title=`${count} ${side}, nearest ${dist}% of your reach`;radar.appendChild(m);}
+      const tag=el('span','side');tag.textContent=side==='left'?'◀ '+count:count+' ▶';tag.style[side]='4px';radar.appendChild(tag);
+    }
+    radar.setAttribute('aria-label',`Mobs: ${live.ml} left, ${live.mr} right`);
+    value.textContent=live.ml+live.mr;value.title='Mobs you can see';
+    row.append(name,radar,value);box.appendChild(row);
+    const info=el('div','live-mobs'),add=(label,text)=>{const span=el('span');span.append(label+' ');const b=el('b');b.textContent=text;span.appendChild(b);info.appendChild(span);};
+    const near=[['left',live.dl],['right',live.dr]].filter(([,d])=>d>=0).sort((a,b)=>a[1]-b[1])[0];
+    if(near)add(near[1]<=100?'Target':'Nearest',`${live.mob?mobName(live.mob)+' · ':''}${near[0]} · ${near[1]}% of reach${near[1]<=100?' (in reach)':''}`);
+    else add('Nearest','none in sight');
+    add('Seen',`${live.ml+live.mr} (${live.ml} ◀ · ▶ ${live.mr})`);
+    if(pattern&&pattern.peak>=0)add('Most lately',String(pattern.peak));
+    box.appendChild(info);
   }
   const foot=el('div','live-foot'),info=el('span');
   const hours=m=>m<60?m+' min':Math.floor(m/60)+' h '+(m%60)+' min';

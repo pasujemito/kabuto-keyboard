@@ -24,6 +24,19 @@ and show up in the pad's **Updates** panel.
   stray pixels don't count
 - 🧠 **Smart mode** for dynamic patterns: attacks towards the mobs, waits
   when there are none, and walks back to its home spot when it drifts
+  (home range 50% by default; a new map is a new home)
+- 🔭 **Mobs in sight**: the screen reader looks 2.5 reaches either side and
+  sends how many mobs it sees each side, how near the nearest is and its name
+- 🚶 **Walk to mobs** you can see but not reach, staying near home
+- ⏸ **Auto-pause**: once most mobs nearby are killed, wait for respawn (up to
+  20 s) instead of chasing the last few
+- 🦶 **Human walking**: strides of a random length (280–650 ms by default)
+  instead of fixed 250 ms taps
+- 🗺️ **Mobs per map**: a sprite folder per map; the map is recognised by its
+  name, compared as a picture (no OCR), so only that map's mobs are looked for
+- 📟 **Dashboard** under the buttons: what the pattern is doing, facing, map,
+  a mob radar with counts and the target mob, and the home range on the map
+- ▶️ Buttons open in **Play**; switch to Edit to change them
 - 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
   (no Wi-Fi or PIN) and sets itself up on first run
 

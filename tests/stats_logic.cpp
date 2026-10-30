@@ -43,6 +43,33 @@ int main(){
     assert(smartAction(true,left,true,650,true,500,100,false)==SMART_ATTACK&&smartAction(true,left,true,750,true,500,100,false)==SMART_WALK_LEFT);   // mobs keep you, unless far
     assert(smartAction(true,none,true,560,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,540,true,500,100,true)==SMART_WAIT);   // walks until within half
     assert(smartAction(true,none,true,900,true,500,0,false)==SMART_WAIT&&smartAction(true,none,false,0,true,500,100,false)==SMART_WAIT);   // no home / no position
+    // With mobs in sight (counts and distances): approach walks to the nearer
+    // side's mobs when none are in reach, but not past 3/4 of the home range;
+    // auto-pause waits whatever's in reach; home still comes first.
+    SmartInput in;in.fresh=true;in.mobs=none;in.seenLeft=1;in.seenRight=2;in.nearLeft=180;in.nearRight=150;
+    in.havePos=in.haveHome=true;in.pos=500;in.home=500;in.range=100;
+    assert(smartDecide(in)==SMART_WAIT);                                   // approach off: as before
+    in.approach=true;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
+    in.nearLeft=120;assert(smartDecide(in)==SMART_APPROACH_LEFT);          // the nearer side
+    in.pos=420;assert(smartDecide(in)==SMART_WAIT);                        // 80 left of home (past 75): no further left
+    in.pos=500;in.seenLeft=0;in.nearLeft=-1;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
+    in.seenRight=0;in.nearRight=-1;assert(smartDecide(in)==SMART_WAIT);   // none in sight
+    in.seenRight=2;in.nearRight=150;in.mobs=MOB_READ|MOB_RIGHT;assert(smartDecide(in)==SMART_ATTACK);   // in reach: attack
+    in.paused=true;assert(smartDecide(in)==SMART_PAUSE);
+    in.pos=700;in.mobs=none;assert(smartDecide(in)==SMART_WALK_LEFT);     // drifted: home before pausing
+    in.pos=500;in.paused=false;in.seenLeft=in.seenRight=-1;assert(smartDecide(in)==SMART_WAIT);   // no counts: as before
+    in.haveHome=false;in.seenRight=1;in.nearRight=300;assert(smartDecide(in)==SMART_APPROACH_RIGHT);   // no home: no limit
+    // Auto-pause at 30%: 6 seen sets the bar; 1 left (under 1.8) pauses, 4
+    // (60%+) resumes; a pause lasts at most AUTO_PAUSE_MAX_MS, then the
+    // stragglers are fought until the mobs are back.
+    AutoPause ap;assert(!ap.update(6,300,0)&&ap.peak==6);
+    assert(!ap.update(2,300,1000)&&ap.update(1,300,2000)&&ap.update(3,300,3000)&&!ap.update(4,300,4000));
+    assert(ap.update(1,300,5000)&&ap.update(0,300,6000));                 // none left: still waiting for respawn
+    assert(!ap.update(1,300,5000+AUTO_PAUSE_MAX_MS)&&ap.spent&&!ap.update(1,300,6000+AUTO_PAUSE_MAX_MS));
+    assert(!ap.update(5,300,7000+AUTO_PAUSE_MAX_MS)&&ap.update(1,300,8000+AUTO_PAUSE_MAX_MS));   // back: pauses again
+    assert(!ap.update(-1,300,9000+AUTO_PAUSE_MAX_MS)&&!ap.update(1,0,9000+AUTO_PAUSE_MAX_MS));     // not read / off
+    AutoPause decay;decay.update(6,300,0);decay.update(2,300,MOB_PEAK_DECAY_MS);assert(decay.peak==5);   // one crowded moment fades
+    AutoPause few;assert(!few.update(2,300,0)&&!few.update(0,300,1000)&&!few.update(1,300,2000));      // 2 at most: 1 left is half
     // Stuck: still for the window -> 1 (turn), still again -> 2 (stop); moving resets.
     StuckWatch sw;assert(sw.update(true,500,500,0,10000)==0&&sw.update(true,505,498,9999,10000)==0);
     assert(sw.update(true,505,498,10000,10000)==1&&sw.update(true,500,500,15000,10000)==0&&sw.update(true,500,500,20000,10000)==2);
@@ -64,5 +91,14 @@ int main(){
     assert(parseStatsForm("hp=50").mobs==0);   // no mob detector
     r=parseStatsForm("");assert(r.hp==-1&&r.state==LIVE_OK);
     r=parseStatsForm("hp=12345678901234567890&mana");assert(r.hp==-1&&r.mana==-1);   // oversized value, no '='
+    // Mobs in sight, the nearest's name and the map's.
+    r=parseStatsForm("hp=50&mobs=R&ml=1&mr=3&dl=192&dr=52&mn=Blue_Snail&map=Henesys_Hunting_Groun");
+    assert(r.ml==1&&r.mr==3&&r.dl==192&&r.dr==52&&std::string(r.mob)=="Blue_Snail"&&std::string(r.map)=="Henesys_Hunting_Groun");
+    r=parseStatsForm("hp=50");assert(r.ml==-1&&r.dr==-1&&!r.mob[0]&&!r.map[0]);   // not sent
+    assert(statsCount("0")==0&&statsCount("9999")==9999&&statsCount("10000")==-1&&statsCount("-1")==-1&&statsCount("2.5")==-1&&statsCount("")==-1);
+    char name[LIVE_NAME_LEN];statsName("Ma<p> 1-x_y",name);assert(std::string(name)=="Map1-x_y");
+    statsName("abcdefghijklmnopqrstuvwxyz",name);assert(std::string(name)=="abcdefghijklmnopqrstuvw");   // 23 at most
+    statsName(nullptr,name);assert(!name[0]);
+    r=parseStatsForm("map=-");assert(std::string(r.map)=="-");   // a map the script wasn't taught
     std::cout<<"stats logic tests passed\n";
 }

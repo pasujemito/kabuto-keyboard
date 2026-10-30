@@ -153,9 +153,12 @@ the address shown in the panel) from any device on that Wi-Fi:
 The pad can't see your screen, so a small script on the game PC does the
 looking. Twice a second, `tools/screen_stats.py` samples a few small areas
 and sends a handful of numbers: HP, Mana and XP (bar fill %), your position on
-the minimap, which side mobs are on, and whether you're dead or disconnected.
-No screenshots leave your PC and there's no text reading. All
-the work happens on the PC; the pad only keeps a few numbers (about 30 bytes).
+the minimap, the mobs around you (which sides are in your reach, how many you
+can see each side, how near the nearest is and its name), which map you're on,
+and whether you're dead or disconnected. No screenshots leave your PC and
+there's no text reading (OCR): even the map's name is compared as a picture.
+All the work happens on the PC; the pad only keeps a few numbers (about 100
+bytes).
 
 **Plug and play on a game laptop:**
 
@@ -190,6 +193,9 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    reads short, raise its `fade` (default 30) in `kabuto-bars.json`.
 2. **Minimap:** its top-left corner, its bottom-right corner, then your own dot
    on it (it learns your dot's colour).
+   With map folders in `mobs` (see **Mobs per map**), it also asks for the
+   **map's name**: its top-left, then its bottom-right a bit past where the
+   longest name would end.
 3. **Mobs:** your **hitbox** first: your character's head, then its feet,
    then how far your attack reaches to one side. Mobs are looked for in that
    box either side of you (e.g. 120 px tall, 400 px each way), skipping your
@@ -214,6 +220,44 @@ busiest patch sets how big a clump must be. It prints what it kept:
   stump.png: no colour of its own - it looks too much like the map to spot
   A mob needs 11 hits in a 28 px patch (the map's busiest patch had 4)
 ```
+
+**Seeing further than you reach:** mobs are looked for in your hitbox's height
+2.5 times your reach either side (`sight` in `kabuto-bars.json`; lower it if
+the game is windowed and that goes past it). Each clump of mob colour is a mob,
+and a clump as wide as two mobs counts as two. So besides the sides with mobs
+in reach, the pad learns **how many mobs you can see** each side, **how near
+the nearest is** each side (in % of your reach: 100% is its edge) and its
+**name** (the sprite most of its colour came from, e.g. `snail.png` ->
+snail). The console shows it: `seen L1 (192%) R3 (52%) snail`. Older setups
+(colours marked by hand) keep sending sides only; run `--mobs` with sprites
+for the rest.
+
+**Mobs per map:** make a folder per map in `mobs`, named as you like (the
+map's name reads best), with that map's mob sprites:
+
+```
+mobs/Henesys Hunting Ground/snail.png
+mobs/Henesys Hunting Ground/blue_snail.png
+mobs/Ellinia/slime.png
+```
+
+Run `--setup` once (it asks where the map's name is shown), then stand on each
+map and teach it:
+
+```bash
+python screen_stats.py --map            # lists the folders and asks which map you're on
+python screen_stats.py --map Ellinia    # or name it
+```
+
+Teaching keeps the map's name as a picture (its light pixels) and learns that
+folder's mob colours against that map's scenery. While running, whenever a
+taught name shows (a pixel or two off is fine), that map's mobs are looked
+for, so only the mobs that live there are matched; a map you haven't taught
+uses the sprites at the top of `mobs` (if any) and the pad shows "map not
+taught". If two maps' names look alike in the marked area, `--map` warns you:
+mark just the name. Names are read as light text (`light`, 170 by default, in
+`map_name`); lower it if the name is drawn darker. The pad gets the name (up to
+23 characters, spaces as `_`) to show, and to move home when you change maps.
 
 A mob that's the same colours as the map (a brown stump on brown dirt) can't
 be spotted by colour and is left out rather than causing false alarms. After
@@ -266,8 +310,18 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   `--mark death` spot shows); disconnected means the bars and the minimap have
   gone (or the `--mark login` spot shows). The Buttons screen says why it
   stopped. Without a minimap set up, disconnects show up as death.
-- Your **minimap position** shows on the Buttons screen, with ◀ ▶ when mobs are
-  on that side.
+- Under the buttons, a **dashboard** shows what's going on:
+  - what the playing pattern is doing (⚔ attacking, ⏳ waiting for mobs,
+    ⏸ auto-pause, 🏠 walking home, 🚶 walking to mobs), which way it faces,
+    the button playing and the map (or "map not taught");
+  - HP, MP and XP bars;
+  - your **minimap position**, with ◀ ▶ when mobs are in reach on that side,
+    and the **home range** as a green band (the line is home);
+  - a **mob radar**: you in the middle facing your way, your reach shaded, and
+    the nearest mob each side (red when in reach) with how many that side has;
+  - the **target** (the nearest mob, named, with its side and distance; "in
+    reach" when it can be hit), how many you see each side, and the most seen
+    lately (auto-pause's bar).
 - Each dynamic pattern has **Screen awareness** (on for new patterns, off for
   older ones):
   - **Turn at map edges (%)**, 12% by default: within that distance of the
@@ -279,14 +333,29 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
     - with **no mobs** in the hitbox it stops attacking and waits, still
       drinking potions, until some appear (the log says "smart: waiting for
       mobs");
-    - **Home range** (10% of the minimap by default): home is where you stood
-      when the pattern started. Drift further than that with no mobs around,
-      or twice that whatever's around, and it walks back (holding the
-      direction key) until it's within half the range. If it can't get there
-      in 10 s, that spot becomes home. 0 = no home.
+    - **Walk to mobs** (on for new patterns): with none in reach but some in
+      sight, it walks towards the nearer side's (staying within ¾ of the home
+      range) and attacks once they're in reach. Mobs it can't reach in 6 s
+      (another platform) are left for 10 s;
+    - **Auto-pause** (30% for new patterns, 0 = off): once most of the mobs
+      you could see are killed (fewer than 30% of the most seen lately), it
+      stops attacking, even a straggler in reach, and waits for respawn. It
+      carries on once they're back to twice that share (60%), or after 20 s
+      anyway to finish off the last few. The "most seen lately" drops by one
+      every 30 s it isn't reached, so one crowded moment doesn't hold it up;
+    - **Home range** (50% of the minimap by default, up to 50%; 0 = no home):
+      home is where you stood when the pattern started, or where you arrived
+      on a new map (with mobs per map set up). Drift further than that with no
+      mobs in reach, or twice that whatever's around, and it walks back until
+      it's within half the range. If it can't get there in 10 s, that spot
+      becomes home;
+    - **Walking strides** (280–650 ms): walking, home or to mobs, holds the
+      direction key for a random time in that range, then waits the
+      direction gap, and looks again; no two strides alike.
     It needs the mob detector set up in the script; without it, or without
-    fresh readings, the pattern plays as normal. To stop while it waits, press
-    the key again as usual.
+    fresh readings, the pattern plays as normal. Walking to mobs and
+    auto-pause need mob sprites (the counts); older patterns have both off.
+    To stop while it waits, press the key again as usual.
   - **Face mobs**: turns to face mobs in your hitbox; with mobs on both
     sides, the nearer one (Smart does this too). Edges come first, then mobs, then the pattern's
     turn chance. It checks before every attack, so a mob that spawns behind
@@ -297,8 +366,9 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
     stops. It goes by the map position (slide plus dot), so a dot that stays
     centred while the minimap slides isn't "stuck".
 - The mob detector is colour-based: it looks for clumps of mob colour in
-  your hitbox either side of where your character was marked (checking
-  finely enough for the smallest sprite). It suits maps with one or two
+  your hitbox's height either side of where your character was marked
+  (checking finely enough for the smallest sprite). Two mobs overlapping
+  exactly count as one. It suits maps with one or two
   mob types; bright skill effects in the same colours can fool it, and when
   the camera stops following you at a map edge, your character isn't where it
   was marked.
@@ -375,7 +445,9 @@ a colour in **Assign** to tell buttons apart at a glance. The header dot shows
 whether a host is connected; the icon buttons are Stop, Export JSON and Save (a
 red dot means unsaved changes). Layers can be renamed or deleted with the icons
 next to **Layers**; deleting a layer keeps its recordings, and is blocked while
-another button switches to it.
+another button switches to it. Buttons open in **Play**: tapping one plays it on
+the host, like pressing it on the pad. Switch to **Edit** to tap a button and
+change what it does.
 
 **Recordings** groups recordings into *Not on a button* (marked New) and *On
 buttons*, with a chip for each button that uses them; tap a chip to jump to

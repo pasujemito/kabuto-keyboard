@@ -4,8 +4,9 @@ screen_stats.py - read your game screen and send what matters to Kabuto.
 
 Runs on the PC with the game. Twice a second it samples a few small
 areas of the screen and sends a handful of numbers to the pad: HP, Mana and
-XP (bar fill %), your position on the minimap, which side mobs are on, and
-whether you're dead or disconnected. Nothing else leaves
+XP (bar fill %), your position on the minimap, the mobs around you (which
+sides are in your reach, how many you can see each side, how near the nearest
+is, its name), the map you're on, and whether you're dead or disconnected. Nothing else leaves
 your PC: no screenshots, no reading text. All the work happens here, so the
 pad only stores a few numbers.
 
@@ -23,6 +24,12 @@ Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
 mob) in a "mobs" folder here; setup learns their colours instead of asking
 you to mark mobs (needs pip install pillow). After adding sprites:
     python screen_stats.py --mobs
+Mobs per map: a folder per map in "mobs" (mobs/Henesys/*.png, ...). Setup
+asks where the map's name is shown; then stand on each map and teach it:
+    python screen_stats.py --map            # asks which folder
+    python screen_stats.py --map Henesys
+Its name is kept as a picture (no OCR), so whenever that name shows, that
+map's mobs are looked for. A map you haven't taught uses the "mobs" folder's.
 Optional, while that screen is showing, for exact detection:
     python screen_stats.py --mark death    # e.g. hover the respawn button
     python screen_stats.py --mark login    # e.g. hover the login box
@@ -245,6 +252,117 @@ def mob_sides(raw, w, h, colors, tolerance=40, gap=40, mid=None, step_x=6, step_
         found = {side: d for side, d in found.items() if hits[side] >= min_hits}
     return "".join("R" if side else "L" for side in sorted(found, key=lambda s: (found[s], s)))
 
+SIGHT = 2.5   # how far you look for mobs, in attack reaches either side
+
+def mob_view(raw, w, h, colors, tolerance=40, gap=40, mid=None, step=6, min_hits=3, cell=16, names=None, mob_w=0):
+    """Every mob in the area, each side nearest first: {"L": [(distance px,
+    name), ...], "R": [...]}. A mob is a clump: patches with at least
+    `min_hits` hits whose cells touch. A clump wider than one mob (`mob_w` px)
+    counts as that many side by side. `names` (one per colour) name a mob after
+    the sprite most of its hits came from; None without them."""
+    mid = w // 2 if mid is None else mid
+    samples = mob_samples(raw, w, h, color_table(colors, tolerance), gap, mid, step, cell)
+    cells = {}
+    for key, bits, x in samples:
+        cells.setdefault(key, []).append((bits, x))
+    hot = set()
+    for (side, cx, cy), (n, _) in patches(samples).items():
+        if n >= min_hits:
+            hot.update(k for k in ((side, cx + dx, cy + dy) for dx in (0, 1) for dy in (0, 1)) if k in cells)
+    view = {"L": [], "R": []}
+    while hot:
+        todo, group = [hot.pop()], []
+        while todo:
+            side, cx, cy = todo.pop()
+            group.append((side, cx, cy))
+            for k in ((side, cx + dx, cy + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+                if k in hot:
+                    hot.remove(k)
+                    todo.append(k)
+        hits = [hit for k in group for hit in cells[k]]
+        xs = [x for _, x in hits]
+        votes = {}
+        for bits, _ in hits:
+            for i, name in enumerate(names or []):
+                if bits >> i & 1:
+                    votes[name] = votes.get(name, 0) + 1
+        name = max(sorted(votes), key=votes.get) if votes else None
+        near = min(abs(x - mid) for x in xs)
+        count = max(1, int(round((max(xs) - min(xs) + step) / float(mob_w)))) if mob_w else 1
+        view["R" if group[0][0] else "L"] += [(near + k * mob_w, name) for k in range(count)]
+    for side in view:
+        view[side].sort(key=lambda m: m[0])
+    return view
+
+def mob_fields(view, reach):
+    """What the pad gets from a mob_view: "mobs" (sides with a mob in your
+    reach, nearest first, as mob_sides gives), "ml"/"mr" (how many you can see
+    each side), "dl"/"dr" (the nearest each side in % of your reach: 100 is
+    its edge; left out with none) and "mn" (the nearest mob's name)."""
+    near = {side: mobs[0] for side, mobs in view.items() if mobs}
+    out = {"mobs": "".join(side for side in sorted(near, key=lambda s: (near[s][0], s)) if near[side][0] <= reach),
+           "ml": len(view["L"]), "mr": len(view["R"])}
+    for side, (d, _) in near.items():
+        out["d" + side.lower()] = int(round(d * 100.0 / max(reach, 1)))
+    nearest = min(near.values(), key=lambda m: m[0]) if near else None
+    out["mn"] = nearest[1] if nearest else None
+    return out
+
+# ---- which map you're on: its name, read as a picture -----------------------
+# No OCR: the game draws a map's name the same way every time, so its light
+# pixels are kept as a fingerprint when you teach that map (--map) and
+# compared after. Small shifts are allowed; a mostly matching name wins.
+
+def text_rows(raw, w, h, light=170):
+    """The map name area's light pixels (the name's letters), one int per row."""
+    rows = []
+    for y in range(h):
+        bits = 0
+        for x in range(w):
+            i = (y * w + x) * 3
+            if raw[i] * 3 + raw[i + 1] * 6 + raw[i + 2] >= light * 10:
+                bits |= 1 << x
+        rows.append(bits)
+    return rows
+
+def ones(rows):
+    return sum(bin(r).count("1") for r in rows)
+
+def rows_score(a, b, shift=2):
+    """How alike two names are, 0-1: light pixels in both over all of them
+    (best over up to `shift` px either way)."""
+    total = ones(a) + ones(b)
+    if not total:
+        return 0.0
+    best = 0
+    for dy in range(-shift, shift + 1):
+        for dx in range(-shift, shift + 1):
+            both = sum(bin(a[y] & (b[y + dy] >> dx if dx >= 0 else b[y + dy] << -dx)).count("1")
+                       for y in range(len(a)) if 0 <= y + dy < len(b))
+            best = max(best, both)
+    return 2.0 * best / total
+
+class MapReader:
+    """Which taught map this is, from its name: the best match scoring at least
+    `min_score`, else "" (a map you haven't taught). Only rematched when the
+    name area changes."""
+    def __init__(self, maps, light=170, min_score=0.8):
+        self.maps = {name: [int(r, 16) for r in m["rows"]] for name, m in maps.items() if m.get("rows")}
+        self.light, self.min_score, self.last, self.name = light, min_score, None, ""
+
+    def read(self, raw, w, h):
+        rows = text_rows(raw, w, h, self.light)
+        if rows != self.last:
+            self.last = rows
+            score, name = max([(rows_score(rows, m), n) for n, m in sorted(self.maps.items())] or [(0, "")])
+            self.name = name if score >= self.min_score else ""
+        return self.name
+
+def safe_name(name):
+    """A map or mob name as the pad keeps it: letters, digits, - and _ (spaces
+    become _), at most 23 characters."""
+    return "".join(c if c.isalnum() and c.isascii() or c in "-_" else "_" for c in name)[:23]
+
 def plain(color):
     """Outline black, highlight white and greys: every sprite and map has them,
     so they can't tell a mob apart."""
@@ -320,10 +438,14 @@ def learn_mob_colors(sprites, backgrounds, w, h, tolerance=40, gap=40, mid=None)
                               % (name, colors[i], share * 100, share_on_map[i] * 100, peak(1 << i)))
         if not mine:
             report.append("  %s: no colour of its own - it looks too much like the map to spot" % name)
-    chosen = [c for i, c in enumerate(colors) if kept >> i & 1]
+    chosen = [i for i in range(len(colors)) if kept >> i & 1]
     if chosen:
         report.append("  A mob needs %d hits in a %d px patch (the map's busiest patch had %d)" % (need, 2 * cell, peak(kept)))
-    return {"colors": chosen, "step": step, "cell": cell, "min_hits": need}, report
+    # Each colour is named after the sprite it's most of, so the nearest mob can be named.
+    names = [os.path.splitext(max(owners, key=lambda n: (dict(owners[n]).get(i, 0), n)))[0] for i in chosen]
+    widths = sorted(sw for sw, _, _ in sprites.values())
+    return {"colors": [colors[i] for i in chosen], "step": step, "cell": cell, "min_hits": need, "names": names,
+            "mob_w": widths[len(widths) // 2] if widths else 0}, report
 
 SPRITE_TYPES = (".png", ".gif", ".webp", ".bmp")
 
@@ -412,6 +534,36 @@ class Screen:
         mm = config.get("minimap") or {}
         self.sct, self.config, self.state = sct, config, GameState()
         self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
+        area = config.get("map_name")
+        self.maps = MapReader(config.get("maps", {}), area.get("light", 170)) if area and config.get("maps") else None
+
+    def map_name(self):
+        """The taught map you're on ("" for one you haven't taught), or None
+        without a map library."""
+        if not self.maps:
+            return None
+        a = self.config["map_name"]
+        w, h = a["x2"] - a["x1"] + 1, a["y2"] - a["y1"] + 1
+        return self.maps.read(grab(self.sct, a["x1"], a["y1"], w, h), w, h)
+
+    def mobs(self, name):
+        """Mob fields for the reading (see mob_fields), with this map's colours
+        when it's taught, else the ones from setup. {} without a mob detector."""
+        mb = self.config.get("mobs")
+        found = self.config.get("maps", {}).get(name) if name else None
+        found = found or mb
+        if not mb or not found or not found.get("colors"):
+            return {}
+        if not found.get("cell"):   # older setups: sides only, in your reach
+            left, top, w, h = mob_area(mb, self.sct.monitors[0])
+            return {"mobs": mob_sides(grab(self.sct, left, top, w, h), w, h, found["colors"], mb.get("tolerance", 40),
+                                      mb.get("gap", 40), mid=mb["x"] - left, step_x=found.get("step_x", 6),
+                                      step_y=found.get("step_y", 8), min_hits=found.get("min_hits", 3))}
+        left, top, w, h = mob_area(mb, self.sct.monitors[0], mb.get("sight", SIGHT))
+        view = mob_view(grab(self.sct, left, top, w, h), w, h, found["colors"], mb.get("tolerance", 40), mb.get("gap", 40),
+                        mid=mb["x"] - left, step=found.get("step_x", 6), min_hits=found.get("min_hits", 3),
+                        cell=found["cell"], names=found.get("names"), mob_w=found.get("mob_w", 0))
+        return mob_fields(view, mb.get("reach", 350))
 
     def read(self):
         c = self.config
@@ -424,13 +576,9 @@ class Screen:
             if dot:                      # a login or loading screen isn't the map
                 self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
-        mobs, mb = None, c.get("mobs")   # None: no mob detector, so the pad doesn't wait for mobs
-        if mb and mb.get("colors"):
-            left, top, w, h = mob_area(mb, self.sct.monitors[0])
-            raw = grab(self.sct, left, top, w, h)
-            mobs = mob_sides(raw, w, h, mb["colors"], mb.get("tolerance", 40), mb.get("gap", 40), mid=mb["x"] - left,
-                             step_x=mb.get("step_x", 6), step_y=mb.get("step_y", 8),
-                             min_hits=mb.get("min_hits", 3), cell=mb.get("cell"))
+        name = self.map_name()
+        found = self.mobs(name)
+        mobs = found.pop("mobs", None)   # None: no mob detector, so the pad doesn't wait for mobs
         watches = {}
         for name, mark in c.get("watch", {}).items():
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
@@ -438,6 +586,11 @@ class Screen:
         out["x"], out["y"] = dot if dot else (None, None)
         out["wx"], out["wy"] = world if world else (None, None)   # for stuck: moves even when the dot doesn't
         out["mobs"] = mobs
+        out.update(found)                # ml/mr/dl/dr/mn: counts, distances, nearest mob's name
+        if found.get("mn"):
+            out["mn"] = safe_name(found["mn"])
+        if name is not None:
+            out["map"] = safe_name(name) if name else "-"   # "-": a map you haven't taught
         return out
 
 # ---- setup --------------------------------------------------------------------
@@ -462,11 +615,12 @@ def mark_points(prompt, count):
 def pixel(sct, x, y):
     return list(grab(sct, x, y, 1, 1)[:3])
 
-def mob_area(mb, screen):
+def mob_area(mb, screen, sight=1.0):
     """The hitbox either side of your character, clipped to the screen: as
     tall as your character (head to feet, when marked; else `band` px above
-    and below), `reach` px to each side. Returns (left, top, width, height)."""
-    reach = mb.get("reach", 350)
+    and below), `reach` px to each side (`sight` times that, to see mobs out of
+    reach). Returns (left, top, width, height)."""
+    reach = int(mb.get("reach", 350) * sight)
     top = mb["top"] if "top" in mb else mb["y"] - mb.get("band", 80)
     bottom = mb["bottom"] if "bottom" in mb else mb["y"] + mb.get("band", 80)
     left, top = max(screen["left"], mb["x"] - reach), max(screen["top"], top)
@@ -488,24 +642,22 @@ def setup_mobs(sct, config, sprites_dir):
     sprites = load_sprites(sprites_dir)
     mobs = {"tolerance": 40}
     box = "Hitbox: hover YOUR character's HEAD, F8; its FEET, F8; then how far your attack reaches to one side, F8"
-    if sprites:
-        print("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
+    folders = map_folders(sprites_dir)
+    if sprites or folders:
+        if sprites:
+            print("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
         pts = mark_points(box + " (Esc skips). Mobs nearby are fine.", 3)
         if len(pts) < 3:
             print("  skipped"); return
-        mobs.update(hitbox(*pts))
-        left, top, w, h = mob_area(mobs, sct.monitors[0])
-        print("  Hitbox: %d px tall, %d px to each side. Looking at the map for 4 s..." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
-        shots = []
-        for _ in range(5):
-            shots.append(grab(sct, left, top, w, h))
-            time.sleep(0.8)
-        learned, report = learn_mob_colors(sprites, shots, w, h, mobs["tolerance"], mobs["gap"], mobs["x"] - left)
-        print("\n".join(report))
-        if not learned["colors"]:
+        mobs.update(hitbox(*pts), sight=SIGHT)
+        print("  Hitbox: %d px tall, %d px to each side." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
+        learned = learn_here(sct, mobs, sprites) if sprites else None
+        if learned:
+            mobs.update(learned)
+        elif not folders:
             print("  No usable mob colours: mob detection is off."); return
-        mobs.update(colors=learned["colors"], step_x=learned["step"], step_y=learned["step"],
-                    cell=learned["cell"], min_hits=learned["min_hits"], sprites=sorted(sprites))
+        else:   # the map folders bring their own colours (--map)
+            print("  Mobs come from the map folders: teach each map with --map.")
     else:
         if os.path.isdir(sprites_dir) and any(n.lower().endswith(SPRITE_TYPES) for n in os.listdir(sprites_dir)):
             print("No readable sprites in %s, so mark mobs on screen instead." % sprites_dir)
@@ -514,6 +666,78 @@ def setup_mobs(sct, config, sprites_dir):
             print("  skipped"); return
         mobs.update(hitbox(*pts[:3]), colors=[pixel(sct, x, y) for x, y in pts[3:]])
     config["mobs"] = mobs
+
+def learn_here(sct, mobs, sprites):
+    """Mob settings for `sprites` against the map you're on, watched for 4 s
+    over the area you look for mobs in. None if no colour of theirs is usable."""
+    left, top, w, h = mob_area(mobs, sct.monitors[0], mobs.get("sight", SIGHT))
+    print("  Looking at the map for 4 s...")
+    shots = []
+    for _ in range(5):
+        shots.append(grab(sct, left, top, w, h))
+        time.sleep(0.8)
+    learned, report = learn_mob_colors(sprites, shots, w, h, mobs.get("tolerance", 40), mobs.get("gap", 40), mobs["x"] - left)
+    print("\n".join(report))
+    if not learned["colors"]:
+        return None
+    return {"colors": learned["colors"], "step_x": learned["step"], "step_y": learned["step"], "cell": learned["cell"],
+            "min_hits": learned["min_hits"], "names": learned["names"], "mob_w": learned["mob_w"], "sprites": sorted(sprites)}
+
+def mark_map_name(config):
+    pts = mark_points("Map name: hover the TOP-LEFT of the map's name, F8; then its BOTTOM-RIGHT, a bit past where "
+                      "the longest name would end, F8 (Esc skips)", 2)
+    if len(pts) < 2:
+        print("  skipped"); return None
+    (ax, ay), (bx, by) = pts
+    config["map_name"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by), "light": 170}
+    return config["map_name"]
+
+def map_folders(sprites_dir):
+    """Folders in `sprites_dir`, one per map, named as you like (e.g. the map's name)."""
+    if not os.path.isdir(sprites_dir):
+        return []
+    return sorted(d for d in os.listdir(sprites_dir) if os.path.isdir(os.path.join(sprites_dir, d)))
+
+def learn_map(path, sprites_dir, name=""):
+    """Teach the map you're standing on: its name's look, and the mobs in its
+    folder (mobs/<map>/*.png), learned against this map."""
+    import mss
+    sct, config = mss.mss(), load_config(path)
+    mobs = config.get("mobs")
+    if not mobs or "reach" not in mobs:
+        raise SystemExit("Mark your hitbox first: python screen_stats.py --mobs")
+    folders = map_folders(sprites_dir)
+    if not name:
+        if not folders:
+            raise SystemExit("Make a folder per map in %s (e.g. %s/Henesys) with that map's mob sprites" % (sprites_dir, sprites_dir))
+        if len(folders) == 1:
+            name = folders[0]
+        else:
+            for i, f in enumerate(folders, 1):
+                print("  %d. %s%s" % (i, f, "  (taught)" if f in config.get("maps", {}) else ""))
+            pick = input("Which map are you on? Number or folder name: ").strip()
+            name = folders[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(folders) else pick
+    sprites = load_sprites(os.path.join(sprites_dir, name))
+    if not sprites:
+        raise SystemExit("No mob sprites in %s" % os.path.join(sprites_dir, name))
+    area = config.get("map_name") or mark_map_name(config)
+    if not area:
+        raise SystemExit("A map is told apart by its name, so mark where the name is")
+    w, h = area["x2"] - area["x1"] + 1, area["y2"] - area["y1"] + 1
+    rows = text_rows(grab(sct, area["x1"], area["y1"], w, h), w, h, area.get("light", 170))
+    if ones(rows) < 15:
+        print("  Can't see a light name there (%d px). If the name is darker, lower \"light\" in %s's map_name." % (ones(rows), path))
+    for other, m in sorted(config.get("maps", {}).items()):
+        if other != name and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.8:
+            print("  Careful: this name looks like %s's; move the marks so the area holds just the name." % other)
+    print("Teaching %s with %d sprite(s)." % (name, len(sprites)))
+    learned = learn_here(sct, mobs, sprites)
+    if not learned:
+        raise SystemExit("No usable mob colours for %s: nothing saved" % name)
+    learned["rows"] = ["%x" % r for r in rows]
+    config.setdefault("maps", {})[name] = learned
+    save_config(path, config)
+    print("Saved %s in %s: it switches to these mobs whenever this name shows." % (name, path))
 
 def setup(path, sprites_dir="mobs"):
     import mss                         # first: on Windows this makes the process DPI-aware,
@@ -530,12 +754,21 @@ def setup(path, sprites_dir="mobs"):
         (ax, ay), (bx, by), (dx, dy) = pts
         config["minimap"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by),
                              "dot": pixel(sct, dx, dy), "tolerance": 40, "map_mismatch": 0.6}
+    folders = map_folders(sprites_dir)
+    if folders:
+        print("Map folders in %s: %s" % (sprites_dir, ", ".join(folders)))
+        mark_map_name(config)
     setup_mobs(sct, config, sprites_dir)
     old = load_config(path, required=False)
-    if old.get("watch"):
-        config["watch"] = old["watch"]   # keep death/login marks from --mark
+    for keep in ("watch", "maps"):         # death/login marks from --mark, maps from --map
+        if old.get(keep):
+            config[keep] = old[keep]
+    if folders and "map_name" not in config and old.get("map_name"):
+        config["map_name"] = old["map_name"]
     save_config(path, config)
     print("Saved", path, "- if something reads wrong, raise its tolerance there.")
+    if folders:
+        print("Now teach each map: stand on it and run  python screen_stats.py --map")
 
 def relearn_mobs(path, sprites_dir):
     import mss
@@ -678,6 +911,11 @@ def describe(r):
         parts.append("map %4.1f,%4.1f" % (r["x"], r["y"]))
     if r.get("mobs") is not None:
         parts.append("mobs " + (r["mobs"] or "-"))
+    if r.get("ml") is not None:
+        near = lambda side: "%d%%" % r["d" + side] if r.get("d" + side) is not None else "-"
+        parts.append("seen L%d (%s) R%d (%s)" % (r["ml"], near("l"), r["mr"], near("r")) + (" " + r["mn"] if r.get("mn") else ""))
+    if r.get("map") is not None:
+        parts.append("map " + (r["map"] if r["map"] != "-" else "not taught"))
     if r.get("state", "ok") != "ok":
         parts.append("!! " + r["state"].upper())
     return "  ".join(parts)
@@ -837,6 +1075,42 @@ def selftest():
     assert sniff(b"\0\0\0\x1cftypavif").startswith("an AVIF") and sniff(b"hello") == "not an image Pillow knows"
     learned, report = learn_mob_colors({"grass.png": (20, 20, [(60, 200, 60, 255)] * 400)}, [field], 300, 60)
     assert not learned["colors"] and "looks too much like the map" in report[-1]
+    learned, _ = learn_mob_colors({"blob.png": (20, 20, sprite)}, [field], 300, 60)
+    assert learned["names"] == ["blob"] and learned["mob_w"] == 20, learned   # colours named after their sprite
+    # Every mob in sight: counted each side, nearest first, named; two side by
+    # side make one clump twice a mob's width, so they count as two.
+    def stamp(raw, w, x0, y0):
+        for y in range(20):
+            for x in range(20):
+                if sprite[y * 20 + x][3]:
+                    raw[((y0 + y) * w + x0 + x) * 3:((y0 + y) * w + x0 + x + 1) * 3] = bytes(sprite[y * 20 + x][:3])
+    sight = canvas(1000, 30, grey)
+    for x0 in (100, 600, 800, 820):
+        stamp(sight, 1000, x0, 5)
+    seen = mob_view(sight, 1000, 30, [[200, 40, 160]], gap=40, step=2, min_hits=3, cell=10, names=["blob"], mob_w=20)
+    assert [d for d, _ in seen["R"]] == [104, 304, 324] and [d for d, _ in seen["L"]] == [384], seen
+    assert {n for side in seen.values() for _, n in side} == {"blob"}
+    assert mob_fields(seen, 200) == {"mobs": "R", "ml": 1, "mr": 3, "dr": 52, "dl": 192, "mn": "blob"}
+    assert mob_fields(seen, 400) == {"mobs": "RL", "ml": 1, "mr": 3, "dr": 26, "dl": 96, "mn": "blob"}
+    assert mob_fields({"L": [], "R": []}, 200) == {"mobs": "", "ml": 0, "mr": 0, "mn": None}   # none: no distances
+    assert mob_view(canvas(1000, 30, grey), 1000, 30, [[200, 40, 160]], step=2, cell=10) == {"L": [], "R": []}
+    assert [n for _, n in mob_view(sight, 1000, 30, [[200, 40, 160]], step=2, cell=10)["R"]] == [None, None]   # no names; no mob_w: 1 per clump
+    # Map names as pictures: the same name matches even a pixel off; another doesn't.
+    dark, white = (20, 20, 30), (240, 240, 240)
+    def name_area(rects, dx=0):
+        raw = canvas(60, 14, dark)
+        for x0, y0, x1, y1 in rects:
+            paint(raw, 60, x0 + dx, y0, x1 + dx, y1, white)
+        return raw
+    henesys, ellinia = [(2, 2, 6, 10), (8, 2, 10, 10), (12, 5, 18, 7), (22, 2, 24, 10)], [(2, 2, 30, 4), (40, 6, 58, 12)]
+    a = text_rows(name_area(henesys), 60, 14)
+    assert ones(a) == 4 * 8 + 2 * 8 + 6 * 2 + 2 * 8 and rows_score(a, a) == 1.0
+    assert rows_score(a, text_rows(name_area(henesys, 1), 60, 14)) == 1.0
+    assert rows_score(a, text_rows(name_area(ellinia), 60, 14)) < 0.5 and rows_score([0] * 14, [0] * 14) == 0.0
+    reader = MapReader({"Henesys": {"rows": ["%x" % r for r in a]}, "Ellinia": {"rows": ["%x" % r for r in text_rows(name_area(ellinia), 60, 14)]}})
+    assert reader.read(name_area(henesys, 1), 60, 14) == "Henesys" and reader.read(name_area(ellinia), 60, 14) == "Ellinia"
+    assert reader.read(name_area([(5, 3, 50, 11)]), 60, 14) == ""   # a map you haven't taught
+    assert safe_name("Henesys Hunting Ground!") == "Henesys_Hunting_Ground_" and safe_name("Slime-2") == "Slime-2"
     # Marked patches.
     ref = bytes([10, 20, 30] * 25)
     assert patch_matches(bytes([12, 18, 33] * 25), ref) and not patch_matches(bytes([200, 200, 200] * 25), ref)
@@ -892,6 +1166,29 @@ def selftest():
     paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # another map: no stop, the new view is followed
     paint(fake.px, 800, 680, 50, 684, 54, yellow)
     assert [screen.read()["state"] for _ in range(3)] == ["ok"] * 3
+    assert "map" not in r and "ml" not in r   # no map library, an older mob setup: sides only
+
+    # A taught map: its name picks its mobs, which are counted out of reach
+    # too; an untaught map falls back to the setup's mobs.
+    fake = FakeScreen()
+    for x, y, x1, y1 in henesys:
+        paint(fake.px, 800, 600 + x, 92 + y, 600 + x1, 92 + y1, white)
+    stamp(fake.px, 800, 450, 310); stamp(fake.px, 800, 500, 310)   # mobs 54 and 104 px right of you
+    config = {"map_name": {"x1": 600, "y1": 92, "x2": 659, "y2": 105},
+              "maps": {"Henesys Field": {"rows": ["%x" % v for v in a], "colors": [[200, 40, 160]], "step_x": 2, "step_y": 2,
+                                         "cell": 10, "min_hits": 3, "names": ["blob"], "mob_w": 20}},
+              "mobs": {"x": 400, "y": 320, "top": 300, "bottom": 340, "reach": 100, "gap": 20, "colors": [list(green)]}}
+    screen = Screen(fake, config)
+    r = screen.read()
+    assert r["map"] == "Henesys_Field" and r["mobs"] == "R" and (r["ml"], r["mr"], r["dr"], r["mn"]) == (0, 2, 54, "blob"), r
+    assert "dl" not in r and "seen L0 (-) R2 (54%) blob" in describe(r), describe(r)
+    paint(fake.px, 800, 600, 92, 660, 106, dark)
+    for x, y, x1, y1 in ellinia:
+        paint(fake.px, 800, 600 + x, 92 + y, 600 + x1, 92 + y1, white)
+    r = screen.read()
+    assert r["map"] == "-" and r["mobs"] == "" and "ml" not in r and "not taught" in describe(r), r   # the setup's (green) mobs: none here
+    assert form_fields({"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}) == \
+        {"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}
 
     # USB: finds the Espressif port that answers, sends one line per reading.
     class FakeSerial:
@@ -952,6 +1249,8 @@ def main():
     ap.add_argument("--setup", action="store_true", help="mark the bars, minimap and mobs")
     ap.add_argument("--mobs", action="store_true", help="redo just the mob detector (e.g. after adding sprites)")
     ap.add_argument("--sprites", default="mobs", help="folder of mob sprite PNGs (default mobs)")
+    ap.add_argument("--map", nargs="?", const="", metavar="FOLDER",
+                    help="teach the map you're on, with the mobs in its folder (mobs/FOLDER); asks which without one")
     ap.add_argument("--mark", choices=["death", "login"], help="capture a spot only that screen has")
     ap.add_argument("--via", choices=["auto", "usb", "wifi"], default="auto",
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
@@ -968,6 +1267,8 @@ def main():
         setup(a.config, a.sprites)
     elif a.mobs:
         relearn_mobs(a.config, a.sprites)
+    elif a.map is not None:
+        learn_map(a.config, a.sprites, a.map)
     elif a.mark:
         mark(a.config, a.mark)
     else:

@@ -473,37 +473,69 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // Between attacks: stop on a death or login screen,
                 // turn for map edges and mobs, and turn (then stop) when stuck.
                 StuckWatch stuck;
-                // Smart mode: home is where you were when the pattern started
-                // (map position if the script sends it, else the minimap dot).
-                bool haveHome=false,homing=false;int home=0;
+                // Smart mode: home is where you were when the pattern started or
+                // reached a new map (map position if the script sends it, else the minimap dot).
+                bool haveHome=false,homing=false,homeOnMap=false;int home=0;
+                std::string lastMap;
+                AutoPause autoPause;
+                bool approachOff=false;uint32_t approachOffAt=0;
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
+                auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;};
+                // The map's name changed: home is wherever you arrive.
+                auto mapCheck=[&](const LiveStats& live){
+                    if(!live.fresh||!live.map[0]||lastMap==live.map)return;
+                    bool moved=!lastMap.empty();lastMap=live.map;
+                    if(moved&&haveHome){haveHome=false;logStep(s,pc,millis(),0,true,"smart: new map, new home");}
+                };
+                // What the dashboard shows.
+                auto publish=[&](uint8_t action){
+                    PatternView v;v.active=true;v.smart=pattern->smart;v.action=action;v.facingLeft=facingLeft;
+                    v.haveHome=haveHome;v.home=home;v.homeOnMap=homeOnMap;v.homeRange=pattern->homeRangePermille;
+                    v.peak=pattern->smart&&pattern->autoPausePermille?autoPause.peak:-1;patternViewSet(v);
+                };
+                auto smartInput=[&](const LiveStats& live,bool havePos,int pos){
+                    SmartInput in;in.fresh=live.fresh;in.mobs=live.mobs;in.seenLeft=live.ml;in.seenRight=live.mr;in.nearLeft=live.dl;in.nearRight=live.dr;
+                    in.havePos=havePos;in.pos=pos;in.haveHome=haveHome;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;
+                    in.approach=pattern->approach&&(!approachOff||millis()-approachOffAt>=10000);
+                    in.paused=autoPause.update(live.fresh&&live.ml>=0&&live.mr>=0?live.ml+live.mr:-1,pattern->autoPausePermille,millis());
+                    return in;
+                };
                 auto stopReason=[&](const LiveStats& live){
                     const char* reason=live.fresh?liveStopReason(live.state):nullptr;
                     if(reason){char label[80];std::snprintf(label,sizeof(label),"stopped: %s",reason);logStep(s,pc,millis(),0,true,label);stop=true;}
                     return reason!=nullptr;
                 };
-                // No mobs: wait (drinking live potions) until some show up.
-                // Drifted from home: walk back. Gives up on a home it can't
-                // reach in 10 s and makes this spot home instead.
+                // No mobs in reach: wait (drinking live potions) until some
+                // come, or walk to ones in sight (approach). Most killed: wait for
+                // respawn (auto-pause). Drifted from home: walk back. Walking takes
+                // strides of walk_hold, then dir_after. Gives up on a home it can't
+                // reach in 10 s and makes this spot home instead, and on mobs it
+                // can't reach in 6 s (no walking to mobs for 10 s).
                 auto smartWait=[&]{
-                    const char* doing=nullptr;uint32_t walkStarted=0;
+                    static const char* const labels[]={"","smart: waiting for mobs","smart: walking home","smart: walking home",
+                        "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs"};
+                    int doing=-1;uint32_t walkStarted=0;   // the action under way (either way counts as one)
                     while(!stop){
                         LiveStats live=liveStatsSnapshot();
                         if(stopReason(live))return;
+                        mapCheck(live);
                         int pos=0;bool havePos=livePos(live,pos);
-                        if(havePos&&!haveHome){haveHome=true;home=pos;}
-                        uint8_t act=smartAction(live.fresh,live.mobs,havePos,pos,haveHome,home,pattern->homeRangePermille,homing);
+                        if(havePos&&!haveHome)setHome(live,pos);
+                        uint8_t act=smartDecide(smartInput(live,havePos,pos));
+                        publish(act);
                         if(act==SMART_ATTACK)break;
-                        homing=act!=SMART_WAIT;
-                        const char* now=homing?"smart: walking home":"smart: waiting for mobs";
-                        if(now!=doing){logStep(s,pc,millis(),0,true,now);doing=now;walkStarted=millis();}
-                        if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"smart: can't get home, home is here now");home=pos;homing=false;continue;}
-                        if(homing){facingLeft=act==SMART_WALK_LEFT;tap(facing(),DynamicRange{250,250},DynamicRange{0,0});}
+                        homing=act==SMART_WALK_LEFT||act==SMART_WALK_RIGHT;
+                        bool toMobs=act==SMART_APPROACH_LEFT||act==SMART_APPROACH_RIGHT;
+                        int kind=act==SMART_WALK_RIGHT?(int)SMART_WALK_LEFT:act==SMART_APPROACH_RIGHT?(int)SMART_APPROACH_LEFT:(int)act;
+                        if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
+                        if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"smart: can't get home, home is here now");setHome(live,pos);homing=false;continue;}
+                        if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
+                        if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;tap(facing(),pattern->walkHold,pattern->directionAfter);}
                         else{int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                              std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
                     }
                     homing=false;
-                    if(doing){stuck=StuckWatch();if(!stop)logStep(s,pc,millis(),0,true,"smart: mobs found");}   // standing still on purpose isn't stuck
+                    if(doing>=0){stuck=StuckWatch();if(!stop)logStep(s,pc,millis(),0,true,"smart: mobs found");}   // standing still on purpose isn't stuck
                 };
                 auto screenCheck=[&]{
                     if(pattern->smart){smartWait();if(stop)return true;}
@@ -512,6 +544,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(stopReason(live))return true;
                     int want=liveFacing(true,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;tap(facing(),pattern->directionHold,pattern->directionAfter);}
+                    publish(SMART_ATTACK);
                     if(pattern->stuckAfterMs){
                         // Map position when the script sends it (the dot can stay centred while you walk), else the dot.
                         bool map=live.wx!=LIVE_NO_POS&&live.wy!=LIVE_NO_POS;
@@ -522,7 +555,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     return false;
                 };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
-                {LiveStats live=liveStatsSnapshot();int pos=0;if(pattern->smart&&livePos(live,pos)){haveHome=true;home=pos;}}
+                {LiveStats live=liveStatsSnapshot();int pos=0;if(pattern->smart&&livePos(live,pos))setHome(live,pos);if(live.fresh)lastMap=live.map;}
+                publish(SMART_ATTACK);
                 // Establish the actual initial facing before the first attack.
                 tap(facing(),pattern->directionHold,pattern->directionAfter);
                 for(uint32_t set=0;set<sets&&!stop;++set){
@@ -562,9 +596,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
                     if(want)facingLeft=want<0;
                     else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
+                    publish(SMART_ATTACK);
                     tap(facing(),pattern->directionHold,pattern->directionAfter);
                     if(!stop)yieldTick();
                 }
+                patternViewSet(PatternView());
                 releaseTracked();
                 logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,stop?"dynamic: stopped":"dynamic: finished");
                 break;

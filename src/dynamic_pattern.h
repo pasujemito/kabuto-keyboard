@@ -48,6 +48,9 @@ struct DynamicPattern {
     bool faceMobs = false;            // turn towards mobs (the nearer side when both)
     bool smart = false;               // no mobs: wait for them; drifted: walk back home
     uint16_t homeRangePermille = 0;   // smart: how far from home you may drift (0 = no home)
+    uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
+    bool approach = false;            // smart: walk to mobs you can see but not reach
+    DynamicRange walkHold{280,650};   // smart: each stride when walking (home or to mobs), then dir_after
     // Defaults match patterns saved before keys were configurable.
     DynamicKey jump = dynamicModifier(0x04);     // KM_LALT
     DynamicKey attack = dynamicModifier(0x01);   // KM_LCTRL

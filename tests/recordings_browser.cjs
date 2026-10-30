@@ -12,7 +12,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Home Wi-Fi and PIN mocks; pinRequired acts like a page opened over the home network.
   const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true};
   const networkRequests=[];let pinRequired=false,loggedIn=false;
-  let liveState=null;const statsRequests=[];   // live bars, as the status poll reports them
+  let liveState=null,patternState=null;const statsRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
@@ -27,7 +27,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    if(url.pathname.startsWith('/api/')&&pinRequired&&!loggedIn)return route.fulfill({status:401,contentType:'application/json',body:'{"ok":false,"error":"PIN required"}'});
    if(url.pathname==='/api/network'&&route.request().method()==='POST'){networkRequests.push(route.request().postData());return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/stats/reset'){statsRequests.push(url.pathname);return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
-   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{})})});
+   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{}),...(patternState?{pattern:patternState}:{})})});
    if(url.pathname==='/api/network')return route.fulfill({contentType:'application/json',body:JSON.stringify(networkState)});
    if(url.pathname.startsWith('/api/update/')){
     updateRequests.push({path:url.pathname,version:url.searchParams.get('version'),body:route.request().postData()});
@@ -133,12 +133,22 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('2');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'Stuck after: enter 0 (off) or 3 to 600 seconds.');
   await page.getByLabel('Stuck after (seconds)',{exact:true}).fill('30');
-  // Smart mode: on with a 10% home range for new patterns; over 50% is refused.
+  // Smart mode: on with a 50% home range, 30% auto-pause, walking to mobs and
+  // 280-650 ms strides for new patterns; out-of-range values are refused.
   assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
-  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'10');
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'50');
   await page.getByLabel('Home range (%)',{exact:true}).fill('60');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'Home range: enter a percentage from 0 to 50.');
   await page.getByLabel('Home range (%)',{exact:true}).fill('10');
+  assert.equal(await page.getByLabel('Auto-pause (%)',{exact:true}).inputValue(),'30');
+  assert(await page.getByLabel('Walk to mobs',{exact:true}).isChecked());
+  assert.equal(await page.getByLabel('Walking strides (ms) minimum',{exact:true}).inputValue(),'280');
+  await page.getByLabel('Auto-pause (%)',{exact:true}).fill('95');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Auto-pause: enter a percentage from 0 to 90.');
+  await page.getByLabel('Auto-pause (%)',{exact:true}).fill('25');
+  await page.getByLabel('Walking strides (ms) minimum',{exact:true}).fill('20');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Walking strides: enter an ordered range from 50 to 5000.');
+  await page.getByLabel('Walking strides (ms) minimum',{exact:true}).fill('300');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
@@ -201,6 +211,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('#toast.show.err').waitFor();assert.match(await page.locator('#toast').textContent(),/Stop playback/);
   // Live bars from the PC screen reader appear on the pad screen with XP rates.
   await page.locator('#tabKeys').click();
+  assert.equal(await page.locator('#gridMode button.on').getAttribute('data-g'),'run');   // buttons play when tapped, until Edit
   assert(await page.locator('#liveStats').isHidden());
   liveState={hp:723,mana:400,xp:632,ageMs:500,fresh:true,xpPerHour:53,minutesToLevel:416,levels:1};
   await page.waitForFunction(()=>!document.querySelector('#liveStats').hidden);
@@ -215,6 +226,21 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   const deadText=await page.locator('#liveStats').textContent();
   assert.match(deadText,/⛔ Stopped: you died/);assert.match(deadText,/Map◀ 42%/);
   assert.equal(await page.locator('#liveStats .track i').evaluate(e=>e.style.left),'42%');
+  // The dashboard while a smart pattern plays: what it's doing and facing, the
+  // map, the mobs it sees (the nearest right one in reach, named) and home.
+  liveState={hp:723,mana:400,xp:632,x:420,y:700,wx:1420,mobs:10,ml:1,mr:3,dl:192,dr:52,mob:'Blue_Snail',map:'Henesys',ageMs:300,fresh:true,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  patternState={smart:true,action:'attack',facing:'right',home:1300,homeOnMap:true,homeRange:100,peak:6};
+  await page.waitForFunction(()=>document.querySelector('#liveStats .radar'));
+  const dashText=await page.locator('#liveStats').textContent();
+  assert.match(dashText,/⚔ Attacking/);assert.match(dashText,/Facing right ▶/);assert.match(dashText,/🗺 Henesys/);
+  assert.match(dashText,/Target Blue Snail · right · 52% of reach \(in reach\)/);assert.match(dashText,/Seen 4 \(1 ◀ · ▶ 3\)/);assert.match(dashText,/Most lately 6/);
+  assert.deepEqual(await page.locator('#liveStats .radar .mob').evaluateAll(ms=>ms.map(m=>[m.textContent,m.classList.contains('in')])),[['1',false],['3',true]]);
+  assert.deepEqual(await page.locator('#liveStats .track .home').evaluate(e=>[e.style.left,e.style.width]),['20%','20%']);   // home 1300 on the map is 30% across the minimap, ±10%
+  patternState={...patternState,action:'pause',facing:'left'};liveState={...liveState,mobs:8,ml:0,mr:1,dl:-1,dr:180,map:'-'};
+  await page.waitForFunction(()=>/Auto-pause/.test(document.querySelector('#liveStats').textContent));
+  const pauseText=await page.locator('#liveStats').textContent();
+  assert.match(pauseText,/◀ Facing left/);assert.match(pauseText,/Map not taught/);assert.match(pauseText,/Nearest Blue Snail · right · 180% of reach/);
+  patternState=null;
   liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
   await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
   assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);

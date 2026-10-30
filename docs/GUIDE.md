@@ -190,7 +190,7 @@ the game has focus:
 | --- | --- |
 | F8 | mark the point under the pointer (setup) |
 | Esc | skip a setup step |
-| F9 | which map is this? A small window lists the maps in `mobs/map.json`: click one and it's taught (about 4 s). Click back into the game after |
+| F9 | which map is this? A window lists the maps in `mobs/map.json`, your 5 most recently taught first. Just type to search (words in any order, `rocky 2` finds Rocky Road II), ↑↓ to move, Enter or a double click teaches it (about 4 s), Esc closes. Taught maps are green, changed ones amber. Click back into the game after |
 | F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, ×2 for two side by side), the minimap and where it reads your dot (cyan), the map name area |
 | F11 | hide or show the layer |
 

@@ -3,6 +3,13 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.17.3
+
+- 🔎 **Searchable map picker**: F9 (Which map) opens a list you can type
+  into: words in any order, any case, `2` finds `II`. Recently taught maps
+  come first, taught ones are green and changed ones amber; ↑↓, Enter and
+  Esc work, with a count of matches
+
 ## 1.17.2
 
 - 🗺️ **`map.json` describes each map**: `[{"name": "Rocky Road II", "mobs":

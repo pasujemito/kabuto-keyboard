@@ -1027,6 +1027,7 @@ def teach_map(sct, config, sprites_dir, name):
     if not learned:
         return "No usable mob colours for %s: nothing saved" % name
     learned["rows"] = ["%x" % r for r in rows]
+    learned["taught_at"] = int(time.time())   # recent maps come first in the F9 list
     config.setdefault("maps", {})[name] = learned
     return None
 
@@ -1334,7 +1335,7 @@ def run(args):
         maps = map_list.get()
         screen.sizes = map_sizes(maps)
         if LAYER:
-            LAYER.maps, LAYER.taught = sorted(maps), set(config.get("maps", {}))
+            LAYER.maps, LAYER.taught = sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items()}
             LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
             while not LAYER.commands.empty():
                 _, name = LAYER.commands.get()   # ("teach", map name) from F9
@@ -1378,6 +1379,32 @@ def run(args):
 
 INK, DIM, AMBER, RED = "#e8eaed", "#8b919e", "#ffb020", "#ff5d5d"
 BAR_COLORS = {"hp": "#ff5d5d", "mana": "#4f8cff", "xp": "#cef300"}
+
+ROMAN = {"1": "i", "2": "ii", "3": "iii", "4": "iv", "5": "v", "6": "vi", "7": "vii", "8": "viii", "9": "ix", "10": "x"}
+
+def search_words(text):
+    """Lower case, punctuation as spaces: "Rocky Road: II" -> ["rocky", "road", "ii"]."""
+    return "".join(c.lower() if c.isalnum() else " " for c in text).split()
+
+def pick_list(names, query="", taught=None, changed=()):
+    """The F9 list: [(map, note), ...], best first. With a query, the maps that
+    have every word of it somewhere in the name (any order or case; 2 also
+    finds II), names starting with it first. Without one, the 5 most recently
+    taught, then the rest A-Z. Notes: "changed: teach again", "recent",
+    "taught" or ""."""
+    taught = taught or {}
+    recent = sorted((n for n in names if taught.get(n)), key=lambda n: -taught[n])[:5]
+    def note(n):
+        return "changed: teach again" if n in changed else "recent" if n in recent else "taught" if n in taught else ""
+    words = search_words(query)
+    if not words:
+        return [(n, note(n)) for n in recent + sorted((n for n in names if n not in recent), key=str.lower)]
+    def matches(name):
+        have = search_words(name)
+        return all(any(w in h or (w in ROMAN and h == ROMAN[w]) for h in have) for w in words)
+    hits = [n for n in names if matches(n)]
+    hits.sort(key=lambda n: (not " ".join(search_words(n)).startswith(" ".join(words)), n not in recent, n.lower()))
+    return [(n, note(n)) for n in hits]
 
 def layer_status(r, link, game=None, maps=(), hint=None):
     """The strip's first line from a reading: [(text, colour), ...]."""
@@ -1458,7 +1485,7 @@ class Layer:
         root.report_callback_exception = self._error
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
         self.status, self.shapes, self.message, self.until = [("Kabuto", AMBER), ("starting", DIM)], [], "", 0
-        self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], set(), None
+        self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], {}, None
         self.changed = set()
         self.unlisten = listen(self.keys.put)
 
@@ -1548,29 +1575,84 @@ class Layer:
         c.tag_lower(bg)
 
     def _pick_map(self):
-        """Which map (from map.json) this is: a small window, one click."""
+        """Which map (from map.json) this is: a searchable list. Type to
+        narrow it, arrows to move, Enter or a double click to pick, Esc to close."""
         tk = self.tk
         if self.picker:
             self.picker.destroy()
         if not self.maps:
-            self.say('List your maps in mobs/%s, e.g. {"Henesys": ["snail.png"]}, with the PNGs in mobs, then F9' % MAP_LIST)
+            self.say('List your maps in mobs/%s, e.g. [{"name": "Henesys", "mobs": ["snail.png"]}], with the PNGs in mobs, then F9' % MAP_LIST)
             return
+        panel, field, font = "#1e2128", "#16181d", "Segoe UI"
         win = self.picker = tk.Toplevel(self.root)
         win.title("Which map is this?")
         win.attributes("-topmost", True)
-        win.configure(bg="#1e2128", padx=10, pady=8)
-        tk.Label(win, text="Which map are you on? Its mobs (its PNGs in %s) are learned here." % MAP_LIST, bg="#1e2128", fg=INK).pack(anchor="w")
-        def pick(name):
+        win.configure(bg=panel, padx=16, pady=14)
+        w, h = 460, 540
+        win.geometry("%dx%d+%d+%d" % (w, h, self.monitor["left"] + (self.monitor["width"] - w) // 2,
+                                      self.monitor["top"] + max(40, (self.monitor["height"] - h) // 3)))
+        tk.Label(win, text="Which map are you on?", bg=panel, fg=INK, font=(font, 14, "bold")).pack(anchor="w")
+        tk.Label(win, text="Type to search  \u00b7  \u2191\u2193 to move  \u00b7  Enter picks  \u00b7  Esc closes",
+                 bg=panel, fg=DIM, font=(font, 9)).pack(anchor="w", pady=(2, 10))
+        query = tk.StringVar()
+        entry = tk.Entry(win, textvariable=query, bg=field, fg=INK, insertbackground=INK, relief="flat", font=(font, 12),
+                         highlightthickness=1, highlightbackground="#2b2f39", highlightcolor=AMBER)
+        entry.pack(fill="x", ipady=7)
+        box = tk.Frame(win, bg=panel)
+        box.pack(fill="both", expand=True, pady=(10, 6))
+        bar = tk.Scrollbar(box, orient="vertical")
+        rows = tk.Listbox(box, bg=field, fg=INK, font=(font, 11), activestyle="none", relief="flat", highlightthickness=0,
+                          selectbackground=AMBER, selectforeground=field, borderwidth=0, yscrollcommand=bar.set)
+        bar.config(command=rows.yview)
+        bar.pack(side="right", fill="y")
+        rows.pack(side="left", fill="both", expand=True)
+        foot = tk.Frame(win, bg=panel)
+        foot.pack(fill="x")
+        count = tk.Label(foot, bg=panel, fg=DIM, font=(font, 9))
+        count.pack(side="left")
+        shown = []
+        def close(_=None):
             win.destroy()
             self.picker = None
-            self.commands.put(("teach", name))
-        for name in self.maps:
-            note = "   (changed: teach again)" if name in self.changed else "   (taught)" if name in self.taught else ""
-            tk.Button(win, text=name + note, anchor="w",
-                      command=lambda n=name: pick(n)).pack(fill="x", pady=1)
-        tk.Button(win, text="Cancel", command=lambda: (win.destroy(), setattr(self, "picker", None))).pack(fill="x", pady=(6, 0))
-        win.geometry("+%d+%d" % (self.monitor["left"] + 40, self.monitor["top"] + 60))
-        win.focus_force()
+        def choose(_=None):
+            picked = rows.curselection()
+            if picked:
+                name = shown[picked[0]][0]
+                close()
+                self.commands.put(("teach", name))
+            return "break"
+        def move(step):
+            if shown:
+                at = min(max((rows.curselection() or (0,))[0] + step, 0), len(shown) - 1)
+                rows.selection_clear(0, "end"); rows.selection_set(at); rows.activate(at); rows.see(at)
+            return "break"
+        def refresh(*_):
+            shown[:] = pick_list(self.maps, query.get(), self.taught, self.changed)
+            rows.delete(0, "end")
+            for i, (name, note) in enumerate(shown):
+                rows.insert("end", "  %s%s" % (name, "     " + note if note else ""))
+                if note:
+                    rows.itemconfig(i, fg=AMBER if note.startswith("changed") else "#45d6b5")
+            if shown:
+                rows.selection_set(0); rows.see(0)
+            total = len(self.maps)
+            count.config(text=("%d of %d maps" % (len(shown), total) if query.get().strip() else "%d maps" % total)
+                         + ("" if shown else "  \u00b7  no match"))
+        tk.Button(foot, text="Cancel", command=close, bg=field, fg=INK, relief="flat", padx=12,
+                  activebackground="#2b2f39", activeforeground=INK).pack(side="right")
+        tk.Button(foot, text="Teach this map", command=choose, bg=AMBER, fg=field, relief="flat", padx=12,
+                  activebackground="#ffc04d", activeforeground=field, font=(font, 10, "bold")).pack(side="right", padx=(0, 8))
+        query.trace_add("write", refresh)
+        for key, step in (("<Down>", 1), ("<Up>", -1), ("<Next>", 10), ("<Prior>", -10)):
+            entry.bind(key, lambda e, s=step: move(s))
+            rows.bind(key, lambda e, s=step: move(s))
+        for widget in (entry, rows):
+            widget.bind("<Return>", choose)
+        rows.bind("<Double-Button-1>", choose)
+        win.bind("<Escape>", close)
+        self.pick = {"query": query, "rows": shown, "choose": choose, "move": move, "list": rows}   # for the self-test
+        refresh()
+        win.after(50, entry.focus_force)
 
 def with_layer(job, enabled=True):
     """Runs `job` with the game layer up (the job on its own thread; the
@@ -1945,6 +2027,18 @@ def selftest():
     boxes = []
     mob_view(sight, 1000, 30, [[200, 40, 160]], gap=40, step=2, min_hits=3, cell=10, names=["blob"], mob_w=20, boxes=boxes)
     assert sorted(boxes) == [(104, 0, 118, 20, "blob", 1), (604, 0, 618, 20, "blob", 1), (804, 0, 838, 20, "blob", 2)], sorted(boxes)
+    # The F9 list: recently taught first, then A-Z; a search keeps maps with
+    # every word (any order or case, 2 finds II), names starting with it first.
+    names = ["Rocky Road II", "Rocky Road I", "Henesys Hunting Ground", "Ant Tunnel I", "Perion: Rocky Mountain", "ellinia"]
+    taught = {"Henesys Hunting Ground": 100, "Ant Tunnel I": 300, "ellinia": 0}
+    assert pick_list(names, "", taught, {"ellinia"}) == [("Ant Tunnel I", "recent"), ("Henesys Hunting Ground", "recent"),
+        ("ellinia", "changed: teach again"), ("Perion: Rocky Mountain", ""), ("Rocky Road I", ""), ("Rocky Road II", "")]
+    assert [n for n, _ in pick_list(names, "rocky")] == ["Rocky Road I", "Rocky Road II", "Perion: Rocky Mountain"]
+    assert [n for n, _ in pick_list(names, "road 2")] == ["Rocky Road II"] and [n for n, _ in pick_list(names, "ROAD ii")] == ["Rocky Road II"]
+    assert [n for n, _ in pick_list(names, "mountain perion")] == ["Perion: Rocky Mountain"]   # any order, punctuation ignored
+    assert [n for n, _ in pick_list(names, "hun gro")] == ["Henesys Hunting Ground"] and pick_list(names, "zakum") == []
+    assert search_words("Perion: Rocky-Mountain II") == ["perion", "rocky", "mountain", "ii"]
+
     # The game layer's strip and outlines.
     strip = layer_status({"hp": 72.4, "mana": 40.0, "xp": 63.2, "map": "Henesys_Field", "mobs": "R", "ml": 1, "mr": 3, "dl": 192,
                           "dr": 52, "mn": "Blue_Snail", "state": "ok"}, "USB COM9", "maplestory", ["Henesys Field"])

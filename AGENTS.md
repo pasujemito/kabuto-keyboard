@@ -28,7 +28,7 @@ firmware updates from this repo's GitHub releases.
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
-| `tools/` | build hooks, backup, release signing, recorder, `screen_stats.py` (PC bar reader) |
+| `tools/` | build hooks, backup, release signing, recorder, `screen_stats.py` (PC screen reader, game layer, MapleStory colours) |
 | `tests/` | host tests (C++ with Arduino stubs, Node/Chromium) |
 
 ## Build and test
@@ -78,7 +78,10 @@ release workflow runs all C++ and Python tests.
   a few numbers per reading. Keep it that way: the pad has little RAM.
   Readings arrive as the same form over Wi-Fi (`POST /api/stats`) or USB serial
   (`KABUTO hello` / `KABUTO stats <form>` lines, `usbStatsPoll` in `main.cpp`),
-  parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). Mobs per map are
+  parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). The other way,
+  `tool` steps (the pad's setup buttons) queue the script's keys in `ToolKeys`
+  (`stats_logic.h`); it collects them with `KABUTO keys` / `POST
+  /api/tool/keys`. Mobs per map are
   told apart on the PC by the map name's pixels (no OCR); the pad only gets the
   name.
 - Keep the README light. Details go in `docs/GUIDE.md`, changes in

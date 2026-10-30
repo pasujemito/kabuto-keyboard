@@ -383,6 +383,7 @@
     <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
     <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
+    <button class="btn sm" id="newSetupLayer" title="A layer of buttons for the PC screen reader: mark, skip, which map, outlines, hide">🍁 Setup layer</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
   </section>
@@ -735,6 +736,27 @@ function showTab(t){
 }
 
 /* layers */
+// A layer whose buttons are the PC screen reader's keys (mark, skip, which
+// map, outlines, hide) plus one back, so setup and the game layer work from
+// the pad. An empty button on the current layer, if any, switches to it.
+function addSetupLayer(){
+  if(cfg.layers.length>=meta.maxLayers)throw new Error('No room for another layer (at most '+meta.maxLayers+').');
+  const from=selLayer,setup=cfg.layers.length,keys=Object.keys(TOOL_KEYS);
+  const reuse=(name,steps)=>{
+    let w=cfg.workflows.find(w=>w.steps.length===1&&JSON.stringify(w.steps)===JSON.stringify(steps));
+    if(!w){w={id:freshId(),name,kind:'nano',recording:true,steps};cfg.workflows.push(w);}
+    return w.id;
+  };
+  const needed=keys.length+2-keys.filter(k=>cfg.workflows.some(w=>w.steps.length===1&&w.steps[0].type==='tool'&&w.steps[0].key===k)).length;
+  if(cfg.workflows.length+needed>64)throw new Error('Recording storage is full.');
+  const layer={name:'MS🍁 Setup',keys:[]};cfg.layers.push(layer);normalize();
+  keys.slice(0,meta.keyCount-1).forEach((k,i)=>{const [name,hotkey]=TOOL_KEYS[k];layer.keys[i].name=name+' ('+hotkey+')';setAssignment(layer.keys[i],'single',[reuse(name+' ('+hotkey+')',[{type:'tool',key:k}])]);});
+  const back=layer.keys[meta.keyCount-1];back.name='Back';setAssignment(back,'single',[reuse('Back to '+(cfg.layers[from].name||'layer '+from),[{type:'layer',layer:from}])]);
+  const empty=cfg.layers[from].keys.map((k,i)=>k.steps.length?-1:i).filter(i=>i>=0).pop();
+  if(empty!==undefined){const k=cfg.layers[from].keys[empty];k.name='🍁 Setup';setAssignment(k,'single',[reuse('Go to MS🍁 Setup',[{type:'layer',layer:setup}])]);}
+  cfg.version=2;selLayer=setup;selKey=0;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();renderRecordings();updateDirty();
+  toast('Added the MS🍁 Setup layer'+(empty!==undefined?'; button '+(empty+1)+' on '+(cfg.layers[from].name||'layer '+from)+' goes to it':'')+'. Save to use it.');
+}
 function renderLayers(){
   const b=$("#layerbar");b.replaceChildren();
   cfg.layers.forEach((L,i)=>{
@@ -1076,7 +1098,11 @@ function recordingSteps(recording,seen=new Set()){
     return [s];
   });
 }
+// Buttons for tools/screen_stats.py ("tool" steps): its keys, pressed on the pad.
+const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11']};
+function isToolRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='tool';}
 function recordingSummary(recording){
+  if(isToolRecording(recording)){const k=TOOL_KEYS[recording.steps[0].key];return `Screen reader key · ${k?k[0]+' ('+k[1]+')':recording.steps[0].key}`;}
   if(isDynamicRecording(recording)){const p=recording.steps[0].pattern;return `Dynamic · ${p.attacks_per_set.join('–')} attacks × ${p.sets.join('–')} sets`;}
   const steps=recordingSteps(recording),ms=steps.reduce((n,s)=>n+stepMs(s),0);
   return steps.length+' steps · '+(ms/1000).toFixed(1)+' s';
@@ -1847,6 +1873,7 @@ function macroEventLabel(e){
     case "utilities":return "UTILITY "+(e.text||"check");
     case "call":return "CALL "+(e.text||"workflow");
     case "random":return "RANDOM "+(e.text||"macro");
+    case "tool":return "SCREEN READER "+(e.text||"key");
     default:return e.type;
   }
 }
@@ -1967,6 +1994,7 @@ async function pollStatus(){
 
 $("#pinDialog").addEventListener("cancel",event=>event.preventDefault());
 $("#newDynamic").onclick=()=>openDynamicEditor();
+$("#newSetupLayer").onclick=()=>{try{addSetupLayer();}catch(e){toast(e.message,true);}};
 for(const [name,preset] of Object.entries(DYNAMIC_PRESETS)){const b=el('button','btn sm');b.type='button';b.textContent=preset.label;b.onclick=()=>applyDynamicPreset(name);$('#dynamicPresets').appendChild(b);}
 $("#dynamicName").oninput=()=>dynamicDirty=true;
 $("#dynamicClose").onclick=closeDynamicEditor;

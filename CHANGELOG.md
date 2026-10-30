@@ -3,6 +3,19 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.17.0
+
+- 🍁 **Game layer**: a strip over the game with what the screen reader sees
+  and each setup step; F9 picks a new map's mob folder, F10 outlines what it
+  looks at and finds (mobs named), F11 hides it. No more alt-tabbing
+- ⌨️ F8-F11 work **while the game has focus** (read directly on Windows, no
+  keyboard hook for the game or anti-cheat to block)
+- 🎛️ **Setup from the pad**: Recordings → 🍁 Setup layer adds a layer whose
+  buttons are the screen reader's keys (Mark, Skip, Which map, Outlines, Hide,
+  Back) and a button to reach it; they type nothing into the game
+- 🍁 **MapleStory colours built in** (HP, MP, XP, minimap dot): setup works
+  with empty bars and doesn't ask for your dot
+
 ## 1.16.0
 
 - 📊 **Live HP, Mana and XP from your screen**: `tools/screen_stats.py` reads

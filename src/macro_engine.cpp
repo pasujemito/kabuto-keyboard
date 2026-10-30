@@ -414,6 +414,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 setLayer(s.value);
                 logStep(s, pc, stepStartedAt, 0, true);
                 break;
+            case StepType::TOOL:   // for tools/screen_stats.py to collect; nothing is typed
+                toolKeyPush((uint8_t)s.value);
+                logStep(s, pc, stepStartedAt, 0, true, toolKeyName((uint8_t)s.value));
+                break;
             case StepType::DYNAMIC: {
                 const DynamicPattern* pattern=s.pattern();
                 if (!pattern || depth>=8 || hasHeldInput() || state.combat) {

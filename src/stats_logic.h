@@ -182,6 +182,50 @@ struct StuckWatch {
     }
 };
 
+// ---- the screen reader's keys, pressed on the pad ---------------------------
+// "tool" steps press tools/screen_stats.py's keys from the pad: mark (its F8),
+// skip (Esc), map (F9), outlines (F10) and hide (F11), so setup and the game
+// layer need no keyboard and work whatever has focus. They wait here until the
+// script asks (USB "KABUTO keys", Wi-Fi POST /api/tool/keys); ones older than
+// TOOL_KEY_MAX_AGE_MS are dropped, so presses with no script running don't
+// fire later.
+enum ToolKey : uint8_t { TOOL_NONE, TOOL_MARK, TOOL_SKIP, TOOL_MAP, TOOL_OUTLINES, TOOL_HIDE };
+const uint32_t TOOL_KEY_MAX_AGE_MS = 3000;
+inline const char* toolKeyName(uint8_t key) {
+    static const char* const names[] = {"", "mark", "skip", "map", "outlines", "hide"};
+    return key <= TOOL_HIDE ? names[key] : "";
+}
+inline uint8_t toolKeyFromName(const char* name) {
+    for (uint8_t k = TOOL_MARK; name && k <= TOOL_HIDE; ++k)
+        if (!strcmp(name, toolKeyName(k))) return k;
+    return TOOL_NONE;
+}
+struct ToolKeys {
+    static const uint8_t CAP = 8;
+    uint8_t keys[CAP] = {};
+    uint32_t at[CAP] = {};
+    uint8_t count = 0;
+    void push(uint8_t key, uint32_t now) {
+        if (count == CAP) { memmove(keys, keys + 1, CAP - 1); memmove(at, at + 1, (CAP - 1) * sizeof(uint32_t)); --count; }   // the oldest goes
+        keys[count] = key; at[count++] = now;
+    }
+    // The fresh keys, oldest first, comma separated into `out` ("" for none);
+    // the queue is emptied.
+    void take(uint32_t now, char* out, size_t size) {
+        size_t n = 0;
+        out[0] = 0;
+        for (uint8_t i = 0; i < count; ++i) {
+            if (now - at[i] > TOOL_KEY_MAX_AGE_MS) continue;
+            const char* name = toolKeyName(keys[i]);
+            size_t len = strlen(name);
+            if (n + len + 2 > size) break;
+            if (n) out[n++] = ',';
+            memcpy(out + n, name, len); n += len; out[n] = 0;
+        }
+        count = 0;
+    }
+};
+
 // ---- readings from tools/screen_stats.py -----------------------------------
 // The same form ("hp=72.5&mana=40&xp=63.2&x=41.5&y=70&wx=1415&wy=700&state=ok&mobs=L
 // &ml=1&mr=3&dl=192&dr=52&mn=Slime&map=Henesys") comes over Wi-Fi (POST

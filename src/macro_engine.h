@@ -38,6 +38,7 @@ enum class StepType : uint8_t {
     CALL,       // execute a named workflow once
     DYNAMIC,    // stream a fresh parameterized jump-attack pattern
     RANDOM,     // run one randomly selected macro from 'choices'
+    TOOL,       // press a screen reader key ('value': ToolKey, stats_logic.h); no HID
 };
 
 struct MacroRef {

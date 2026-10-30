@@ -46,3 +46,7 @@ struct PatternView {
 };
 void patternViewSet(const PatternView& v);
 PatternView patternViewSnapshot();
+
+// The screen reader's keys pressed on the pad (ToolKeys, stats_logic.h).
+void toolKeyPush(uint8_t key);
+void toolKeysTake(char* out, size_t size);   // "mark,map" or ""

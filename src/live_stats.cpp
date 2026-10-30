@@ -7,6 +7,7 @@ uint8_t state_ = LIVE_OK, mobs_ = 0;
 int ml_ = -1, mr_ = -1, dl_ = -1, dr_ = -1;
 char mob_[LIVE_NAME_LEN] = {}, map_[LIVE_NAME_LEN] = {};
 PatternView view_;
+ToolKeys toolKeys_;
 uint32_t at_ = 0;
 bool any_ = false;
 XpTracker xpTracker_;
@@ -59,6 +60,18 @@ void liveStatsReset() {
 void patternViewSet(const PatternView& v) {
     portENTER_CRITICAL(&mux_);
     view_ = v;
+    portEXIT_CRITICAL(&mux_);
+}
+
+void toolKeyPush(uint8_t key) {
+    portENTER_CRITICAL(&mux_);
+    toolKeys_.push(key, millis());
+    portEXIT_CRITICAL(&mux_);
+}
+
+void toolKeysTake(char* out, size_t size) {
+    portENTER_CRITICAL(&mux_);
+    toolKeys_.take(millis(), out, size);
     portEXIT_CRITICAL(&mux_);
 }
 

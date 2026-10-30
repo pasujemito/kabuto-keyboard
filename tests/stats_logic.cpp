@@ -100,5 +100,15 @@ int main(){
     statsName("abcdefghijklmnopqrstuvwxyz",name);assert(std::string(name)=="abcdefghijklmnopqrstuvw");   // 23 at most
     statsName(nullptr,name);assert(!name[0]);
     r=parseStatsForm("map=-");assert(std::string(r.map)=="-");   // a map the script wasn't taught
+    // Screen reader keys pressed on the pad: names both ways, oldest first,
+    // stale ones dropped, the oldest pushed out when full.
+    assert(toolKeyFromName("mark")==TOOL_MARK&&toolKeyFromName("hide")==TOOL_HIDE&&toolKeyFromName("f8")==TOOL_NONE&&toolKeyFromName(nullptr)==TOOL_NONE);
+    assert(std::string(toolKeyName(TOOL_OUTLINES))=="outlines"&&std::string(toolKeyName(99))=="");
+    ToolKeys tk;char out[64];tk.take(0,out,sizeof(out));assert(!out[0]);
+    tk.push(TOOL_MARK,1000);tk.push(TOOL_SKIP,4500);tk.push(TOOL_MAP,5000);tk.take(5000,out,sizeof(out));
+    assert(std::string(out)=="skip,map"&&tk.count==0);   // the mark is 4 s old
+    for(int i=0;i<10;++i)tk.push(i%2?TOOL_HIDE:TOOL_MARK,100);
+    tk.take(100,out,sizeof(out));assert(std::string(out)=="mark,hide,mark,hide,mark,hide,mark,hide");   // 8 kept
+    tk.push(TOOL_OUTLINES,0);tk.take(0,out,8);assert(!out[0]);   // doesn't fit: nothing half written
     std::cout<<"stats logic tests passed\n";
 }

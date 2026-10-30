@@ -35,9 +35,12 @@ Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
 mob) in a "mobs" folder here; setup learns their colours instead of asking
 you to mark mobs (needs pip install pillow). After adding sprites:
     python screen_stats.py --mobs
-Mobs per map: every PNG once in "mobs", and mobs/map.json listing which are
-on each map (a mob on several maps is listed under each):
-    {"Henesys": ["snail.png", "blue_snail.png"], "Ellinia": ["slime.png", "snail.png"]}
+Mobs per map: every PNG once in "mobs", and mobs/map.json describing each
+map (a mob on several maps is listed under each):
+    [{"name": "Rocky Road II", "mobs": ["red-snail.png", "orange-mushroom.png"],
+      "minimap": {"width": 178, "height": 96}}, ...]
+"minimap" is that map's minimap size; teaching a map asks you to mark its
+bottom-right corner and writes it in.
 Setup asks where the map's name is shown; then on each new map press F9 in
 the game and click the map (or, from the terminal):
     python screen_stats.py --map            # asks which map
@@ -590,6 +593,8 @@ class Screen:
         self.maps = MapReader(config.get("maps", {}), area.get("light", 170)) if area and config.get("maps") else None
         self.boxes = []   # the mobs last found, in screen coordinates (for the game layer)
         self.current = None   # the taught map you're on ("" untaught, None no map library)
+        self.sizes = {}       # {map: its minimap size}, from map.json
+        self.box = None       # the minimap box last read
         apply_game(config)
 
     def map_name(self):
@@ -600,6 +605,15 @@ class Screen:
         a = self.config["map_name"]
         w, h = a["x2"] - a["x1"] + 1, a["y2"] - a["y1"] + 1
         return self.maps.read(grab(self.sct, a["x1"], a["y1"], w, h), w, h)
+
+    def minimap_box(self, name):
+        """The minimap's box on this map: the setup's, or this map's own size
+        from map.json, from the same top-left corner (MapleStory's minimap
+        stays there and grows or shrinks with the map)."""
+        mm, size = self.config.get("minimap"), self.sizes.get(name) if name else None
+        if not mm or not size:
+            return mm
+        return dict(mm, x2=mm["x1"] + size["width"] - 1, y2=mm["y1"] + size["height"] - 1)
 
     def mobs(self, name):
         """Mob fields for the reading (see mob_fields), with this map's colours
@@ -626,15 +640,17 @@ class Screen:
     def read(self):
         c = self.config
         out = read_bars(self.sct, c.get("bars", {}))
-        dot, world, mm = None, None, c.get("minimap")
+        name = self.current = self.map_name()   # first: the map decides the minimap's size
+        dot, world, mm = None, None, self.minimap_box(name)
         if mm:
+            if mm != self.box:   # another size: the slide so far doesn't carry over
+                self.box, self.minimap = mm, MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
             w, h = mm["x2"] - mm["x1"] + 1, mm["y2"] - mm["y1"] + 1
             raw = grab(self.sct, mm["x1"], mm["y1"], w, h)
             dot = find_dot(raw, w, h, mm["dot"], mm.get("tolerance", 40))
             if dot:                      # a login or loading screen isn't the map
                 self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
-        name = self.current = self.map_name()
         found = self.mobs(name)
         mobs = found.pop("mobs", None)   # None: no mob detector, so the pad doesn't wait for mobs
         watches = {}
@@ -838,38 +854,90 @@ def mark_map_name(config):
 
 MAP_LIST = "map.json"   # in the mob sprites folder
 
+def map_entries(data):
+    """map.json in any of its forms as a list of maps, each {"name": ..., ...}
+    in the file's order: a list of objects (the current form), or an object of
+    names to objects or to mob lists (1.17.1). Anything else is kept as is."""
+    if isinstance(data, list):
+        return [dict(e) if isinstance(e, dict) else e for e in data]
+    if isinstance(data, dict):
+        return [dict({"name": n}, **(v if isinstance(v, dict) else {"mobs": v})) for n, v in data.items()]
+    return None
+
 def read_map_list(sprites_dir):
-    """Your maps and the mobs on each, from mobs/map.json, with the PNGs in mobs
-    itself, so a mob found on several maps is kept once:
+    """Your maps, from mobs/map.json, with the PNGs in mobs itself, so a mob
+    found on several maps is kept once:
 
-        {"Henesys Hunting Ground": ["snail.png", "blue_snail.png"],
-         "Ellinia": ["slime.png", "snail.png"]}
+        [{"name": "Rocky Road II", "mobs": ["red-snail.png", "orange-mushroom.png"],
+          "minimap": {"width": 178, "height": 96}}, ...]
 
-    Returns ({map: [file, ...]}, [problem, ...]); listed files that aren't there
-    are problems, not fatal. Without map.json, folders per map (mobs/<map>/*.png,
-    the older layout) are the maps, each with None: the whole folder."""
+    "minimap" is that map's minimap size in px (from the setup's top-left
+    corner; F9 fills it in). Other keys are kept for later. The 1.17.1 form,
+    {"Rocky Road II": ["red-snail.png", ...]}, still reads.
+    Returns ({map: {"mobs": [file, ...], "minimap": {...} or None}}, [problem,
+    ...]); listed files that aren't there and bad entries are problems, not
+    fatal. Without map.json, folders per map (mobs/<map>/*.png, the older
+    layout) are the maps, each with mobs None: the whole folder."""
     path = os.path.join(sprites_dir, MAP_LIST)
     if not os.path.isfile(path):
         if not os.path.isdir(sprites_dir):
             return {}, []
-        return {d: None for d in sorted(os.listdir(sprites_dir)) if os.path.isdir(os.path.join(sprites_dir, d))}, []
+        return {d: {"mobs": None, "minimap": None} for d in sorted(os.listdir(sprites_dir))
+                if os.path.isdir(os.path.join(sprites_dir, d))}, []
     try:
         with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+            entries = map_entries(json.load(f))
     except ValueError as e:
         return {}, ["%s isn't valid JSON: %s" % (path, e)]
-    if not isinstance(data, dict):
-        return {}, ['%s should look like {"Map name": ["mob.png", ...], ...}' % path]
+    if entries is None:
+        return {}, ['%s should be a list of maps: [{"name": "Map", "mobs": ["mob.png", ...]}, ...]' % path]
     maps, problems = {}, []
-    for name, files in data.items():
+    for i, entry in enumerate(entries, 1):
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or not name:
+            problems.append('%s: map %d needs a "name"' % (MAP_LIST, i)); continue
+        if name in maps:
+            problems.append("%s: %s is listed twice; the first counts" % (MAP_LIST, name)); continue
+        files = entry.get("mobs")
         if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
-            problems.append('%s: "%s" should be a list of PNG file names' % (MAP_LIST, name))
-            continue
+            problems.append('%s: %s\'s "mobs" should be a list of PNG file names' % (MAP_LIST, name)); continue
         missing = [f for f in files if not os.path.isfile(os.path.join(sprites_dir, f))]
         if missing:
             problems.append("%s: %s lists %s, not in %s" % (MAP_LIST, name, ", ".join(missing), sprites_dir))
-        maps[name] = files
+        size = entry.get("minimap")
+        if size is not None and not (isinstance(size, dict) and all(isinstance(size.get(k), int) and 8 <= size[k] <= 4000
+                                                                   for k in ("width", "height"))):
+            problems.append('%s: %s\'s "minimap" should be {"width": px, "height": px}; the setup\'s is used' % (MAP_LIST, name))
+            size = None
+        maps[name] = {"mobs": files, "minimap": size and {"width": size["width"], "height": size["height"]}}
     return maps, problems
+
+def format_map_list(entries):
+    """map.json text: one map per block, each value on one line."""
+    def one(entry):
+        if not isinstance(entry, dict):
+            return "  " + json.dumps(entry, ensure_ascii=False)
+        return "  {\n" + ",\n".join("    %s: %s" % (json.dumps(k, ensure_ascii=False), json.dumps(v, ensure_ascii=False))
+                                     for k, v in entry.items()) + "\n  }"
+    return "[\n" + ",\n".join(one(e) for e in entries) + "\n]\n"
+
+def save_map_size(sprites_dir, name, width, height):
+    """Writes map `name`'s minimap size into map.json (in the current form,
+    keeping everything else). False without map.json or that map in it."""
+    path = os.path.join(sprites_dir, MAP_LIST)
+    try:
+        with open(path, encoding="utf-8") as f:
+            entries = map_entries(json.load(f))
+    except (OSError, ValueError):
+        return False
+    for entry in entries or []:
+        if isinstance(entry, dict) and entry.get("name") == name:
+            entry["minimap"] = {"width": width, "height": height}
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                f.write(format_map_list(entries))
+            os.replace(path + ".tmp", path)
+            return True
+    return False
 
 class MapList:
     """map.json for the reading loop: read again when it changes, its problems
@@ -893,15 +961,38 @@ def map_names(sprites_dir):
 
 def map_sprites(sprites_dir, name):
     """The sprites of map `name`: its files in map.json (or its older folder)."""
-    files = read_map_list(sprites_dir)[0].get(name, [])
-    return load_sprites(os.path.join(sprites_dir, name)) if files is None else load_sprites(sprites_dir, files)
+    entry = read_map_list(sprites_dir)[0].get(name)
+    if not entry:
+        return {}
+    return load_sprites(os.path.join(sprites_dir, name)) if entry["mobs"] is None else load_sprites(sprites_dir, entry["mobs"])
+
+def map_sizes(maps):
+    """{map: its minimap size} for the maps in map.json that have one."""
+    return {name: entry["minimap"] for name, entry in maps.items() if entry.get("minimap")}
 
 def map_changed(sprites_dir, maps, name, taught):
     """Whether map.json now lists other (existing) PNGs for `name` than it was taught with."""
-    files = maps.get(name)
+    files = (maps.get(name) or {}).get("mobs")
     if not files or not taught:
         return False
     return sorted(f for f in set(files) if os.path.isfile(os.path.join(sprites_dir, f))) != taught.get("sprites")
+
+def minimap_size(mm, corner):
+    """The minimap's size from the setup's top-left corner to `corner`, or None
+    if that's too small to be one."""
+    width, height = corner[0] - mm["x1"] + 1, corner[1] - mm["y1"] + 1
+    return (width, height) if min(width, height) >= 8 else None
+
+def mark_minimap_size(mm, name):
+    """This map's minimap size: its bottom-right corner, marked once (Esc keeps
+    the setup's box)."""
+    pts = mark_points("%s's minimap: hover its BOTTOM-RIGHT corner, F8 (Esc keeps the setup's)" % name, 1)
+    if not pts:
+        return None
+    size = minimap_size(mm, pts[0])
+    if not size:
+        say("  That's not below and right of the minimap's top-left corner: the setup's box is kept.")
+    return size
 
 def name_rows(sct, area):
     w, h = area["x2"] - area["x1"] + 1, area["y2"] - area["y1"] + 1
@@ -926,6 +1017,11 @@ def teach_map(sct, config, sprites_dir, name):
     for other, m in sorted(config.get("maps", {}).items()):
         if other != name and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.8:
             say("  Careful: this name looks like %s's; mark just the name (--setup)." % other)
+    entry = read_map_list(sprites_dir)[0].get(name) or {}
+    if config.get("minimap") and entry.get("mobs") is not None and not entry.get("minimap"):
+        size = mark_minimap_size(config["minimap"], name)
+        if size and save_map_size(sprites_dir, name, *size):
+            say("  Saved %s's minimap size (%d x %d px) in %s." % ((name,) + size + (MAP_LIST,)))
     say("Teaching %s with %d sprite(s)." % (name, len(sprites)))
     learned = learn_here(sct, mobs, sprites)
     if not learned:
@@ -1236,6 +1332,7 @@ def run(args):
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         maps = map_list.get()
+        screen.sizes = map_sizes(maps)
         if LAYER:
             LAYER.maps, LAYER.taught = sorted(maps), set(config.get("maps", {}))
             LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
@@ -1266,7 +1363,7 @@ def run(args):
         if LAYER:
             hint = "%s changed in %s: F9 to relearn" % (screen.current, MAP_LIST) if screen.current in LAYER.changed else None
             LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint),
-                       layer_shapes(config, sct.monitors[0], screen.boxes, readings))
+                       layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box))
         time.sleep(wait)
 
 # ---- the game layer -------------------------------------------------------------
@@ -1310,9 +1407,10 @@ def layer_status(r, link, game=None, maps=(), hint=None):
     out.append(("F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
     return out
 
-def layer_shapes(config, monitor, boxes, r):
+def layer_shapes(config, monitor, boxes, r, mm=None):
     """Outlines over the game: [(x0, y0, x1, y1, colour, label), ...] in screen
-    coordinates. The minimap and name area are drawn just outside what's read."""
+    coordinates. The minimap (`mm`, else the setup's) and name area are drawn
+    just outside what's read."""
     out = []
     mb = config.get("mobs")
     if mb and "x" in mb:
@@ -1323,7 +1421,7 @@ def layer_shapes(config, monitor, boxes, r):
         out.append((left, top, left + w, top + h, RED, "reach"))
     for x0, y0, x1, y1, name, n in boxes:
         out.append((x0, y0, x1, y1, AMBER, (name or "mob").replace("_", " ") + (" x%d" % n if n > 1 else "")))
-    mm = config.get("minimap")
+    mm = mm or config.get("minimap")
     if mm:
         out.append((mm["x1"] - 2, mm["y1"] - 2, mm["x2"] + 2, mm["y2"] + 2, "#45d6b5", "minimap"))   # labelled below
         if r.get("x") is not None:
@@ -1751,6 +1849,19 @@ def selftest():
         paint(fake.px, 800, 600 + x, 92 + y, 600 + x1, 92 + y1, white)
     r = screen.read()
     assert r["map"] == "-" and r["mobs"] == "" and "ml" not in r and "not taught" in describe(r), r   # the setup's (green) mobs: none here
+    # A map with its own minimap size: read from the setup's top-left corner,
+    # 100 x 50 here, so the same dot is further across; the outline follows.
+    paint(fake.px, 800, 600, 92, 660, 106, dark)
+    for x, y, x1, y1 in henesys:
+        paint(fake.px, 800, 600 + x, 92 + y, 600 + x1, 92 + y1, white)
+    paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230)); paint(fake.px, 800, 640, 50, 644, 54, yellow)
+    config["minimap"] = {"x1": 600, "y1": 10, "x2": 759, "y2": 89, "dot": list(yellow)}
+    screen = Screen(fake, config)
+    whole = screen.read()["x"]
+    screen.sizes = {"Henesys Field": {"width": 100, "height": 50}}
+    r = screen.read()
+    assert screen.box["x2"] == 699 and screen.box["y2"] == 59 and r["x"] > whole + 10, (whole, r["x"], screen.box)
+    assert [shape[:4] for shape in layer_shapes(config, FakeScreen.monitors[0], [], r, screen.box) if shape[5] == "minimap"] == [(598, 8, 701, 61)]
     assert form_fields({"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}) == \
         {"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}
 
@@ -1764,8 +1875,9 @@ def selftest():
             with open(os.path.join(lib, MAP_LIST), "w", encoding="utf-8") as f:
                 f.write(text)
         write('{"Henesys Hunting Ground": ["snail.png", "blue_snail.png"], "Ellinia": ["slime.png", "snail.png", "gone.png"]}')
-        maps, problems = read_map_list(lib)
-        assert maps == {"Henesys Hunting Ground": ["snail.png", "blue_snail.png"], "Ellinia": ["slime.png", "snail.png", "gone.png"]}
+        maps, problems = read_map_list(lib)   # the 1.17.1 form still reads
+        assert maps == {"Henesys Hunting Ground": {"mobs": ["snail.png", "blue_snail.png"], "minimap": None},
+                        "Ellinia": {"mobs": ["slime.png", "snail.png", "gone.png"], "minimap": None}}, maps
         assert problems == ["map.json: Ellinia lists gone.png, not in %s" % lib], problems
         assert map_names(lib) == ["Ellinia", "Henesys Hunting Ground"]
         # Taught with what's there; a changed list asks to teach again (a missing file alone doesn't).
@@ -1777,15 +1889,37 @@ def selftest():
         write('{"Ellinia": "slime.png", "Perion": ["boar.png", 3]}')
         os.utime(os.path.join(lib, MAP_LIST), (1, 1))   # a different modification time: read again
         assert listed.get() == {}
-        assert read_map_list(lib)[1] == ['map.json: "Ellinia" should be a list of PNG file names',
-                                         'map.json: "Perion" should be a list of PNG file names']
+        assert read_map_list(lib)[1] == ['map.json: Ellinia\'s "mobs" should be a list of PNG file names',
+                                         'map.json: Perion\'s "mobs" should be a list of PNG file names']
         write('{"Ellinia": ["slime.png",]}')
         assert read_map_list(lib)[0] == {} and "isn't valid JSON" in read_map_list(lib)[1][0]
-        write('["slime.png"]')
-        assert "should look like" in read_map_list(lib)[1][0]
+        write('"slime.png"')
+        assert "should be a list of maps" in read_map_list(lib)[1][0]
+        # The current form: an object per map, with its minimap size; other keys are kept for later.
+        write('[{"name": "Rocky Road II", "mobs": ["snail.png"], "minimap": {"width": 178, "height": 96}, "home": 0.3},'
+              ' {"name": "Ellinia", "mobs": ["slime.png"], "minimap": {"width": 4}}, {"mobs": ["slime.png"]},'
+              ' {"name": "Ellinia", "mobs": []}, "stray"]')
+        maps, problems = read_map_list(lib)
+        assert maps == {"Rocky Road II": {"mobs": ["snail.png"], "minimap": {"width": 178, "height": 96}},
+                        "Ellinia": {"mobs": ["slime.png"], "minimap": None}}, maps
+        assert problems == ['map.json: Ellinia\'s "minimap" should be {"width": px, "height": px}; the setup\'s is used',
+                            'map.json: map 3 needs a "name"', "map.json: Ellinia is listed twice; the first counts",
+                            'map.json: map 5 needs a "name"'], problems
+        assert map_sizes(maps) == {"Rocky Road II": {"width": 178, "height": 96}}
+        # F9 writes a size in, turning a 1.17.1 file into the current form and keeping the rest.
+        write('{"Henesys": ["snail.png", "blue_snail.png"], "Ellinia": {"mobs": ["slime.png"], "home": 0.3}}')
+        assert save_map_size(lib, "Ellinia", 180, 90) and not save_map_size(lib, "Perion", 180, 90)
+        with open(os.path.join(lib, MAP_LIST), encoding="utf-8") as f:
+            text = f.read()
+        assert text == ('[\n  {\n    "name": "Henesys",\n    "mobs": ["snail.png", "blue_snail.png"]\n  },\n'
+                        '  {\n    "name": "Ellinia",\n    "mobs": ["slime.png"],\n    "home": 0.3,\n'
+                        '    "minimap": {"width": 180, "height": 90}\n  }\n]\n'), text
+        assert read_map_list(lib)[0]["Ellinia"]["minimap"] == {"width": 180, "height": 90}
+        assert minimap_size({"x1": 20, "y1": 60}, (199, 155)) == (180, 96) and minimap_size({"x1": 20, "y1": 60}, (10, 155)) is None
         # No map.json: older folders per map still work, each meaning the whole folder.
         os.remove(os.path.join(lib, MAP_LIST)); os.mkdir(os.path.join(lib, "Perion"))
-        assert read_map_list(lib) == ({"Perion": None}, []) and map_names(os.path.join(lib, "nowhere")) == []
+        assert read_map_list(lib) == ({"Perion": {"mobs": None, "minimap": None}}, []) and map_names(os.path.join(lib, "nowhere")) == []
+        assert not save_map_size(lib, "Perion", 180, 90)   # no map.json to write to
         assert load_sprites(lib, []) == {} and load_sprites(lib, ["gone.png"]) == {}   # nothing listed there: no Pillow needed
     try:
         from PIL import Image

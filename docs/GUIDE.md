@@ -282,23 +282,41 @@ snail). The console shows it: `seen L1 (192%) R3 (52%) snail`. Older setups
 (colours marked by hand) keep sending sides only; run `--mobs` with sprites
 for the rest.
 
-**Mobs per map:** keep every mob's PNG once, in `mobs`, and list which ones
-live on each map in `mobs/map.json` (map names as you like; the in-game name
-reads best). A mob found on several maps is just listed under each:
+**Mobs per map:** keep every mob's PNG once, in `mobs`, and describe each map
+in `mobs/map.json`: its name (as you like; the in-game name reads best) and
+the mobs on it. A mob found on several maps is just listed under each:
 
 ```
-mobs/snail.png
-mobs/blue_snail.png
+mobs/red-snail.png
+mobs/orange-mushroom.png
 mobs/slime.png
 mobs/map.json
 ```
 
 ```json
-{
-  "Henesys Hunting Ground": ["snail.png", "blue_snail.png"],
-  "Ellinia": ["slime.png", "snail.png"]
-}
+[
+  {
+    "name": "Rocky Road II",
+    "mobs": ["red-snail.png", "orange-mushroom.png"],
+    "minimap": {"width": 178, "height": 96}
+  },
+  {
+    "name": "Ellinia",
+    "mobs": ["slime.png", "red-snail.png"]
+  }
+]
 ```
+
+**`minimap`** is that map's minimap size in pixels. MapleStory's minimap
+stays at the same top-left corner but is wider or narrower from map to map,
+so with it your position (and the edge margins and home range that use it)
+is measured on that map's real minimap rather than the box marked at setup.
+You don't type it: the first time you teach a map (F9 below) it asks you to
+Mark the minimap's bottom-right corner and writes the size in (Skip keeps
+the setup's box). Delete a map's `minimap` to mark it again. Other keys are
+kept as they are, for later settings. The older form,
+`{"Ellinia": ["slime.png", ...]}`, still reads, and is rewritten in this form
+the first time a size is saved.
 
 Run `--setup` once (it asks where the map's name is shown). Then, the first
 time you're on each map, press **F9** (or **Which map** on the pad) and click
@@ -312,7 +330,7 @@ python screen_stats.py --map Ellinia    # or name it
 Teaching keeps the map's name as a picture (its light pixels) and learns that
 map's mob colours against its scenery. While running, whenever a taught name
 shows (a pixel or two off is fine), that map's mobs are looked for, so only
-the mobs that live there are matched; a map you haven't taught shows "new map:
+the mobs that live there are matched, on that map's minimap; a map you haven't taught shows "new map:
 F9" on the strip and "map not taught" on the pad. Change a taught map's list
 and the strip says so ("changed in map.json: F9 to relearn"; the F9 window
 marks it too): stand on it and teach it again. A listed PNG that isn't in

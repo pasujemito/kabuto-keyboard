@@ -3,6 +3,16 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.17.2
+
+- 🗺️ **`map.json` describes each map**: `[{"name": "Rocky Road II", "mobs":
+  [...], "minimap": {"width": 178, "height": 96}}]`, room for more settings
+  later. The 1.17.1 form still reads
+- 📐 **Each map's own minimap size**: teaching a map asks you to Mark its
+  minimap's bottom-right corner once and writes the size into `map.json`, so
+  your position, edge margins and home range follow that map's real minimap
+  instead of the box marked at setup
+
 ## 1.17.1
 
 - 🗂️ **One mobs folder, one `map.json`**: every mob PNG is kept once in

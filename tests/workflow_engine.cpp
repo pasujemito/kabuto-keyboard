@@ -459,5 +459,15 @@ int main() {
     // Dynamic timing is refused inside a parent-held chord rather than
     // releasing/changing the parent's modifiers unexpectedly.
     ctrlDurations.clear();run(engine,{attackDown,dynamic,ctrlUp});assert(ctrlDurations.size()==1);
+    // Screen reader keys on the pad: queued for the script, nothing typed.
+    {
+        char keys[64];toolKeysTake(keys,sizeof(keys));   // start empty
+        Step mark;mark.type=StepType::TOOL;mark.value=TOOL_MARK;Step map=mark;map.value=TOOL_MAP;
+        taps.clear();hidEvents.clear();run(engine,{mark,map,mark});
+        assert(taps.empty()&&std::none_of(hidEvents.begin(),hidEvents.end(),[](const HidEvent& e){return e.down;}));   // no key went down
+        toolKeysTake(keys,sizeof(keys));assert(std::string(keys)=="mark,map,mark");
+        toolKeysTake(keys,sizeof(keys));assert(!keys[0]);   // taken once
+        run(engine,{mark});testClock+=TOOL_KEY_MAX_AGE_MS+1;toolKeysTake(keys,sizeof(keys));assert(!keys[0]);   // stale: dropped
+    }
     std::cout << "workflow engine tests passed\n";
 }

@@ -148,6 +148,7 @@ static const char* stepTypeName(StepType type) {
         case StepType::MOVE:       return "move";
         case StepType::COMBAT:     return "combat";
         case StepType::UTILITIES:  return "utilities";
+        case StepType::TOOL:       return "tool";
         case StepType::DYNAMIC:    return "dynamic";
         case StepType::CALL:       return "call";
         case StepType::RANDOM:     return "random";
@@ -303,6 +304,17 @@ void webServerBegin() {
         if (liveStatsUpdate(r))
             Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
         sendJson(req, 200, "{\"ok\":true}");
+    });
+    // The screen reader's keys pressed on the pad since it last asked.
+    api("/api/tool/keys", HTTP_POST, [](AsyncWebServerRequest* req) {
+        char keys[64];
+        toolKeysTake(keys, sizeof(keys));
+        JsonDocument d;
+        JsonArray list = d["keys"].to<JsonArray>();
+        char* rest = nullptr;
+        for (char* k = strtok_r(keys, ",", &rest); k; k = strtok_r(nullptr, ",", &rest)) list.add(String(k));
+        String out; serializeJson(d, out);
+        sendJson(req, 200, out);
     });
     api("/api/stats/reset", HTTP_POST, [](AsyncWebServerRequest* req) {
         liveStatsReset();

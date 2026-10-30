@@ -42,6 +42,9 @@ and show up in the pad's **Updates** panel.
   looks at and finds (mobs named), F11 hides it. No more alt-tabbing
 - ⌨️ F8-F11 work **while the game has focus** (read directly on Windows, no
   keyboard hook for the game or anti-cheat to block)
+- 🎛️ **Setup from the pad**: Recordings → 🍁 Setup layer adds a layer whose
+  buttons are the screen reader's keys (Mark, Skip, Which map, Outlines, Hide,
+  Back) and a button to reach it; they type nothing into the game
 - 🍁 **MapleStory colours built in** (HP, MP, XP, minimap dot): setup works
   with empty bars and doesn't ask for your dot
 - 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable

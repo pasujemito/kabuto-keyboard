@@ -247,6 +247,19 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#liveStats .live-row').count(),1);   // unread bars aren't shown
   liveState=null;await page.waitForFunction(()=>document.querySelector('#liveStats').hidden);
   await page.locator('#tabRecordings').click();
+  // The screen reader's setup keys as pad buttons: a layer of them, a way back,
+  // and a free button on the current layer that goes there.
+  const layersBefore=await page.evaluate(()=>cfg.layers.length);
+  await page.locator('#newSetupLayer').click();
+  const setupLayer=await page.evaluate(()=>{const L=cfg.layers[cfg.layers.length-1];return {name:L.name,keys:L.keys.map(k=>[k.name,cfg.workflows.find(w=>w.id===k.steps[0]?.workflow)?.steps[0]])};});
+  assert.equal(await page.evaluate(()=>cfg.layers.length),layersBefore+1);
+  assert.equal(setupLayer.name,'MS🍁 Setup');
+  assert.deepEqual(setupLayer.keys,[['Mark (F8)',{type:'tool',key:'mark'}],['Skip (Esc)',{type:'tool',key:'skip'}],['Which map (F9)',{type:'tool',key:'map'}],
+    ['Outlines (F10)',{type:'tool',key:'outlines'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['Back',{type:'layer',layer:0}]]);
+  assert.deepEqual(await page.evaluate(n=>cfg.layers[0].keys.filter(k=>k.name==='🍁 Setup').map(k=>cfg.workflows.find(w=>w.id===k.steps[0].workflow).steps[0]),layersBefore),[{type:'layer',layer:layersBefore}]);
+  assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Mark \(F8\)/);
+  await page.locator('#newSetupLayer').click();   // a second one reuses the same recordings
+  assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),5);
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();
   assert.match(await page.locator('#networkStatus').textContent(),/Saved: HomeNet\. Joined only to check for updates/);

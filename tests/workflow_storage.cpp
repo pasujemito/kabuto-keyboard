@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include "../src/storage.h"
+#include "../src/stats_logic.h"
 #include <fstream>
 #include <iterator>
 #include <cassert>
@@ -103,6 +104,13 @@ int main(){
     String drifting(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"d","tempo_drift":0.15,"skills":[]}}]}]}]})");
     assert(saveRawJson(drifting,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
     assert(roundtrip.layers[0].keys[0].steps[0].pattern()->tempoDriftPermille==150);
+    // Screen reader keys on the pad: "tool" steps keep their key; unknown keys are refused.
+    String tools(R"J({"layers":[{"keys":[{"steps":[{"type":"call","workflow":"m"}]}]}],"workflows":[{"id":"m","name":"Mark (F8)","steps":[{"type":"tool","key":"mark"}]},{"id":"h","steps":[{"type":"tool","key":"hide"}]}]})J");
+    assert(saveRawJson(tools,err));assert(loadConfig(cfg));
+    assert(cfg.workflows[0].steps[0].type==StepType::TOOL&&cfg.workflows[0].steps[0].value==TOOL_MARK&&cfg.workflows[1].steps[0].value==TOOL_HIDE);
+    assert(saveConfig(cfg));{std::string saved=readRawJson();assert(saved.find("{\"type\":\"tool\",\"key\":\"mark\"}")!=std::string::npos);}
+    {std::string before=readRawJson();
+     assert(!saveRawJson(String(R"({"layers":[],"workflows":[{"id":"m","steps":[{"type":"tool","key":"f8"}]}]})"),err)&&readRawJson()==before);}
     // A skill's "use again after" is a range; an older single number means a fixed wait.
     String intervals(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"iv","skills":[{"id":"a","key":"C","cooldown_ms":60000},{"id":"b","key":"H","cooldown_ms":[40000,70000]}]}}]}]}]})");
     assert(saveRawJson(intervals,err));assert(loadConfig(cfg));

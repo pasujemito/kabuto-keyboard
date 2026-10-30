@@ -194,6 +194,21 @@ the game has focus:
 | F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, ×2 for two side by side), the minimap and where it reads your dot (cyan), the map name area |
 | F11 | hide or show the layer |
 
+**Or press them on the pad.** In the editor, **Recordings → 🍁 Setup layer**
+adds a layer called *MS🍁 Setup* whose buttons are those keys:
+
+| Button | 1 | 2 | 3 | 4 | 5 | 6 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Does | Mark (F8) | Skip (Esc) | Which map (F9) | Outlines (F10) | Hide layer (F11) | Back |
+
+and puts a **🍁 Setup** button on a free key of the layer you were on, to get
+there. Save, then press 🍁 Setup on the pad: hover something in the game,
+press **Mark** on the pad, and so on, with no keyboard and whatever has focus.
+**Back** returns to your layer. The buttons type nothing into the game: the
+pad keeps each press (for up to 3 s) until the script collects it, over the
+USB cable or Wi-Fi, a few times a second, during setup too. Older firmware
+doesn't have them; the script says so.
+
 The game must be **windowed or borderless**: nothing can draw over exclusive
 fullscreen. Clicks pass straight through the layer to the game, and Windows
 (10 version 2004 or later) leaves it out of screen captures, so the script

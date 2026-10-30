@@ -1,5 +1,6 @@
 #include "storage.h"
 #include "keymap.h"
+#include "stats_logic.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <set>
@@ -207,6 +208,11 @@ static bool parseStep(JsonObjectConst o, Step& step) {
         // Combat also parses the same weighted workflow choices as random.
     }
     if (type == "utilities") { step.type = StepType::UTILITIES; return true; }
+    if (type == "tool") {   // a screen reader key: mark, skip, map, outlines, hide
+        step.type = StepType::TOOL;
+        step.value = toolKeyFromName(o["key"] | "");
+        return step.value != TOOL_NONE;
+    }
     if (type == "loop") {
         step.type = StepType::LOOP_START;
         step.value = o["count"] | 0;   // 0 = until stopped
@@ -287,7 +293,7 @@ static bool validateWorkflows(JsonDocument& doc, String& err) {
         for (JsonObjectConst so : steps) {
             String type = so["type"] | "";
             type.toLowerCase();
-            if (strict || type == "call" || type == "random" || type == "combat" || type == "move" || type == "utilities" || type == "dynamic" || type == "delay" || type == "key") {
+            if (strict || type == "call" || type == "random" || type == "combat" || type == "move" || type == "utilities" || type == "dynamic" || type == "delay" || type == "key" || type == "tool") {
                 Step step;
                 if (!parseStep(so, step)) { err = "invalid workflow step or random choice"; return false; }
                 if (step.type == StepType::DYNAMIC && !patternIds.insert(step.pattern()->id).second) { err="dynamic pattern IDs must be unique";return false; }
@@ -447,6 +453,10 @@ static void stepToJson(const Step& s, JsonObject o) {
             break;
         case StepType::UTILITIES:
             o["type"] = "utilities";
+            break;
+        case StepType::TOOL:
+            o["type"] = "tool";
+            o["key"] = toolKeyName(s.value);
             break;
         case StepType::LOOP_START:
             o["type"]  = "loop";

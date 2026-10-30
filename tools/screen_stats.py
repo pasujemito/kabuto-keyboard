@@ -28,6 +28,8 @@ sent, the map and the mobs, and each setup step, so you needn't leave the
 game. F8-F11 work while the game has focus:
     F8   mark (during setup)     F9   which map is this? (pick its folder)
     F10  outlines on the game    F11  hide or show the layer
+Or press them on the pad: the editor's "Setup layer" (Recordings) gives the
+pad buttons for Mark, Skip, Which map, Outlines, Hide and Back.
 The game must be windowed or borderless. --no-layer for the terminal only.
 Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
 mob) in a "mobs" folder here; setup learns their colours instead of asking
@@ -691,6 +693,29 @@ class Keys:
         if self.listener:
             self.listener.stop()
 
+# Every key, from the keyboard or a pad button, goes to whoever is listening
+# (a setup step waiting for F8, the game layer).
+_listeners = []
+_keyboard = []
+
+def listen(fn):
+    """Calls fn(key) for each key until the returned function is called."""
+    _listeners.append(fn)
+    if not _keyboard:   # the keyboard is watched once, from the first listener on
+        try:
+            _keyboard.append(Keys(press).start())
+        except Exception as e:   # no keyboard access (e.g. no display): pad buttons still work
+            _keyboard.append(None)
+            print("(keyboard keys off: %s; the pad's setup buttons still work)" % e)
+    return lambda: fn in _listeners and _listeners.remove(fn)
+
+def press(key):
+    for fn in list(_listeners):
+        fn(key)
+
+# The pad's setup layer buttons ("tool" steps) and the keys they stand for.
+PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11"}
+
 def pointer():
     """Where the mouse pointer is on the screen."""
     if sys.platform == "win32":
@@ -717,9 +742,9 @@ def mark_points(prompt, count):
             say("  marked %d,%d" % points[-1] + ("" if len(points) == count else " - next: F8, or Esc"), sticky=len(points) < count)
             if len(points) == count:
                 done.set()
-    keys = Keys(on_key).start()
+    stop = listen(on_key)
     done.wait()
-    keys.close()
+    stop()
     return points
 
 def pixel(sct, x, y):
@@ -951,10 +976,9 @@ class Pad:
     def _post(self, path, fields):
         return self.opener.open(self.base + path, data=urllib.parse.urlencode(fields).encode(), timeout=3).read()
 
-    def send(self, readings):
-        fields = form_fields(readings)
+    def _call(self, path, fields):
         try:
-            self._post("/api/stats", fields)
+            return self._post(path, fields)
         except urllib.error.HTTPError as e:
             if e.code != 401:
                 raise
@@ -964,7 +988,20 @@ class Pad:
                 self._post("/api/login", {"pin": self.pin})   # sets the session cookie
             except urllib.error.HTTPError as login:
                 raise SystemExit("Login failed: %s" % json.loads(login.read() or b"{}").get("error", login.code))
-            self._post("/api/stats", fields)
+            return self._post(path, fields)
+
+    def send(self, readings):
+        self._call("/api/stats", form_fields(readings))
+
+    def keys(self):
+        """Setup buttons pressed on the pad since the last ask, or None if the
+        pad doesn't know them (firmware from before them)."""
+        try:
+            return json.loads(self._call("/api/tool/keys", {}) or b"{}").get("keys", [])
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
 
 ESPRESSIF_VID = 0x303A   # the ESP32-S3's own USB port
 
@@ -972,7 +1009,7 @@ class UsbPad:
     """Sends readings down the USB cable ("KABUTO stats <form>" lines), so a
     game laptop needs no Wi-Fi or PIN: plugging the pad in is the permission."""
     def __init__(self, port, version=None):
-        self.port, self.version = port, version
+        self.port, self.version, self.lock = port, version, threading.Lock()
 
     @staticmethod
     def open(device):
@@ -995,10 +1032,23 @@ class UsbPad:
         return None
 
     def send(self, readings):
-        self.port.write(("KABUTO stats " + urllib.parse.urlencode(form_fields(readings)) + "\n").encode())
-        waiting = getattr(self.port, "in_waiting", 0)
-        if waiting:
-            self.port.read(waiting)   # replies and the pad's log; just keep the buffer empty
+        with self.lock:
+            self.port.write(("KABUTO stats " + urllib.parse.urlencode(form_fields(readings)) + "\n").encode())
+            waiting = getattr(self.port, "in_waiting", 0)
+            if waiting:
+                self.port.read(waiting)   # replies and the pad's log; just keep the buffer empty
+
+    def keys(self, wait=1.0):
+        """Setup buttons pressed on the pad since the last ask, or None if the
+        pad doesn't answer (firmware from before them)."""
+        with self.lock:
+            self.port.write(b"KABUTO keys\n")
+            end = time.time() + wait
+            while time.time() < end:
+                line = self.port.readline().decode("ascii", "replace").strip()
+                if line == "KABUTO keys" or line.startswith("KABUTO keys "):
+                    return [k for k in line[12:].split(",") if k]
+        return None
 
     @property
     def where(self):
@@ -1024,6 +1074,49 @@ def find_usb_pad(ports=None, opener=None):
             return pad
         port.close()
     return None
+
+class PadLink:
+    """The pad, shared by the readings and the setup-button watcher: connected
+    on first use, dropped (and found again) when it stops answering."""
+    def __init__(self, args):
+        self.args, self.pad, self.lock = args, None, threading.Lock()
+
+    def get(self):
+        with self.lock:
+            if self.pad is None:
+                self.pad = connect(self.args)
+                say("Connected to Kabuto over %s" % self.pad.where)
+            return self.pad
+
+    def drop(self, pad):
+        with self.lock:
+            if self.pad is pad:
+                self.pad = None
+
+def watch_pad_keys(link, every=0.15):
+    """Passes the pad's setup buttons on as keys (mark = F8, ...), in the
+    background, for as long as the script runs."""
+    def loop():
+        while True:
+            pad = None
+            try:
+                pad = link.get()
+                keys = pad.keys()
+                if keys is None:
+                    say("This pad's firmware has no setup buttons yet: update it to use them")
+                    return
+                for k in keys:
+                    if k in PAD_KEYS:
+                        press(PAD_KEYS[k])
+                time.sleep(every if isinstance(pad, UsbPad) else max(every, 0.3))   # go easier on Wi-Fi
+            except (urllib.error.URLError, OSError):
+                if pad:
+                    link.drop(pad)
+                time.sleep(3)
+            except SystemExit as e:   # e.g. a wrong PIN: the readings say so too
+                print(e)
+                return
+    threading.Thread(target=loop, daemon=True).start()
 
 def connect(args):
     """USB if a Kabuto is plugged in (unless --via wifi), otherwise Wi-Fi."""
@@ -1063,6 +1156,7 @@ def run(args):
         config["game"] = args.game
         save_config(args.config, config)
     screen, pad, link = Screen(sct, config), None, None
+    pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         if LAYER:
             LAYER.folders, LAYER.taught = map_folders(args.sprites), set(config.get("maps", {}))
@@ -1078,9 +1172,7 @@ def run(args):
         readings = screen.read()
         line = describe(readings)
         try:
-            if not args.dry_run and pad is None:
-                pad = connect(args)
-                say("Sending to Kabuto over %s" % pad.where)
+            pad = pads.get() if pads else None
             link = pad.where if pad else "dry run"
             if pad:
                 pad.send(readings)
@@ -1089,7 +1181,9 @@ def run(args):
         except (urllib.error.URLError, OSError) as e:   # serial errors are OSErrors too
             print("\r%s  can't reach Kabuto (%s), retrying..." % (line, getattr(e, "reason", e)), end="", flush=True)
             link = "can't reach Kabuto"
-            pad, wait = None, 3   # unplugged or out of range: look again
+            if pad:
+                pads.drop(pad)   # unplugged or out of range: look again
+            wait = 3
         if LAYER:
             LAYER.show(layer_status(readings, link, config.get("game"), LAYER.folders),
                        layer_shapes(config, sct.monitors[0], screen.boxes, readings))
@@ -1185,7 +1279,7 @@ class Layer:
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
         self.status, self.shapes, self.message, self.until = [("Kabuto", AMBER), ("starting", DIM)], [], "", 0
         self.outlines, self.hidden, self.finished, self.folders, self.taught, self.picker = self.windows, False, False, [], set(), None
-        self.hotkeys = Keys(self.keys.put).start()
+        self.unlisten = listen(self.keys.put)
 
     def _click_through(self):
         """Clicks pass through to the game, no taskbar button, never focused;
@@ -1223,7 +1317,7 @@ class Layer:
             self.root.mainloop()
         except KeyboardInterrupt:
             pass
-        self.hotkeys.close()
+        self.unlisten()
         self.root.destroy()
 
     def _refresh(self):
@@ -1623,6 +1717,13 @@ def selftest():
     kabuto.replies = [b"KABUTO ok\n"]
     pad.send({"hp": 0.0, "x": 41.5, "y": 70.0, "mobs": "L", "state": "dead"})
     assert kabuto.sent[-1] == b"KABUTO stats hp=0.0&x=41.5&y=70.0&mobs=L&state=dead\n", kabuto.sent
+    # The pad's setup buttons over USB: log lines and stats replies are skipped.
+    kabuto.replies = [b"KABUTO ok\n", b"[ok] tap\n", b"KABUTO keys mark,map\n"]
+    assert pad.keys() == ["mark", "map"] and kabuto.sent[-1] == b"KABUTO keys\n"
+    kabuto.replies = [b"KABUTO keys\n"]
+    assert pad.keys() == []
+    kabuto.replies = []
+    assert pad.keys(wait=0.05) is None   # older firmware doesn't answer
     assert find_usb_pad([Port("COM1", 0x1234)], opener=lambda d: 1 / 0) is None   # no Espressif port: not opened
 
     # Login on 401, then the readings go through.
@@ -1641,6 +1742,9 @@ def selftest():
                     self.send_header("Set-Cookie", "kabuto_session=ok; Path=/; HttpOnly; SameSite=Strict")
                 self.end_headers(); self.wfile.write(b'{"ok":true}' if good else b'{"error":"Wrong PIN"}')
                 return
+            if self.path == "/api/tool/keys":
+                self.send_response(200 if authed else 401); self.end_headers(); self.wfile.write(b'{"keys":["skip"]}')
+                return
             seen.append((authed, body))
             self.send_response(200 if authed else 401); self.end_headers(); self.wfile.write(b"{}")
     server = HTTPServer(("127.0.0.1", 0), Fake)
@@ -1651,11 +1755,32 @@ def selftest():
     pad.send({"hp": 0.0, "mana": 40.0, "x": 41.5, "y": 70.0, "state": "dead", "mobs": "R"})
     assert seen == [(False, "hp=72.0&xp=63.2&mobs=&state=ok"), (True, "hp=72.0&xp=63.2&mobs=&state=ok"),
                     (True, "hp=0.0&mana=40.0&x=41.5&y=70.0&mobs=R&state=dead")], seen
+    assert Pad(host, "246810").keys() == ["skip"]   # logs in first, like readings
     try:
         Pad(host, "000000").send({"hp": 1.0}); raise AssertionError("wrong PIN accepted")
     except SystemExit as e:
         assert "Wrong PIN" in str(e)
     server.shutdown()
+    # Pad buttons stand in for the keys: a setup step takes two marks and the
+    # pad's "mark" presses give them, at the pointer.
+    class ButtonPad:
+        where = "USB test"
+        def __init__(self): self.batches = [[], ["mark"], ["outlines", "mark"]]
+        def keys(self): return self.batches.pop(0) if self.batches else []
+    class Link:
+        def __init__(self): self.pad = ButtonPad()
+        def get(self): return self.pad
+        def drop(self, pad): pass
+    global pointer
+    real_pointer, pointer = pointer, lambda: (320, 240)
+    _keyboard.append(None)   # no keyboard here: pad buttons only
+    heard = []
+    stop = listen(heard.append)
+    watch_pad_keys(Link(), every=0.02)
+    assert mark_points("Hover the thing, F8 (or press Mark on the pad)", 2) == [(320, 240), (320, 240)]
+    stop()
+    pointer = real_pointer
+    assert heard[:3] == ["f8", "f10", "f8"], heard
     print("selftest passed")
 
 def main():
@@ -1683,6 +1808,10 @@ def main():
     elif a.map is not None:
         learn_map(a.config, a.sprites, a.map)   # asks in the terminal; in the game, F9 does this
     else:
+        # The pad's setup buttons work from the start, setup included.
+        a.pads = None if a.dry_run else PadLink(a)
+        if a.pads:
+            watch_pad_keys(a.pads)
         if a.setup:
             job = lambda: setup(a.config, a.sprites, a.game or "maplestory")
         elif a.mobs:

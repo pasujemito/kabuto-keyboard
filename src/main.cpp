@@ -147,6 +147,10 @@ static void usbStatsPoll() {
         if (!usable) continue;
         if (!strcmp(line, "KABUTO hello")) {
             Serial.printf("KABUTO %s\n", FIRMWARE_VERSION);
+        } else if (!strcmp(line, "KABUTO keys")) {   // screen reader keys pressed on the pad
+            char keys[64];
+            toolKeysTake(keys, sizeof(keys));
+            Serial.printf("KABUTO keys %s\n", keys);
         } else if (!strncmp(line, "KABUTO stats ", 13)) {
             StatsReading r = parseStatsForm(line + 13);
             if (liveStatsUpdate(r)) Macros.post(EngineCmd::STOP);

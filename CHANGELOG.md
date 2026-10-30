@@ -37,6 +37,13 @@ and show up in the pad's **Updates** panel.
 - 📟 **Dashboard** under the buttons: what the pattern is doing, facing, map,
   a mob radar with counts and the target mob, and the home range on the map
 - ▶️ Buttons open in **Play**; switch to Edit to change them
+- 🍁 **Game layer**: a strip over the game with what the screen reader sees
+  and each setup step; F9 picks a new map's mob folder, F10 outlines what it
+  looks at and finds (mobs named), F11 hides it. No more alt-tabbing
+- ⌨️ F8-F11 work **while the game has focus** (read directly on Windows, no
+  keyboard hook for the game or anti-cheat to block)
+- 🍁 **MapleStory colours built in** (HP, MP, XP, minimap dot): setup works
+  with empty bars and doesn't ask for your dot
 - 🔌 **Plug and play**: the screen reader talks to the pad over the USB cable
   (no Wi-Fi or PIN) and sets itself up on first run
 

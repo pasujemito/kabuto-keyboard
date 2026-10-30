@@ -164,7 +164,8 @@ bytes).
 
 1. Install Python 3 once (python.org, or `winget install Python.Python.3.12`
    on Windows; tick **Add to PATH**), then:
-   `pip install mss pynput pyserial`
+   `pip install mss pynput pyserial pillow` (the python.org installer's
+   default "tcl/tk" option gives the game layer what it needs)
 2. Copy `tools/screen_stats.py` onto the laptop (it's a single file:
    `https://raw.githubusercontent.com/pasujemito/kabuto-keyboard/main/tools/screen_stats.py`).
 3. Pair the pad with the laptop over Bluetooth as usual (that's how keys get in).
@@ -176,6 +177,40 @@ bytes).
 
 Over USB there's no Wi-Fi, `kabuto.local` or PIN involved: having the pad
 plugged in is the permission. Without a cable, it uses Wi-Fi instead.
+
+**The game layer** keeps you in the game. While the script runs, a strip
+across the top of the screen shows what it reads and sends (USB or Wi-Fi, HP,
+MP, XP, dead or offline), the map ("new map: F9" for one you haven't taught),
+the mobs (◀ left · right ▶ counts) and the target: the nearest mob, named,
+with its distance in % of your reach (red when in reach). Setup steps show on
+it too, so you can set up without leaving the game. Keys, which work while
+the game has focus:
+
+| Key | Does |
+| --- | --- |
+| F8 | mark the point under the pointer (setup) |
+| Esc | skip a setup step |
+| F9 | which map is this? A small window lists your map folders: click one and it's taught (about 4 s). Click back into the game after |
+| F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, ×2 for two side by side), the minimap and where it reads your dot (cyan), the map name area |
+| F11 | hide or show the layer |
+
+The game must be **windowed or borderless**: nothing can draw over exclusive
+fullscreen. Clicks pass straight through the layer to the game, and Windows
+(10 version 2004 or later) leaves it out of screen captures, so the script
+never reads its own outlines; on older Windows only the minimap and name
+outlines are drawn, outside what's read. `--no-layer` keeps to the terminal.
+
+Earlier versions heard F8 through a keyboard hook, which Windows hides keys
+from while a game running as administrator has focus (and anti-cheat may block
+it), so F8 only worked with the terminal in front. On Windows the keys are now
+read directly, with no hook. If they still don't react in the game, run the
+terminal as administrator.
+
+**MapleStory** colours are built in: HP 248,10,0, MP 0,120,248, XP 206,243,0
+and your minimap dot 255,221,68. Setup uses them instead of sampling the
+screen, so bars may be empty while you mark them, and you mark only the
+minimap's corners, not your dot. For another game, `--setup --game other`
+samples the colours as before.
 
 ```bash
 python screen_stats.py                 # USB if plugged in, else kabuto.local
@@ -191,8 +226,8 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    bar's left end. Bars that fade along their length (e.g. dark to light blue
    Mana) are fine: it follows the fade to the bar's end. If a fading bar still
    reads short, raise its `fade` (default 30) in `kabuto-bars.json`.
-2. **Minimap:** its top-left corner, its bottom-right corner, then your own dot
-   on it (it learns your dot's colour).
+2. **Minimap:** its top-left corner, then its bottom-right corner (with
+   `--game other`, then your own dot on it, to learn its colour).
    With map folders in `mobs` (see **Mobs per map**), it also asks for the
    **map's name**: its top-left, then its bottom-right a bit past where the
    longest name would end.
@@ -241,8 +276,9 @@ mobs/Henesys Hunting Ground/blue_snail.png
 mobs/Ellinia/slime.png
 ```
 
-Run `--setup` once (it asks where the map's name is shown), then stand on each
-map and teach it:
+Run `--setup` once (it asks where the map's name is shown). Then, the first
+time you're on each map, press **F9** in the game and click its folder. Or
+from the terminal:
 
 ```bash
 python screen_stats.py --map            # lists the folders and asks which map you're on

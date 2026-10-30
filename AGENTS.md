@@ -28,7 +28,7 @@ firmware updates from this repo's GitHub releases.
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
-| `tools/` | build hooks, backup, release signing, recorder, `screen_stats.py` (PC bar reader) |
+| `tools/` | build hooks, backup, release signing, recorder, `screen_stats.py` (PC screen reader, game layer, MapleStory colours) |
 | `tests/` | host tests (C++ with Arduino stubs, Node/Chromium) |
 
 ## Build and test

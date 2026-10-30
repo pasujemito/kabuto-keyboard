@@ -6,26 +6,36 @@ Runs on the PC with the game. Twice a second it samples a few small
 areas of the screen and sends a handful of numbers to the pad: HP, Mana and
 XP (bar fill %), your position on the minimap, the mobs around you (which
 sides are in your reach, how many you can see each side, how near the nearest
-is, its name), the map you're on, and whether you're dead or disconnected. Nothing else leaves
-your PC: no screenshots, no reading text. All the work happens here, so the
-pad only stores a few numbers.
+is, its name), the map you're on, and whether you're dead or disconnected.
+Nothing else leaves your PC: no screenshots, no reading text. All the work
+happens here, so the pad only stores a few numbers.
 
 Easiest: plug the pad into the game PC with a USB data cable, then
-    pip install mss pynput pyserial
+    pip install mss pynput pyserial pillow
     python screen_stats.py
 The first run walks you through setup; after that it finds the pad on the
 cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
     python screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
-    # right end; the minimap's top-left and bottom-right corners, then your
-    # dot on it; your character's head, feet and attack reach (the hitbox
-    # mobs are looked for in), then up to 3 mobs (Esc when done).
+    # right end; the minimap's top-left and bottom-right corners (and your dot
+    # with --game other); the map's name; your character's head, feet and
+    # attack reach (the hitbox mobs are looked for in).
+MapleStory's bar and dot colours are built in (--game maplestory, the
+default), so bars can be empty during setup. --game other samples them.
+
+The game layer: a strip across the top of the game shows what's read and
+sent, the map and the mobs, and each setup step, so you needn't leave the
+game. F8-F11 work while the game has focus:
+    F8   mark (during setup)     F9   which map is this? (pick its folder)
+    F10  outlines on the game    F11  hide or show the layer
+The game must be windowed or borderless. --no-layer for the terminal only.
 Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
 mob) in a "mobs" folder here; setup learns their colours instead of asking
 you to mark mobs (needs pip install pillow). After adding sprites:
     python screen_stats.py --mobs
 Mobs per map: a folder per map in "mobs" (mobs/Henesys/*.png, ...). Setup
-asks where the map's name is shown; then stand on each map and teach it:
+asks where the map's name is shown; then on each new map press F9 in the
+game and click its folder (or, from the terminal):
     python screen_stats.py --map            # asks which folder
     python screen_stats.py --map Henesys
 Its name is kept as a picture (no OCR), so whenever that name shows, that
@@ -47,10 +57,40 @@ A minimap that slides as you walk is followed, so your map position keeps up.
 Run the self-test (no screen or pad needed):
     python screen_stats.py --selftest
 """
-import argparse, http.cookiejar, json, os, random, sys, time, urllib.error, urllib.parse, urllib.request
+import argparse, http.cookiejar, json, os, queue, random, sys, threading, time, urllib.error, urllib.parse, urllib.request
 
 BARS = (("hp", "HP"), ("mana", "Mana"), ("xp", "XP"))
 CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
+
+# Games whose colours never change: setup takes them from here instead of
+# sampling the screen (so it works with an empty bar), and you only mark the
+# minimap's corners, not your dot. The game is kept in the setup file.
+GAMES = {
+    "maplestory": {"label": "MapleStory", "icon": "\U0001F341",
+                   "bars": {"hp": [248, 10, 0], "mana": [0, 120, 248], "xp": [206, 243, 0]},
+                   "dot": [255, 221, 68]},
+}
+
+def apply_game(config):
+    """The game's fixed colours over whatever setup sampled (in place)."""
+    game = GAMES.get(config.get("game"))
+    if game:
+        for name, color in game["bars"].items():
+            if name in config.get("bars", {}):
+                config["bars"][name]["color"] = list(color)
+        if config.get("minimap"):
+            config["minimap"]["dot"] = list(game["dot"])
+    return config
+
+# Messages go to the console and, when it's up, the game layer's strip, so
+# setup can be followed without leaving the game.
+LAYER = None
+
+def say(text, sticky=False):
+    """`sticky`: stays on the strip until the next message (a setup step)."""
+    print(text)
+    if LAYER:
+        LAYER.say(text.strip(), sticky)
 
 # ---- pure screen maths (raw = RGB bytes, row by row) ------------------------
 
@@ -254,12 +294,13 @@ def mob_sides(raw, w, h, colors, tolerance=40, gap=40, mid=None, step_x=6, step_
 
 SIGHT = 2.5   # how far you look for mobs, in attack reaches either side
 
-def mob_view(raw, w, h, colors, tolerance=40, gap=40, mid=None, step=6, min_hits=3, cell=16, names=None, mob_w=0):
+def mob_view(raw, w, h, colors, tolerance=40, gap=40, mid=None, step=6, min_hits=3, cell=16, names=None, mob_w=0, boxes=None):
     """Every mob in the area, each side nearest first: {"L": [(distance px,
     name), ...], "R": [...]}. A mob is a clump: patches with at least
     `min_hits` hits whose cells touch. A clump wider than one mob (`mob_w` px)
     counts as that many side by side. `names` (one per colour) name a mob after
-    the sprite most of its hits came from; None without them."""
+    the sprite most of its hits came from; None without them. With a `boxes`
+    list, each clump's (x0, y0, x1, y1, name, count) in the area is added to it."""
     mid = w // 2 if mid is None else mid
     samples = mob_samples(raw, w, h, color_table(colors, tolerance), gap, mid, step, cell)
     cells = {}
@@ -290,6 +331,9 @@ def mob_view(raw, w, h, colors, tolerance=40, gap=40, mid=None, step=6, min_hits
         near = min(abs(x - mid) for x in xs)
         count = max(1, int(round((max(xs) - min(xs) + step) / float(mob_w)))) if mob_w else 1
         view["R" if group[0][0] else "L"] += [(near + k * mob_w, name) for k in range(count)]
+        if boxes is not None:
+            rows = [cy for _, _, cy in group]
+            boxes.append((min(xs), min(rows) * cell, max(xs) + step, (max(rows) + 1) * cell, name, count))
     for side in view:
         view[side].sort(key=lambda m: m[0])
     return view
@@ -536,6 +580,8 @@ class Screen:
         self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
         area = config.get("map_name")
         self.maps = MapReader(config.get("maps", {}), area.get("light", 170)) if area and config.get("maps") else None
+        self.boxes = []   # the mobs last found, in screen coordinates (for the game layer)
+        apply_game(config)
 
     def map_name(self):
         """The taught map you're on ("" for one you haven't taught), or None
@@ -549,6 +595,7 @@ class Screen:
     def mobs(self, name):
         """Mob fields for the reading (see mob_fields), with this map's colours
         when it's taught, else the ones from setup. {} without a mob detector."""
+        self.boxes = []
         mb = self.config.get("mobs")
         found = self.config.get("maps", {}).get(name) if name else None
         found = found or mb
@@ -560,9 +607,11 @@ class Screen:
                                       mb.get("gap", 40), mid=mb["x"] - left, step_x=found.get("step_x", 6),
                                       step_y=found.get("step_y", 8), min_hits=found.get("min_hits", 3))}
         left, top, w, h = mob_area(mb, self.sct.monitors[0], mb.get("sight", SIGHT))
+        boxes = []
         view = mob_view(grab(self.sct, left, top, w, h), w, h, found["colors"], mb.get("tolerance", 40), mb.get("gap", 40),
                         mid=mb["x"] - left, step=found.get("step_x", 6), min_hits=found.get("min_hits", 3),
-                        cell=found["cell"], names=found.get("names"), mob_w=found.get("mob_w", 0))
+                        cell=found["cell"], names=found.get("names"), mob_w=found.get("mob_w", 0), boxes=boxes)
+        self.boxes = [(x0 + left, y0 + top, x1 + left, y1 + top, name, n) for x0, y0, x1, y1, name, n in boxes]
         return mob_fields(view, mb.get("reach", 350))
 
     def read(self):
@@ -595,21 +644,82 @@ class Screen:
 
 # ---- setup --------------------------------------------------------------------
 
+# ---- hotkeys that work while the game has focus -----------------------------
+# A keyboard hook (pynput) only hears keys meant for programs at its own
+# level: a game running as administrator, or its anti-cheat, keeps them from
+# it, so F8 only worked with the terminal in front. On Windows the keys' state
+# is read directly instead (GetAsyncKeyState), which needs no hook.
+
+KEYS = {"f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "esc": 0x1B}   # Windows key codes
+
+class KeyEdges:
+    """Which keys went down since the last look, from the keys down now."""
+    def __init__(self):
+        self.down = set()
+
+    def update(self, down_now):
+        pressed = [k for k in KEYS if k in down_now and k not in self.down]
+        self.down = set(down_now)
+        return pressed
+
+class Keys:
+    """Calls on_key("f8" ... "f11" or "esc") on its own thread, wherever the
+    focus is."""
+    def __init__(self, on_key):
+        self.on_key, self.stopped, self.listener = on_key, threading.Event(), None
+
+    def start(self):
+        if sys.platform == "win32":
+            threading.Thread(target=self._poll, daemon=True).start()
+        else:
+            from pynput import keyboard
+            names = {getattr(keyboard.Key, k): k for k in KEYS}
+            self.listener = keyboard.Listener(on_press=lambda key: key in names and self.on_key(names[key]))
+            self.listener.start()
+        return self
+
+    def _poll(self):
+        import ctypes
+        state, edges = ctypes.windll.user32.GetAsyncKeyState, KeyEdges()
+        while not self.stopped.is_set():
+            for name in edges.update({k for k, vk in KEYS.items() if state(vk) & 0x8000}):
+                self.on_key(name)
+            time.sleep(0.02)
+
+    def close(self):
+        self.stopped.set()
+        if self.listener:
+            self.listener.stop()
+
+def pointer():
+    """Where the mouse pointer is on the screen."""
+    if sys.platform == "win32":
+        import ctypes
+        class Point(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+        p = Point()
+        ctypes.windll.user32.GetCursorPos(ctypes.byref(p))
+        return p.x, p.y
+    from pynput import mouse
+    return tuple(int(v) for v in mouse.Controller().position)
+
 def mark_points(prompt, count):
     """Hover and press F8 to mark up to `count` points; Esc ends early (or skips)."""
-    from pynput import keyboard, mouse
-    pointer, points = mouse.Controller(), []
-    print(prompt)
-    def on_press(key):
-        if key == keyboard.Key.esc:
-            return False
-        if key == keyboard.Key.f8:
-            points.append(tuple(int(v) for v in pointer.position))
-            print("  marked", points[-1])
+    points, done = [], threading.Event()
+    say(prompt, sticky=True)
+    def on_key(name):
+        if done.is_set():
+            return
+        if name == "esc":
+            done.set()
+        elif name == "f8":
+            points.append(pointer())
+            say("  marked %d,%d" % points[-1] + ("" if len(points) == count else " - next: F8, or Esc"), sticky=len(points) < count)
             if len(points) == count:
-                return False
-    with keyboard.Listener(on_press=on_press) as listener:
-        listener.join()
+                done.set()
+    keys = Keys(on_key).start()
+    done.wait()
+    keys.close()
     return points
 
 def pixel(sct, x, y):
@@ -645,25 +755,25 @@ def setup_mobs(sct, config, sprites_dir):
     folders = map_folders(sprites_dir)
     if sprites or folders:
         if sprites:
-            print("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
+            say("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
         pts = mark_points(box + " (Esc skips). Mobs nearby are fine.", 3)
         if len(pts) < 3:
-            print("  skipped"); return
+            say("  skipped"); return
         mobs.update(hitbox(*pts), sight=SIGHT)
-        print("  Hitbox: %d px tall, %d px to each side." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
+        say("  Hitbox: %d px tall, %d px to each side." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
         learned = learn_here(sct, mobs, sprites) if sprites else None
         if learned:
             mobs.update(learned)
         elif not folders:
-            print("  No usable mob colours: mob detection is off."); return
+            say("  No usable mob colours: mob detection is off."); return
         else:   # the map folders bring their own colours (--map)
-            print("  Mobs come from the map folders: teach each map with --map.")
+            say("  Mobs come from the map folders: teach each map with --map.")
     else:
         if os.path.isdir(sprites_dir) and any(n.lower().endswith(SPRITE_TYPES) for n in os.listdir(sprites_dir)):
-            print("No readable sprites in %s, so mark mobs on screen instead." % sprites_dir)
+            say("No readable sprites in %s, so mark mobs on screen instead." % sprites_dir)
         pts = mark_points(box + "; then up to 3 mobs (different kinds), F8 each; Esc when done", 6)
         if len(pts) < 4:
-            print("  skipped"); return
+            say("  skipped"); return
         mobs.update(hitbox(*pts[:3]), colors=[pixel(sct, x, y) for x, y in pts[3:]])
     config["mobs"] = mobs
 
@@ -671,13 +781,13 @@ def learn_here(sct, mobs, sprites):
     """Mob settings for `sprites` against the map you're on, watched for 4 s
     over the area you look for mobs in. None if no colour of theirs is usable."""
     left, top, w, h = mob_area(mobs, sct.monitors[0], mobs.get("sight", SIGHT))
-    print("  Looking at the map for 4 s...")
+    say("  Looking at the map for 4 s...")
     shots = []
     for _ in range(5):
         shots.append(grab(sct, left, top, w, h))
         time.sleep(0.8)
     learned, report = learn_mob_colors(sprites, shots, w, h, mobs.get("tolerance", 40), mobs.get("gap", 40), mobs["x"] - left)
-    print("\n".join(report))
+    say("\n".join(report))
     if not learned["colors"]:
         return None
     return {"colors": learned["colors"], "step_x": learned["step"], "step_y": learned["step"], "cell": learned["cell"],
@@ -687,7 +797,7 @@ def mark_map_name(config):
     pts = mark_points("Map name: hover the TOP-LEFT of the map's name, F8; then its BOTTOM-RIGHT, a bit past where "
                       "the longest name would end, F8 (Esc skips)", 2)
     if len(pts) < 2:
-        print("  skipped"); return None
+        say("  skipped"); return None
     (ax, ay), (bx, by) = pts
     config["map_name"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by), "light": 170}
     return config["map_name"]
@@ -698,14 +808,41 @@ def map_folders(sprites_dir):
         return []
     return sorted(d for d in os.listdir(sprites_dir) if os.path.isdir(os.path.join(sprites_dir, d)))
 
-def learn_map(path, sprites_dir, name=""):
-    """Teach the map you're standing on: its name's look, and the mobs in its
-    folder (mobs/<map>/*.png), learned against this map."""
-    import mss
-    sct, config = mss.mss(), load_config(path)
+def name_rows(sct, area):
+    w, h = area["x2"] - area["x1"] + 1, area["y2"] - area["y1"] + 1
+    return text_rows(grab(sct, area["x1"], area["y1"], w, h), w, h, area.get("light", 170))
+
+def teach_map(sct, config, sprites_dir, name):
+    """Teach the map you're standing on as `name`: its name's look, and the
+    mobs in its folder (mobs/<name>/*.png), learned against this map. Updates
+    `config` (the caller saves it). Returns why not, or None when taught."""
     mobs = config.get("mobs")
     if not mobs or "reach" not in mobs:
-        raise SystemExit("Mark your hitbox first: python screen_stats.py --mobs")
+        return "Mark your hitbox first: python screen_stats.py --mobs"
+    sprites = load_sprites(os.path.join(sprites_dir, name))
+    if not sprites:
+        return "No mob sprites in %s" % os.path.join(sprites_dir, name)
+    area = config.get("map_name") or mark_map_name(config)
+    if not area:
+        return "A map is told apart by its name, so mark where the name is"
+    rows = name_rows(sct, area)
+    if ones(rows) < 15:
+        say("  Can't see a light name there (%d px). If the name is darker, lower \"light\" in map_name." % ones(rows))
+    for other, m in sorted(config.get("maps", {}).items()):
+        if other != name and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.8:
+            say("  Careful: this name looks like %s's; mark just the name (--setup)." % other)
+    say("Teaching %s with %d sprite(s)." % (name, len(sprites)))
+    learned = learn_here(sct, mobs, sprites)
+    if not learned:
+        return "No usable mob colours for %s: nothing saved" % name
+    learned["rows"] = ["%x" % r for r in rows]
+    config.setdefault("maps", {})[name] = learned
+    return None
+
+def learn_map(path, sprites_dir, name=""):
+    """--map from the terminal: asks which folder when there are several."""
+    import mss
+    sct, config = mss.mss(), load_config(path)
     folders = map_folders(sprites_dir)
     if not name:
         if not folders:
@@ -714,49 +851,44 @@ def learn_map(path, sprites_dir, name=""):
             name = folders[0]
         else:
             for i, f in enumerate(folders, 1):
-                print("  %d. %s%s" % (i, f, "  (taught)" if f in config.get("maps", {}) else ""))
+                say("  %d. %s%s" % (i, f, "  (taught)" if f in config.get("maps", {}) else ""))
             pick = input("Which map are you on? Number or folder name: ").strip()
             name = folders[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(folders) else pick
-    sprites = load_sprites(os.path.join(sprites_dir, name))
-    if not sprites:
-        raise SystemExit("No mob sprites in %s" % os.path.join(sprites_dir, name))
-    area = config.get("map_name") or mark_map_name(config)
-    if not area:
-        raise SystemExit("A map is told apart by its name, so mark where the name is")
-    w, h = area["x2"] - area["x1"] + 1, area["y2"] - area["y1"] + 1
-    rows = text_rows(grab(sct, area["x1"], area["y1"], w, h), w, h, area.get("light", 170))
-    if ones(rows) < 15:
-        print("  Can't see a light name there (%d px). If the name is darker, lower \"light\" in %s's map_name." % (ones(rows), path))
-    for other, m in sorted(config.get("maps", {}).items()):
-        if other != name and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.8:
-            print("  Careful: this name looks like %s's; move the marks so the area holds just the name." % other)
-    print("Teaching %s with %d sprite(s)." % (name, len(sprites)))
-    learned = learn_here(sct, mobs, sprites)
-    if not learned:
-        raise SystemExit("No usable mob colours for %s: nothing saved" % name)
-    learned["rows"] = ["%x" % r for r in rows]
-    config.setdefault("maps", {})[name] = learned
+    problem = teach_map(sct, config, sprites_dir, name)
+    if problem:
+        raise SystemExit(problem)
     save_config(path, config)
-    print("Saved %s in %s: it switches to these mobs whenever this name shows." % (name, path))
+    say("Saved %s in %s: it switches to these mobs whenever this name shows." % (name, path))
 
-def setup(path, sprites_dir="mobs"):
+def setup(path, sprites_dir="mobs", game="maplestory"):
+    """Mark the bars, minimap and mobs. With a known `game` (GAMES) the colours
+    are its own, so bars may be empty and your dot isn't marked."""
     import mss                         # first: on Windows this makes the process DPI-aware,
     sct, config = mss.mss(), {"bars": {}}   # so pointer positions and pixels agree
+    known = GAMES.get(game)
+    if known:
+        config["game"] = game
+        say("Setting up for %s (its bar and dot colours are built in)." % known["label"])
     for name, label in BARS:
         pts = mark_points("%s bar: hover its LEFT end, F8; then its RIGHT end, F8 (Esc skips)" % label, 2)
         if len(pts) < 2:
-            print("  skipped"); continue
+            say("  skipped"); continue
         (x1, y), (x2, _) = pts
         x1, x2 = min(x1, x2), max(x1, x2)
-        config["bars"][name] = {"x1": x1, "x2": x2, "y": y, "color": pixel(sct, x1 + 2, y), "tolerance": 60}
-    pts = mark_points("Minimap: hover its TOP-LEFT corner, F8; BOTTOM-RIGHT corner, F8; then YOUR dot, F8 (Esc skips)", 3)
+        color = list(known["bars"][name]) if known else pixel(sct, x1 + 2, y)
+        config["bars"][name] = {"x1": x1, "x2": x2, "y": y, "color": color, "tolerance": 60}
+    if known:
+        pts = mark_points("Minimap: hover its TOP-LEFT corner, F8; then its BOTTOM-RIGHT corner, F8 (Esc skips)", 2)
+        pts = pts + [None] if len(pts) == 2 else []
+    else:
+        pts = mark_points("Minimap: hover its TOP-LEFT corner, F8; BOTTOM-RIGHT corner, F8; then YOUR dot, F8 (Esc skips)", 3)
     if len(pts) == 3:
-        (ax, ay), (bx, by), (dx, dy) = pts
+        (ax, ay), (bx, by), dot = pts
         config["minimap"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by),
-                             "dot": pixel(sct, dx, dy), "tolerance": 40, "map_mismatch": 0.6}
+                             "dot": list(known["dot"]) if known else pixel(sct, *dot), "tolerance": 40, "map_mismatch": 0.6}
     folders = map_folders(sprites_dir)
     if folders:
-        print("Map folders in %s: %s" % (sprites_dir, ", ".join(folders)))
+        say("Map folders in %s: %s" % (sprites_dir, ", ".join(folders)))
         mark_map_name(config)
     setup_mobs(sct, config, sprites_dir)
     old = load_config(path, required=False)
@@ -766,16 +898,16 @@ def setup(path, sprites_dir="mobs"):
     if folders and "map_name" not in config and old.get("map_name"):
         config["map_name"] = old["map_name"]
     save_config(path, config)
-    print("Saved", path, "- if something reads wrong, raise its tolerance there.")
+    say("Saved %s - if something reads wrong, raise its tolerance there." % path)
     if folders:
-        print("Now teach each map: stand on it and run  python screen_stats.py --map")
+        say("Now teach each map: stand on it and run  python screen_stats.py --map")
 
 def relearn_mobs(path, sprites_dir):
     import mss
     config = load_config(path)
     setup_mobs(mss.mss(), config, sprites_dir)
     save_config(path, config)
-    print("Saved", path)
+    say("Saved %s" % path)
 
 def mark(path, what):
     import mss
@@ -786,7 +918,7 @@ def mark(path, what):
     x, y = pts[0]
     config.setdefault("watch", {})[what] = {"x": x, "y": y, "patch": list(grab(sct, x - 2, y - 2, 5, 5))}
     save_config(path, config)
-    print("Saved the %s mark in %s" % (what, path))
+    say("Saved the %s mark in %s" % (what, path))
 
 def load_config(path, required=True):
     try:
@@ -922,27 +1054,281 @@ def describe(r):
 
 def run(args):
     import mss
-    config = load_config(args.config, required=False)
+    sct, config = mss.mss(), load_config(args.config, required=False)
     if not (config.get("bars") or config.get("minimap") or config.get("mobs")):
-        print("First run: let's mark your bars, minimap and mobs (hover, then F8).")
-        setup(args.config, args.sprites)
+        say("First run: let's mark your bars, minimap and mobs (hover, then F8).")
+        setup(args.config, args.sprites, args.game or "maplestory")
         config = load_config(args.config)
-    screen, pad = Screen(mss.mss(), config), None
+    if args.game and config.get("game") != args.game:   # --game other: sampled colours again
+        config["game"] = args.game
+        save_config(args.config, config)
+    screen, pad, link = Screen(sct, config), None, None
     while True:
+        if LAYER:
+            LAYER.folders, LAYER.taught = map_folders(args.sprites), set(config.get("maps", {}))
+            while not LAYER.commands.empty():
+                _, name = LAYER.commands.get()   # ("teach", folder) from F9
+                problem = teach_map(sct, config, args.sprites, name)
+                if problem:
+                    say(problem)
+                else:
+                    save_config(args.config, config)
+                    screen = Screen(sct, config)
+                    say("Taught %s: its mobs are looked for whenever this name shows." % name)
         readings = screen.read()
         line = describe(readings)
         try:
             if not args.dry_run and pad is None:
                 pad = connect(args)
-                print("\nSending to Kabuto over %s" % pad.where)
+                say("Sending to Kabuto over %s" % pad.where)
+            link = pad.where if pad else "dry run"
             if pad:
                 pad.send(readings)
             print("\r" + line.ljust(70) + ("" if pad else "(dry run)"), end="", flush=True)
-            time.sleep(args.interval)
+            wait = args.interval
         except (urllib.error.URLError, OSError) as e:   # serial errors are OSErrors too
             print("\r%s  can't reach Kabuto (%s), retrying..." % (line, getattr(e, "reason", e)), end="", flush=True)
-            pad = None   # unplugged or out of range: look again
-            time.sleep(3)
+            link = "can't reach Kabuto"
+            pad, wait = None, 3   # unplugged or out of range: look again
+        if LAYER:
+            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.folders),
+                       layer_shapes(config, sct.monitors[0], screen.boxes, readings))
+        time.sleep(wait)
+
+# ---- the game layer -------------------------------------------------------------
+# An always-on-top strip across the top of the game: what's being read and
+# sent, the map, the mobs, and what to do next (setup steps show here too, so
+# there's no switching to the terminal). F10 draws outlines over the game:
+# where it looks for mobs, each mob it finds (named), the minimap and your
+# dot, the map name area. F9 picks the mob folder for the map you're on.
+# On Windows clicks go through to the game and the layer is left out of
+# screen captures (Windows 10 2004+), so the reader never sees it. The game
+# must be windowed or borderless: nothing draws over exclusive fullscreen.
+
+INK, DIM, AMBER, RED = "#e8eaed", "#8b919e", "#ffb020", "#ff5d5d"
+BAR_COLORS = {"hp": "#ff5d5d", "mana": "#4f8cff", "xp": "#cef300"}
+
+def layer_status(r, link, game=None, folders=()):
+    """The strip's first line from a reading: [(text, colour), ...]."""
+    known = GAMES.get(game)
+    out = [("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER),
+           (link or "starting", RED if link and link.startswith("can't") else DIM)]
+    for name, label in BARS:
+        if r.get(name) is not None:
+            out.append(("%s %.0f%%" % ("MP" if name == "mana" else label, r[name]), BAR_COLORS[name]))
+    if r.get("state", "ok") != "ok":
+        out.append((r["state"].upper(), RED))
+    if r.get("map") == "-":
+        out.append(("new map: F9" if folders else "map not taught", AMBER))
+    elif r.get("map"):
+        out.append((r["map"].replace("_", " "), INK))
+    if r.get("ml") is not None:
+        near = [(r["d" + side], side) for side in "lr" if r.get("d" + side) is not None]
+        out.append(("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK))
+        if near:
+            d, side = min(near)
+            out.append(("%s %s %d%%" % ("target" if d <= 100 else "nearest", r.get("mn") or ("left" if side == "l" else "right"), d),
+                        RED if d <= 100 else DIM))
+    elif r.get("mobs") is not None:
+        out.append(("mobs " + (r["mobs"] or "-"), INK))
+    out.append(("F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
+    return out
+
+def layer_shapes(config, monitor, boxes, r):
+    """Outlines over the game: [(x0, y0, x1, y1, colour, label), ...] in screen
+    coordinates. The minimap and name area are drawn just outside what's read."""
+    out = []
+    mb = config.get("mobs")
+    if mb and "x" in mb:
+        if mb.get("cell") or config.get("maps"):   # mobs are looked for this far
+            left, top, w, h = mob_area(mb, monitor, mb.get("sight", SIGHT))
+            out.append((left, top, left + w, top + h, "#4f8cff", "sight"))
+        left, top, w, h = mob_area(mb, monitor)
+        out.append((left, top, left + w, top + h, RED, "reach"))
+    for x0, y0, x1, y1, name, n in boxes:
+        out.append((x0, y0, x1, y1, AMBER, (name or "mob").replace("_", " ") + (" x%d" % n if n > 1 else "")))
+    mm = config.get("minimap")
+    if mm:
+        out.append((mm["x1"] - 2, mm["y1"] - 2, mm["x2"] + 2, mm["y2"] + 2, "#45d6b5", "minimap"))   # labelled below
+        if r.get("x") is not None:
+            x = mm["x1"] + r["x"] * (mm["x2"] - mm["x1"]) / 100.0
+            y = mm["y1"] + r["y"] * (mm["y2"] - mm["y1"]) / 100.0
+            out.append((int(x) - 4, int(y) - 4, int(x) + 4, int(y) + 4, "#00e5ff", "you"))   # not the dot's own colour
+    a = config.get("map_name")
+    if a:
+        out.append((a["x1"] - 2, a["y1"] - 2, a["x2"] + 2, a["y2"] + 2, "#c084fc", "map name"))
+    return out
+
+class Layer:
+    KEY = "#010203"   # drawn in this colour = see-through (Windows)
+
+    def __init__(self, monitor):
+        import tkinter as tk
+        self.tk, self.monitor = tk, monitor
+        self.windows = sys.platform == "win32"
+        self.root = root = tk.Tk()
+        root.title("Kabuto layer")
+        root.overrideredirect(True)
+        root.attributes("-topmost", True)
+        # Windows: the whole screen, see-through but for what's drawn. Elsewhere
+        # there's no see-through colour, so just the strip.
+        w, h = (monitor["width"], monitor["height"]) if self.windows else (monitor["width"], 44)
+        root.geometry("%dx%d+%d+%d" % (w, h, monitor["left"], monitor["top"]))
+        bg = self.KEY if self.windows else "#16181d"
+        if self.windows:
+            root.attributes("-transparentcolor", self.KEY)
+        self.canvas = tk.Canvas(root, width=w, height=h, bg=bg, highlightthickness=0)
+        self.canvas.pack()
+        root.update_idletasks()
+        self.unseen = self._click_through() if self.windows else True
+        root.report_callback_exception = self._error
+        self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
+        self.status, self.shapes, self.message, self.until = [("Kabuto", AMBER), ("starting", DIM)], [], "", 0
+        self.outlines, self.hidden, self.finished, self.folders, self.taught, self.picker = self.windows, False, False, [], set(), None
+        self.hotkeys = Keys(self.keys.put).start()
+
+    def _click_through(self):
+        """Clicks pass through to the game, no taskbar button, never focused;
+        and left out of screen captures. False if Windows can't leave it out."""
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetParent(self.root.winfo_id())
+        style = user32.GetWindowLongW(hwnd, -20)   # GWL_EXSTYLE
+        user32.SetWindowLongW(hwnd, -20, style | 0x80000 | 0x20 | 0x80 | 0x8000000)   # layered, transparent, tool, no-activate
+        return bool(user32.SetWindowDisplayAffinity(hwnd, 0x11))   # WDA_EXCLUDEFROMCAPTURE
+
+    def _error(self, kind, value, tb):
+        if issubclass(kind, KeyboardInterrupt):
+            self.root.quit()
+        else:
+            import traceback
+            traceback.print_exception(kind, value, tb)
+
+    # Called from the reading thread.
+    def say(self, text, sticky=False):
+        with self.lock:
+            self.message, self.until = text, (float("inf") if sticky else time.time() + 12)
+
+    def show(self, status, shapes):
+        with self.lock:
+            self.status, self.shapes = status, shapes
+
+    def finish(self):
+        self.finished = True
+
+    # The window's own thread.
+    def run(self):
+        self._refresh()
+        try:
+            self.root.mainloop()
+        except KeyboardInterrupt:
+            pass
+        self.hotkeys.close()
+        self.root.destroy()
+
+    def _refresh(self):
+        while not self.keys.empty():
+            key = self.keys.get()
+            if key == "f9":
+                self._pick_map()
+            elif key == "f10":
+                self.outlines = not self.outlines
+            elif key == "f11":
+                self.hidden = not self.hidden
+        with self.lock:
+            status, shapes = list(self.status), list(self.shapes)
+            message = self.message if time.time() < self.until else ""
+        if not self.unseen:   # captured with the game: only outlines drawn outside what's read
+            shapes = [s for s in shapes if s[5] in ("minimap", "map name")]
+        self._draw(status, shapes if self.outlines else [], message)
+        if self.finished:
+            self.root.after(4000 if message else 300, self.root.quit)
+            self.finished = None
+        self.root.after(150, self._refresh)
+
+    def _draw(self, status, shapes, message):
+        c, ox, oy = self.canvas, self.monitor["left"], self.monitor["top"]
+        c.delete("all")
+        if self.hidden:
+            return
+        for x0, y0, x1, y1, color, label in shapes:
+            c.create_rectangle(x0 - ox, y0 - oy, x1 - ox, y1 - oy, outline=color, width=2)
+            if label == "minimap":   # under it: the map name is usually just above
+                c.create_text(x0 - ox + 3, y1 - oy + 2, text=label, fill=color, anchor="nw", font=("Segoe UI", 9, "bold"))
+            elif label and label != "you":
+                c.create_text(x0 - ox + 3, y0 - oy - 2, text=label, fill=color, anchor="sw", font=("Segoe UI", 9, "bold"))
+        x, font = 0, ("Segoe UI", 10)
+        items = []
+        for text, color in status:
+            item = c.create_text(x, 12, text=text, fill=color, anchor="w", font=font)
+            items.append(item)
+            x = c.bbox(item)[2] + 14
+        if message:
+            items.append(c.create_text(0, 32, text=message, fill=AMBER, anchor="w", font=font))
+        right = max(c.bbox(i)[2] for i in items)
+        shift = max(0, (int(c["width"]) - right) // 2)
+        for i in items:
+            c.move(i, shift, 0)
+        bg = c.create_rectangle(shift - 10, 0, shift + right + 10, 44 if message else 24, fill="#16181d", outline="#2b2f39")
+        c.tag_lower(bg)
+
+    def _pick_map(self):
+        """Which folder's mobs live on this map: a small window, one click."""
+        tk = self.tk
+        if self.picker:
+            self.picker.destroy()
+        if not self.folders:
+            self.say("Make a folder per map in mobs (e.g. mobs/Henesys) with that map's mob PNGs, then F9")
+            return
+        win = self.picker = tk.Toplevel(self.root)
+        win.title("Which map is this?")
+        win.attributes("-topmost", True)
+        win.configure(bg="#1e2128", padx=10, pady=8)
+        tk.Label(win, text="Which map are you on? Its mobs are learned from that folder.", bg="#1e2128", fg=INK).pack(anchor="w")
+        def pick(name):
+            win.destroy()
+            self.picker = None
+            self.commands.put(("teach", name))
+        for name in self.folders:
+            tk.Button(win, text=name + ("   (taught)" if name in self.taught else ""), anchor="w",
+                      command=lambda n=name: pick(n)).pack(fill="x", pady=1)
+        tk.Button(win, text="Cancel", command=lambda: (win.destroy(), setattr(self, "picker", None))).pack(fill="x", pady=(6, 0))
+        win.geometry("+%d+%d" % (self.monitor["left"] + 40, self.monitor["top"] + 60))
+        win.focus_force()
+
+def with_layer(job, enabled=True):
+    """Runs `job` with the game layer up (the job on its own thread; the
+    window needs the main one). Without tkinter or a screen, just the job."""
+    global LAYER
+    if enabled:
+        try:
+            import mss
+            monitors = mss.mss().monitors   # first: makes the process DPI-aware, so the layer lines up
+            LAYER = Layer(monitors[1] if len(monitors) > 1 else monitors[0])
+        except Exception as e:   # no tkinter, no display
+            print("(game layer off: %s)" % e)
+            LAYER = None
+    if not LAYER:
+        return job()
+    ended = {}
+    def work():
+        try:
+            job()
+        except SystemExit as e:
+            ended["exit"] = e
+            if e.code and not isinstance(e.code, int):
+                say(str(e.code))
+        except Exception as e:
+            ended["error"] = e
+            say("Stopped: %s" % e)
+        finally:
+            LAYER.finish()
+    threading.Thread(target=work, daemon=True).start()
+    LAYER.run()
+    if "exit" in ended:
+        raise ended["exit"]
+    if "error" in ended:
+        raise ended["error"]
 
 # ---- self-test ---------------------------------------------------------------------
 
@@ -1190,6 +1576,34 @@ def selftest():
     assert form_fields({"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}) == \
         {"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}
 
+    # MapleStory's fixed colours replace sampled ones; other games keep theirs.
+    ms = apply_game({"game": "maplestory", "bars": {"hp": {"color": [1, 2, 3]}, "xp": {"color": [1, 2, 3]}}, "minimap": {"dot": [9, 9, 9]}})
+    assert ms["bars"]["hp"]["color"] == [248, 10, 0] and ms["bars"]["xp"]["color"] == [206, 243, 0] and ms["minimap"]["dot"] == [255, 221, 68]
+    assert apply_game({"game": "other", "bars": {"hp": {"color": [1, 2, 3]}}})["bars"]["hp"]["color"] == [1, 2, 3]
+    # Hotkeys fire once per press, however long the key is held.
+    edges = KeyEdges()
+    assert edges.update({"f8"}) == ["f8"] and edges.update({"f8"}) == [] and edges.update(set()) == [] and edges.update({"f8", "esc"}) == ["f8", "esc"]
+    # Mob outlines: each clump's box in the area, named, with its count.
+    boxes = []
+    mob_view(sight, 1000, 30, [[200, 40, 160]], gap=40, step=2, min_hits=3, cell=10, names=["blob"], mob_w=20, boxes=boxes)
+    assert sorted(boxes) == [(104, 0, 118, 20, "blob", 1), (604, 0, 618, 20, "blob", 1), (804, 0, 838, 20, "blob", 2)], sorted(boxes)
+    # The game layer's strip and outlines.
+    strip = layer_status({"hp": 72.4, "mana": 40.0, "xp": 63.2, "map": "Henesys_Field", "mobs": "R", "ml": 1, "mr": 3, "dl": 192,
+                          "dr": 52, "mn": "Blue_Snail", "state": "ok"}, "USB COM9", "maplestory", ["Henesys Field"])
+    texts = [t for t, _ in strip]
+    assert texts[:5] == ["Kabuto \u00b7 MS", "USB COM9", "HP 72%", "MP 40%", "XP 63%"] and "Henesys Field" in texts, texts
+    assert "\u25c01 \u00b7 3\u25b6" in texts and ("target Blue_Snail 52%", RED) in strip, strip
+    strip = layer_status({"hp": 0.0, "state": "dead", "map": "-", "ml": 0, "mr": 0}, "can't reach Kabuto", None, ["A"])
+    assert ("DEAD", RED) in strip and ("new map: F9", AMBER) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
+    assert ("map not taught", AMBER) in layer_status({"map": "-"}, "USB", None, [])
+    shapes = layer_shapes({"mobs": {"x": 400, "y": 320, "top": 300, "bottom": 340, "reach": 100, "gap": 20, "cell": 10},
+                           "minimap": {"x1": 600, "y1": 10, "x2": 760, "y2": 90}, "map_name": {"x1": 600, "y1": 92, "x2": 659, "y2": 105}},
+                          {"left": 0, "top": 0, "width": 800, "height": 600}, [(450, 310, 470, 330, "Blue_Snail", 2)], {"x": 50.0, "y": 50.0})
+    labels = {label: (x0, y0, x1, y1) for x0, y0, x1, y1, _, label in shapes}
+    assert labels["sight"] == (150, 300, 650, 340) and labels["reach"] == (300, 300, 500, 340) and labels["Blue Snail x2"] == (450, 310, 470, 330)
+    assert labels["minimap"] == (598, 8, 762, 92) and labels["you"] == (676, 46, 684, 54) and labels["map name"] == (598, 90, 661, 107), labels
+    assert [c for *_, c, label in shapes if label == "you"] != ["#ffdd44"]   # never the dot's colour: the reader would see it
+
     # USB: finds the Espressif port that answers, sends one line per reading.
     class FakeSerial:
         def __init__(self, replies): self.replies, self.sent, self.closed, self.port = list(replies), [], False, "COM9"
@@ -1259,21 +1673,26 @@ def main():
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between readings (default 0.5)")
     ap.add_argument("--config", default=CONFIG, help="setup file (default %s)" % CONFIG)
     ap.add_argument("--dry-run", action="store_true", help="print readings without sending")
+    ap.add_argument("--game", choices=sorted(GAMES) + ["other"],
+                    help="the game's built-in colours (default maplestory for a new setup); other: sample them")
+    ap.add_argument("--no-layer", action="store_true", help="no game layer over the game; the terminal only")
     ap.add_argument("--selftest", action="store_true", help="run built-in tests and exit")
     a = ap.parse_args()
     if a.selftest:
         selftest()
-    elif a.setup:
-        setup(a.config, a.sprites)
-    elif a.mobs:
-        relearn_mobs(a.config, a.sprites)
     elif a.map is not None:
-        learn_map(a.config, a.sprites, a.map)
-    elif a.mark:
-        mark(a.config, a.mark)
+        learn_map(a.config, a.sprites, a.map)   # asks in the terminal; in the game, F9 does this
     else:
+        if a.setup:
+            job = lambda: setup(a.config, a.sprites, a.game or "maplestory")
+        elif a.mobs:
+            job = lambda: relearn_mobs(a.config, a.sprites)
+        elif a.mark:
+            job = lambda: mark(a.config, a.mark)
+        else:
+            job = lambda: run(a)
         try:
-            run(a)
+            with_layer(job, not a.no_layer)
         except KeyboardInterrupt:
             print()
 

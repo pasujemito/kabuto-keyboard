@@ -190,7 +190,7 @@ the game has focus:
 | --- | --- |
 | F8 | mark the point under the pointer (setup) |
 | Esc | skip a setup step |
-| F9 | which map is this? A small window lists your map folders: click one and it's taught (about 4 s). Click back into the game after |
+| F9 | which map is this? A small window lists the maps in `mobs/map.json`: click one and it's taught (about 4 s). Click back into the game after |
 | F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, ×2 for two side by side), the minimap and where it reads your dot (cyan), the map name area |
 | F11 | hide or show the layer |
 
@@ -243,7 +243,7 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    reads short, raise its `fade` (default 30) in `kabuto-bars.json`.
 2. **Minimap:** its top-left corner, then its bottom-right corner (with
    `--game other`, then your own dot on it, to learn its colour).
-   With map folders in `mobs` (see **Mobs per map**), it also asks for the
+   With maps in `mobs/map.json` (see **Mobs per map**), it also asks for the
    **map's name**: its top-left, then its bottom-right a bit past where the
    longest name would end.
 3. **Mobs:** your **hitbox** first: your character's head, then its feet,
@@ -282,30 +282,44 @@ snail). The console shows it: `seen L1 (192%) R3 (52%) snail`. Older setups
 (colours marked by hand) keep sending sides only; run `--mobs` with sprites
 for the rest.
 
-**Mobs per map:** make a folder per map in `mobs`, named as you like (the
-map's name reads best), with that map's mob sprites:
+**Mobs per map:** keep every mob's PNG once, in `mobs`, and list which ones
+live on each map in `mobs/map.json` (map names as you like; the in-game name
+reads best). A mob found on several maps is just listed under each:
 
 ```
-mobs/Henesys Hunting Ground/snail.png
-mobs/Henesys Hunting Ground/blue_snail.png
-mobs/Ellinia/slime.png
+mobs/snail.png
+mobs/blue_snail.png
+mobs/slime.png
+mobs/map.json
+```
+
+```json
+{
+  "Henesys Hunting Ground": ["snail.png", "blue_snail.png"],
+  "Ellinia": ["slime.png", "snail.png"]
+}
 ```
 
 Run `--setup` once (it asks where the map's name is shown). Then, the first
-time you're on each map, press **F9** in the game and click its folder. Or
-from the terminal:
+time you're on each map, press **F9** (or **Which map** on the pad) and click
+the map. Or from the terminal:
 
 ```bash
-python screen_stats.py --map            # lists the folders and asks which map you're on
+python screen_stats.py --map            # lists the maps and asks which one you're on
 python screen_stats.py --map Ellinia    # or name it
 ```
 
 Teaching keeps the map's name as a picture (its light pixels) and learns that
-folder's mob colours against that map's scenery. While running, whenever a
-taught name shows (a pixel or two off is fine), that map's mobs are looked
-for, so only the mobs that live there are matched; a map you haven't taught
-uses the sprites at the top of `mobs` (if any) and the pad shows "map not
-taught". If two maps' names look alike in the marked area, `--map` warns you:
+map's mob colours against its scenery. While running, whenever a taught name
+shows (a pixel or two off is fine), that map's mobs are looked for, so only
+the mobs that live there are matched; a map you haven't taught shows "new map:
+F9" on the strip and "map not taught" on the pad. Change a taught map's list
+and the strip says so ("changed in map.json: F9 to relearn"; the F9 window
+marks it too): stand on it and teach it again. A listed PNG that isn't in
+`mobs`, or a typo in `map.json`, is reported with the file and map. With maps
+listed, PNGs in `mobs` are learned only for their maps, never for all of
+them. (Without `map.json`, the older layout still works: a folder per map,
+`mobs/Ellinia/*.png`.) If two maps' names look alike in the marked area, `--map` warns you:
 mark just the name. Names are read as light text (`light`, 170 by default, in
 `map_name`); lower it if the name is drawn darker. The pad gets the name (up to
 23 characters, spaces as `_`) to show, and to move home when you change maps.

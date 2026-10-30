@@ -81,9 +81,9 @@ release workflow runs all C++ and Python tests.
   parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). The other way,
   `tool` steps (the pad's setup buttons) queue the script's keys in `ToolKeys`
   (`stats_logic.h`); it collects them with `KABUTO keys` / `POST
-  /api/tool/keys`. Mobs per map are
-  told apart on the PC by the map name's pixels (no OCR); the pad only gets the
-  name.
+  /api/tool/keys`. Mobs per map are listed in `mobs/map.json` (PNGs kept
+  once in `mobs`) and told apart on the PC by the map name's pixels (no OCR);
+  the pad only gets the name.
 - Keep the README light. Details go in `docs/GUIDE.md`, changes in
   `CHANGELOG.md`.
 

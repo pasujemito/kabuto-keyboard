@@ -26,7 +26,7 @@ default), so bars can be empty during setup. --game other samples them.
 The game layer: a strip across the top of the game shows what's read and
 sent, the map and the mobs, and each setup step, so you needn't leave the
 game. F8-F11 work while the game has focus:
-    F8   mark (during setup)     F9   which map is this? (pick its folder)
+    F8   mark (during setup)     F9   which map is this? (pick it from map.json)
     F10  outlines on the game    F11  hide or show the layer
 Or press them on the pad: the editor's "Setup layer" (Recordings) gives the
 pad buttons for Mark, Skip, Which map, Outlines, Hide and Back.
@@ -35,13 +35,15 @@ Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
 mob) in a "mobs" folder here; setup learns their colours instead of asking
 you to mark mobs (needs pip install pillow). After adding sprites:
     python screen_stats.py --mobs
-Mobs per map: a folder per map in "mobs" (mobs/Henesys/*.png, ...). Setup
-asks where the map's name is shown; then on each new map press F9 in the
-game and click its folder (or, from the terminal):
-    python screen_stats.py --map            # asks which folder
+Mobs per map: every PNG once in "mobs", and mobs/map.json listing which are
+on each map (a mob on several maps is listed under each):
+    {"Henesys": ["snail.png", "blue_snail.png"], "Ellinia": ["slime.png", "snail.png"]}
+Setup asks where the map's name is shown; then on each new map press F9 in
+the game and click the map (or, from the terminal):
+    python screen_stats.py --map            # asks which map
     python screen_stats.py --map Henesys
 Its name is kept as a picture (no OCR), so whenever that name shows, that
-map's mobs are looked for. A map you haven't taught uses the "mobs" folder's.
+map's mobs are looked for. Changed a map's list? Teach it again.
 Optional, while that screen is showing, for exact detection:
     python screen_stats.py --mark death    # e.g. hover the respawn button
     python screen_stats.py --mark login    # e.g. hover the login box
@@ -510,12 +512,16 @@ def sniff(head):
         return "an AVIF/HEIC image (re-save it as PNG)"
     return "not an image Pillow knows"
 
-def load_sprites(folder):
-    """{file name: (width, height, rgba pixels)} for the images in `folder`.
-    Files that can't be read are skipped with a reason, not fatal."""
+def load_sprites(folder, only=None):
+    """{file name: (width, height, rgba pixels)} for the images in `folder`
+    (just the files named in `only`, if given). Files that can't be read are
+    skipped with a reason, not fatal."""
     if not os.path.isdir(folder):
         return {}
-    names = sorted(n for n in os.listdir(folder) if n.lower().endswith(SPRITE_TYPES))
+    if only is None:
+        names = sorted(n for n in os.listdir(folder) if n.lower().endswith(SPRITE_TYPES))
+    else:
+        names = sorted(n for n in set(only) if os.path.isfile(os.path.join(folder, n)))
     if not names:
         return {}
     try:
@@ -583,6 +589,7 @@ class Screen:
         area = config.get("map_name")
         self.maps = MapReader(config.get("maps", {}), area.get("light", 170)) if area and config.get("maps") else None
         self.boxes = []   # the mobs last found, in screen coordinates (for the game layer)
+        self.current = None   # the taught map you're on ("" untaught, None no map library)
         apply_game(config)
 
     def map_name(self):
@@ -627,7 +634,7 @@ class Screen:
             if dot:                      # a login or loading screen isn't the map
                 self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
-        name = self.map_name()
+        name = self.current = self.map_name()
         found = self.mobs(name)
         mobs = found.pop("mobs", None)   # None: no mob detector, so the pad doesn't wait for mobs
         watches = {}
@@ -774,11 +781,13 @@ def setup_mobs(sct, config, sprites_dir):
     """The mob detector: from sprite PNGs in `sprites_dir` if there are any,
     else from up to 3 mobs marked on screen. Either way it starts with your
     hitbox: your character's head and feet, and how far your attack reaches."""
-    sprites = load_sprites(sprites_dir)
+    listed = map_names(sprites_dir)
+    # With maps listed, the PNGs in mobs are their shared library: each map
+    # learns just its own (F9 / --map), so none are learned for every map here.
+    sprites = {} if listed else load_sprites(sprites_dir)
     mobs = {"tolerance": 40}
     box = "Hitbox: hover YOUR character's HEAD, F8; its FEET, F8; then how far your attack reaches to one side, F8"
-    folders = map_folders(sprites_dir)
-    if sprites or folders:
+    if sprites or listed:
         if sprites:
             say("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
         pts = mark_points(box + " (Esc skips). Mobs nearby are fine.", 3)
@@ -789,10 +798,10 @@ def setup_mobs(sct, config, sprites_dir):
         learned = learn_here(sct, mobs, sprites) if sprites else None
         if learned:
             mobs.update(learned)
-        elif not folders:
+        elif not listed:
             say("  No usable mob colours: mob detection is off."); return
-        else:   # the map folders bring their own colours (--map)
-            say("  Mobs come from the map folders: teach each map with --map.")
+        else:   # each map brings its own colours (F9 / --map)
+            say("  Mobs come from %s: teach each map with F9 (or Which map on the pad)." % MAP_LIST)
     else:
         if os.path.isdir(sprites_dir) and any(n.lower().endswith(SPRITE_TYPES) for n in os.listdir(sprites_dir)):
             say("No readable sprites in %s, so mark mobs on screen instead." % sprites_dir)
@@ -827,26 +836,87 @@ def mark_map_name(config):
     config["map_name"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by), "light": 170}
     return config["map_name"]
 
-def map_folders(sprites_dir):
-    """Folders in `sprites_dir`, one per map, named as you like (e.g. the map's name)."""
-    if not os.path.isdir(sprites_dir):
-        return []
-    return sorted(d for d in os.listdir(sprites_dir) if os.path.isdir(os.path.join(sprites_dir, d)))
+MAP_LIST = "map.json"   # in the mob sprites folder
+
+def read_map_list(sprites_dir):
+    """Your maps and the mobs on each, from mobs/map.json, with the PNGs in mobs
+    itself, so a mob found on several maps is kept once:
+
+        {"Henesys Hunting Ground": ["snail.png", "blue_snail.png"],
+         "Ellinia": ["slime.png", "snail.png"]}
+
+    Returns ({map: [file, ...]}, [problem, ...]); listed files that aren't there
+    are problems, not fatal. Without map.json, folders per map (mobs/<map>/*.png,
+    the older layout) are the maps, each with None: the whole folder."""
+    path = os.path.join(sprites_dir, MAP_LIST)
+    if not os.path.isfile(path):
+        if not os.path.isdir(sprites_dir):
+            return {}, []
+        return {d: None for d in sorted(os.listdir(sprites_dir)) if os.path.isdir(os.path.join(sprites_dir, d))}, []
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except ValueError as e:
+        return {}, ["%s isn't valid JSON: %s" % (path, e)]
+    if not isinstance(data, dict):
+        return {}, ['%s should look like {"Map name": ["mob.png", ...], ...}' % path]
+    maps, problems = {}, []
+    for name, files in data.items():
+        if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+            problems.append('%s: "%s" should be a list of PNG file names' % (MAP_LIST, name))
+            continue
+        missing = [f for f in files if not os.path.isfile(os.path.join(sprites_dir, f))]
+        if missing:
+            problems.append("%s: %s lists %s, not in %s" % (MAP_LIST, name, ", ".join(missing), sprites_dir))
+        maps[name] = files
+    return maps, problems
+
+class MapList:
+    """map.json for the reading loop: read again when it changes, its problems
+    said once each time."""
+    def __init__(self, sprites_dir):
+        self.dir, self.stamp, self.maps = sprites_dir, False, {}
+
+    def get(self):
+        path = os.path.join(self.dir, MAP_LIST)
+        stamp = os.path.getmtime(path) if os.path.isfile(path) else None
+        if stamp != self.stamp or stamp is None:   # the older folders: just list them again
+            self.maps, problems = read_map_list(self.dir)
+            if stamp != self.stamp:
+                for problem in problems:
+                    say(problem)
+            self.stamp = stamp
+        return self.maps
+
+def map_names(sprites_dir):
+    return sorted(read_map_list(sprites_dir)[0])
+
+def map_sprites(sprites_dir, name):
+    """The sprites of map `name`: its files in map.json (or its older folder)."""
+    files = read_map_list(sprites_dir)[0].get(name, [])
+    return load_sprites(os.path.join(sprites_dir, name)) if files is None else load_sprites(sprites_dir, files)
+
+def map_changed(sprites_dir, maps, name, taught):
+    """Whether map.json now lists other (existing) PNGs for `name` than it was taught with."""
+    files = maps.get(name)
+    if not files or not taught:
+        return False
+    return sorted(f for f in set(files) if os.path.isfile(os.path.join(sprites_dir, f))) != taught.get("sprites")
 
 def name_rows(sct, area):
     w, h = area["x2"] - area["x1"] + 1, area["y2"] - area["y1"] + 1
     return text_rows(grab(sct, area["x1"], area["y1"], w, h), w, h, area.get("light", 170))
 
 def teach_map(sct, config, sprites_dir, name):
-    """Teach the map you're standing on as `name`: its name's look, and the
-    mobs in its folder (mobs/<name>/*.png), learned against this map. Updates
-    `config` (the caller saves it). Returns why not, or None when taught."""
+    """Teach the map you're standing on as `name`: its name's look, and its
+    mobs (its PNGs in map.json), learned against this map. Updates `config`
+    (the caller saves it). Returns why not, or None when taught."""
     mobs = config.get("mobs")
     if not mobs or "reach" not in mobs:
         return "Mark your hitbox first: python screen_stats.py --mobs"
-    sprites = load_sprites(os.path.join(sprites_dir, name))
+    sprites = map_sprites(sprites_dir, name)
     if not sprites:
-        return "No mob sprites in %s" % os.path.join(sprites_dir, name)
+        return "No mob sprites for %s: list its PNGs in %s" % (name, os.path.join(sprites_dir, MAP_LIST))
     area = config.get("map_name") or mark_map_name(config)
     if not area:
         return "A map is told apart by its name, so mark where the name is"
@@ -865,20 +935,24 @@ def teach_map(sct, config, sprites_dir, name):
     return None
 
 def learn_map(path, sprites_dir, name=""):
-    """--map from the terminal: asks which folder when there are several."""
+    """--map from the terminal: asks which map when there are several."""
     import mss
     sct, config = mss.mss(), load_config(path)
-    folders = map_folders(sprites_dir)
+    maps, problems = read_map_list(sprites_dir)
+    for problem in problems:
+        say(problem)
+    names = sorted(maps)
     if not name:
-        if not folders:
-            raise SystemExit("Make a folder per map in %s (e.g. %s/Henesys) with that map's mob sprites" % (sprites_dir, sprites_dir))
-        if len(folders) == 1:
-            name = folders[0]
+        if not names:
+            raise SystemExit('List your maps in %s, e.g. {"Henesys": ["snail.png", "blue_snail.png"]}, '
+                             'with the PNGs in %s' % (os.path.join(sprites_dir, MAP_LIST), sprites_dir))
+        if len(names) == 1:
+            name = names[0]
         else:
-            for i, f in enumerate(folders, 1):
+            for i, f in enumerate(names, 1):
                 say("  %d. %s%s" % (i, f, "  (taught)" if f in config.get("maps", {}) else ""))
-            pick = input("Which map are you on? Number or folder name: ").strip()
-            name = folders[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(folders) else pick
+            pick = input("Which map are you on? Number or name: ").strip()
+            name = names[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(names) else pick
     problem = teach_map(sct, config, sprites_dir, name)
     if problem:
         raise SystemExit(problem)
@@ -911,21 +985,24 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
         (ax, ay), (bx, by), dot = pts
         config["minimap"] = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by),
                              "dot": list(known["dot"]) if known else pixel(sct, *dot), "tolerance": 40, "map_mismatch": 0.6}
-    folders = map_folders(sprites_dir)
-    if folders:
-        say("Map folders in %s: %s" % (sprites_dir, ", ".join(folders)))
+    maps, problems = read_map_list(sprites_dir)
+    for problem in problems:
+        say(problem)
+    names = sorted(maps)
+    if names:
+        say("Maps in %s: %s" % (MAP_LIST, ", ".join(names)))
         mark_map_name(config)
     setup_mobs(sct, config, sprites_dir)
     old = load_config(path, required=False)
-    for keep in ("watch", "maps"):         # death/login marks from --mark, maps from --map
+    for keep in ("watch", "maps"):         # death/login marks from --mark, maps taught with F9 / --map
         if old.get(keep):
             config[keep] = old[keep]
-    if folders and "map_name" not in config and old.get("map_name"):
+    if names and "map_name" not in config and old.get("map_name"):
         config["map_name"] = old["map_name"]
     save_config(path, config)
     say("Saved %s - if something reads wrong, raise its tolerance there." % path)
-    if folders:
-        say("Now teach each map: stand on it and run  python screen_stats.py --map")
+    if names:
+        say("Now teach each map: stand on it and press F9 (or Which map on the pad)")
 
 def relearn_mobs(path, sprites_dir):
     import mss
@@ -1155,13 +1232,15 @@ def run(args):
     if args.game and config.get("game") != args.game:   # --game other: sampled colours again
         config["game"] = args.game
         save_config(args.config, config)
-    screen, pad, link = Screen(sct, config), None, None
+    screen, pad, link, map_list = Screen(sct, config), None, None, MapList(args.sprites)
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
+        maps = map_list.get()
         if LAYER:
-            LAYER.folders, LAYER.taught = map_folders(args.sprites), set(config.get("maps", {}))
+            LAYER.maps, LAYER.taught = sorted(maps), set(config.get("maps", {}))
+            LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
             while not LAYER.commands.empty():
-                _, name = LAYER.commands.get()   # ("teach", folder) from F9
+                _, name = LAYER.commands.get()   # ("teach", map name) from F9
                 problem = teach_map(sct, config, args.sprites, name)
                 if problem:
                     say(problem)
@@ -1185,7 +1264,8 @@ def run(args):
                 pads.drop(pad)   # unplugged or out of range: look again
             wait = 3
         if LAYER:
-            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.folders),
+            hint = "%s changed in %s: F9 to relearn" % (screen.current, MAP_LIST) if screen.current in LAYER.changed else None
+            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint),
                        layer_shapes(config, sct.monitors[0], screen.boxes, readings))
         time.sleep(wait)
 
@@ -1194,7 +1274,7 @@ def run(args):
 # sent, the map, the mobs, and what to do next (setup steps show here too, so
 # there's no switching to the terminal). F10 draws outlines over the game:
 # where it looks for mobs, each mob it finds (named), the minimap and your
-# dot, the map name area. F9 picks the mob folder for the map you're on.
+# dot, the map name area. F9 picks the map you're on from map.json.
 # On Windows clicks go through to the game and the layer is left out of
 # screen captures (Windows 10 2004+), so the reader never sees it. The game
 # must be windowed or borderless: nothing draws over exclusive fullscreen.
@@ -1202,7 +1282,7 @@ def run(args):
 INK, DIM, AMBER, RED = "#e8eaed", "#8b919e", "#ffb020", "#ff5d5d"
 BAR_COLORS = {"hp": "#ff5d5d", "mana": "#4f8cff", "xp": "#cef300"}
 
-def layer_status(r, link, game=None, folders=()):
+def layer_status(r, link, game=None, maps=(), hint=None):
     """The strip's first line from a reading: [(text, colour), ...]."""
     known = GAMES.get(game)
     out = [("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER),
@@ -1213,9 +1293,11 @@ def layer_status(r, link, game=None, folders=()):
     if r.get("state", "ok") != "ok":
         out.append((r["state"].upper(), RED))
     if r.get("map") == "-":
-        out.append(("new map: F9" if folders else "map not taught", AMBER))
+        out.append(("new map: F9" if maps else "map not taught", AMBER))
     elif r.get("map"):
         out.append((r["map"].replace("_", " "), INK))
+    if hint:
+        out.append((hint, AMBER))
     if r.get("ml") is not None:
         near = [(r["d" + side], side) for side in "lr" if r.get("d" + side) is not None]
         out.append(("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK))
@@ -1278,7 +1360,8 @@ class Layer:
         root.report_callback_exception = self._error
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
         self.status, self.shapes, self.message, self.until = [("Kabuto", AMBER), ("starting", DIM)], [], "", 0
-        self.outlines, self.hidden, self.finished, self.folders, self.taught, self.picker = self.windows, False, False, [], set(), None
+        self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], set(), None
+        self.changed = set()
         self.unlisten = listen(self.keys.put)
 
     def _click_through(self):
@@ -1367,24 +1450,25 @@ class Layer:
         c.tag_lower(bg)
 
     def _pick_map(self):
-        """Which folder's mobs live on this map: a small window, one click."""
+        """Which map (from map.json) this is: a small window, one click."""
         tk = self.tk
         if self.picker:
             self.picker.destroy()
-        if not self.folders:
-            self.say("Make a folder per map in mobs (e.g. mobs/Henesys) with that map's mob PNGs, then F9")
+        if not self.maps:
+            self.say('List your maps in mobs/%s, e.g. {"Henesys": ["snail.png"]}, with the PNGs in mobs, then F9' % MAP_LIST)
             return
         win = self.picker = tk.Toplevel(self.root)
         win.title("Which map is this?")
         win.attributes("-topmost", True)
         win.configure(bg="#1e2128", padx=10, pady=8)
-        tk.Label(win, text="Which map are you on? Its mobs are learned from that folder.", bg="#1e2128", fg=INK).pack(anchor="w")
+        tk.Label(win, text="Which map are you on? Its mobs (its PNGs in %s) are learned here." % MAP_LIST, bg="#1e2128", fg=INK).pack(anchor="w")
         def pick(name):
             win.destroy()
             self.picker = None
             self.commands.put(("teach", name))
-        for name in self.folders:
-            tk.Button(win, text=name + ("   (taught)" if name in self.taught else ""), anchor="w",
+        for name in self.maps:
+            note = "   (changed: teach again)" if name in self.changed else "   (taught)" if name in self.taught else ""
+            tk.Button(win, text=name + note, anchor="w",
                       command=lambda n=name: pick(n)).pack(fill="x", pady=1)
         tk.Button(win, text="Cancel", command=lambda: (win.destroy(), setattr(self, "picker", None))).pack(fill="x", pady=(6, 0))
         win.geometry("+%d+%d" % (self.monitor["left"] + 40, self.monitor["top"] + 60))
@@ -1670,6 +1754,52 @@ def selftest():
     assert form_fields({"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}) == \
         {"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}
 
+    # Maps and their mobs from mobs/map.json: PNGs kept once in mobs, listed
+    # under each map they're on; missing files and bad JSON are said plainly.
+    import tempfile
+    with tempfile.TemporaryDirectory() as lib:
+        for name in ("snail.png", "slime.png", "blue_snail.png"):
+            open(os.path.join(lib, name), "wb").close()
+        def write(text):
+            with open(os.path.join(lib, MAP_LIST), "w", encoding="utf-8") as f:
+                f.write(text)
+        write('{"Henesys Hunting Ground": ["snail.png", "blue_snail.png"], "Ellinia": ["slime.png", "snail.png", "gone.png"]}')
+        maps, problems = read_map_list(lib)
+        assert maps == {"Henesys Hunting Ground": ["snail.png", "blue_snail.png"], "Ellinia": ["slime.png", "snail.png", "gone.png"]}
+        assert problems == ["map.json: Ellinia lists gone.png, not in %s" % lib], problems
+        assert map_names(lib) == ["Ellinia", "Henesys Hunting Ground"]
+        # Taught with what's there; a changed list asks to teach again (a missing file alone doesn't).
+        assert not map_changed(lib, maps, "Ellinia", {"sprites": ["slime.png", "snail.png"]})
+        assert map_changed(lib, maps, "Henesys Hunting Ground", {"sprites": ["snail.png"]})
+        assert not map_changed(lib, maps, "Lith Harbor", {"sprites": ["snail.png"]}) and not map_changed(lib, maps, "Ellinia", None)
+        listed = MapList(lib)
+        assert sorted(listed.get()) == ["Ellinia", "Henesys Hunting Ground"]
+        write('{"Ellinia": "slime.png", "Perion": ["boar.png", 3]}')
+        os.utime(os.path.join(lib, MAP_LIST), (1, 1))   # a different modification time: read again
+        assert listed.get() == {}
+        assert read_map_list(lib)[1] == ['map.json: "Ellinia" should be a list of PNG file names',
+                                         'map.json: "Perion" should be a list of PNG file names']
+        write('{"Ellinia": ["slime.png",]}')
+        assert read_map_list(lib)[0] == {} and "isn't valid JSON" in read_map_list(lib)[1][0]
+        write('["slime.png"]')
+        assert "should look like" in read_map_list(lib)[1][0]
+        # No map.json: older folders per map still work, each meaning the whole folder.
+        os.remove(os.path.join(lib, MAP_LIST)); os.mkdir(os.path.join(lib, "Perion"))
+        assert read_map_list(lib) == ({"Perion": None}, []) and map_names(os.path.join(lib, "nowhere")) == []
+        assert load_sprites(lib, []) == {} and load_sprites(lib, ["gone.png"]) == {}   # nothing listed there: no Pillow needed
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
+    if Image:   # one PNG shared by two maps loads for each
+        with tempfile.TemporaryDirectory() as lib:
+            Image.new("RGBA", (4, 4), (200, 40, 160, 255)).save(os.path.join(lib, "snail.png"))
+            Image.new("RGBA", (4, 4), (60, 200, 60, 255)).save(os.path.join(lib, "slime.png"))
+            with open(os.path.join(lib, MAP_LIST), "w") as f:
+                json.dump({"Henesys": ["snail.png"], "Ellinia": ["slime.png", "snail.png"]}, f)
+            assert list(map_sprites(lib, "Henesys")) == ["snail.png"] and sorted(map_sprites(lib, "Ellinia")) == ["slime.png", "snail.png"]
+            assert map_sprites(lib, "Perion") == {}
+
     # MapleStory's fixed colours replace sampled ones; other games keep theirs.
     ms = apply_game({"game": "maplestory", "bars": {"hp": {"color": [1, 2, 3]}, "xp": {"color": [1, 2, 3]}}, "minimap": {"dot": [9, 9, 9]}})
     assert ms["bars"]["hp"]["color"] == [248, 10, 0] and ms["bars"]["xp"]["color"] == [206, 243, 0] and ms["minimap"]["dot"] == [255, 221, 68]
@@ -1787,9 +1917,9 @@ def main():
     ap = argparse.ArgumentParser(description="Send what your game screen shows to Kabuto.")
     ap.add_argument("--setup", action="store_true", help="mark the bars, minimap and mobs")
     ap.add_argument("--mobs", action="store_true", help="redo just the mob detector (e.g. after adding sprites)")
-    ap.add_argument("--sprites", default="mobs", help="folder of mob sprite PNGs (default mobs)")
-    ap.add_argument("--map", nargs="?", const="", metavar="FOLDER",
-                    help="teach the map you're on, with the mobs in its folder (mobs/FOLDER); asks which without one")
+    ap.add_argument("--sprites", default="mobs", help="folder of mob sprite PNGs and map.json (default mobs)")
+    ap.add_argument("--map", nargs="?", const="", metavar="MAP",
+                    help="teach the map you're on, with its mobs from map.json; asks which without one")
     ap.add_argument("--mark", choices=["death", "login"], help="capture a spot only that screen has")
     ap.add_argument("--via", choices=["auto", "usb", "wifi"], default="auto",
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")

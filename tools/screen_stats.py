@@ -11,10 +11,12 @@ Nothing else leaves your PC: no screenshots, no reading text. All the work
 happens here, so the pad only stores a few numbers.
 
 Easiest: plug the pad into the game PC with a USB data cable, then
-    pip install mss pynput pyserial pillow numpy scipy
+    pip install mss pynput pyserial
     python screen_stats.py
 The first run walks you through setup; after that it finds the pad on the
-cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
+cable and starts sending. No Wi-Fi or PIN over USB. Each start offers what's
+missing, once: Pillow, numpy and scipy (mobs by shape), mobs' animation
+frames, your name tag, maps to teach again. To redo setup:
     python screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
     # right end; the minimap's top-left and bottom-right corners (and your dot
@@ -528,12 +530,18 @@ def rows_score(a, b, shift=2):
             best = max(best, both)
     return 2.0 * best / total
 
+NAME_READING = 2      # how map names are read (2: from 1.18, light means clearly lighter than the area)
+
+def name_taught(m):
+    """A taught map whose name was read the current way (older ones need teaching again)."""
+    return bool(m.get("rows")) and m.get("name_reading") == NAME_READING
+
 class MapReader:
     """Which taught map this is, from its name: the best match scoring at least
     `min_score`, else "" (a map you haven't taught). Only rematched when the
     name area changes."""
     def __init__(self, maps, light=170, min_score=0.8):
-        self.maps = {name: [int(r, 16) for r in m["rows"]] for name, m in maps.items() if m.get("rows")}
+        self.maps = {name: [int(r, 16) for r in m["rows"]] for name, m in maps.items() if name_taught(m)}
         self.light, self.min_score, self.last, self.name = light, min_score, None, ""
 
     def read(self, raw, w, h):
@@ -733,7 +741,7 @@ def read_bars(sct, bars):
 
 FEET_SLACK = 28       # px a mob's feet may be above or below yours and still count as on your platform
 FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
-EFFECT_BRIGHT = 200   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
+EFFECT_BRIGHT = 230   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
 VISIBLE_MIN = 0.6     # ...but at least this much of the mob must be seen
 MATCH_SLACK = 1       # px: a partly covered mob's edge pixels may find their colour this far away
 COVERED = 0.1         # ...when this much of it is covered (effects, the screen's edge)
@@ -1592,7 +1600,7 @@ def teach_map(sct, config, sprites_dir, name):
     if ones(rows) < 15:
         say("  Can't see a light name there (%d px). If the name is darker, lower \"light\" in map_name." % ones(rows))
     for other, m in sorted(config.get("maps", {}).items()):
-        if other != name and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.8:
+        if other != name and name_taught(m) and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.8:
             say("  Careful: this name looks like %s's; mark just the name (--setup)." % other)
     entry = read_map_list(sprites_dir)[0].get(name) or {}
     if config.get("minimap") and entry.get("mobs") is not None and not entry.get("minimap"):
@@ -1607,7 +1615,7 @@ def teach_map(sct, config, sprites_dir, name):
                     % name)
         say("  No colours of their own here: they'll be found by shape (numpy).")
         learned = {"sprites": sorted(sprites)}
-    learned["rows"] = ["%x" % r for r in rows]
+    learned["rows"], learned["name_reading"] = ["%x" % r for r in rows], NAME_READING
     learned["taught_at"] = int(time.time())   # recent maps come first in the F9 list
     config.setdefault("maps", {})[name] = learned
     return None
@@ -1672,7 +1680,7 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
         mark_map_name(config)
     setup_mobs(sct, config, sprites_dir)
     old = load_config(path, required=False)
-    for keep in ("watch", "maps"):         # death/login marks from --mark, maps taught with F9 / --map
+    for keep in ("watch", "maps", "not_now"):   # death/login marks from --mark, maps taught with F9 / --map, offers declined
         if old.get(keep):
             config[keep] = old[keep]
     if names and "map_name" not in config and old.get("map_name"):
@@ -1902,6 +1910,128 @@ def describe(r):
         parts.append("!! " + r["state"].upper())
     return "  ".join(parts)
 
+# ---- getting ready: what this version needs, offered once at start ----------
+# One command does it all: python screen_stats.py offers, in the terminal,
+# the packages and frames the shape search needs, then in the game anything
+# new to mark. A "no" is remembered ("not_now" in the setup file).
+
+EXTRAS = (("pillow", "PIL"), ("numpy", "numpy"), ("scipy", "scipy"))   # (pip name, module) for the shape search
+TOOLS_URL = "https://raw.githubusercontent.com/pasujemito/kabuto-keyboard/main/tools/"
+NAME_MIN_W = 100      # px: a map name area narrower than this cuts longer names off
+
+def ask(question, default=True):
+    """Yes or no in the terminal (Enter: the default). With no terminal, no."""
+    if not sys.stdin or not sys.stdin.isatty():
+        return False
+    try:
+        answer = input("%s [%s] " % (question, "Y/n" if default else "y/N")).strip().lower()
+    except EOFError:
+        return False
+    return answer.startswith("y") if answer else default
+
+def importable(module):
+    import importlib, importlib.util
+    importlib.invalidate_caches()
+    return importlib.util.find_spec(module) is not None
+
+def pip_install(names):
+    import subprocess
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install"] + list(names))
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+def frames_tool(ask=ask):
+    """mob_frames.py from next to this file; downloaded from GitHub first if
+    it isn't there (asked). None without it."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import mob_frames
+        return mob_frames
+    except ImportError:
+        pass
+    if not ask("Fetching frames needs mob_frames.py next to this file. Download it from GitHub?"):
+        return None
+    try:
+        req = urllib.request.Request(TOOLS_URL + "mob_frames.py", headers={"User-Agent": "kabuto-screen-stats"})
+        data = urllib.request.urlopen(req, timeout=30).read()
+        with open(os.path.join(here, "mob_frames.py"), "wb") as f:
+            f.write(data)
+        import mob_frames
+        return mob_frames
+    except Exception as e:
+        say("  Couldn't get it (%s): save %smob_frames.py next to this file" % (e, TOOLS_URL))
+        return None
+
+def get_ready(path, sprites_dir, ask=ask, install=pip_install, tool=frames_tool):
+    """Before starting, in the terminal: offers what the shape search needs and
+    isn't here yet (Pillow, numpy and scipy; the mobs' animation frames)."""
+    config = load_config(path, required=False)
+    skip = set(config.get("not_now", []))
+    before = set(skip)
+    need = [pip for pip, module in EXTRAS if not importable(module)]
+    if need and "packages" not in skip:
+        if ask("Mobs are found best by their shape, which needs %s. Install now?" % " and ".join(need)):
+            if not install(need):
+                say("  That didn't work. Try: python -m pip install %s" % " ".join(need))
+            importable("numpy")   # fresh look at what's installed
+        else:
+            skip.add("packages")
+            say("  OK (asked once). Later: python -m pip install %s" % " ".join(need))
+    if numpy_or_none() and os.path.isfile(os.path.join(sprites_dir, MAP_LIST)) and "frames" not in skip:
+        mf = tool(ask)
+        todo = mf.needing_frames(sprites_dir) if mf else []
+        if todo:
+            shown = ", ".join(os.path.splitext(p)[0] for p in todo[:3]) + (", ..." if len(todo) > 3 else "")
+            if ask("%d of your mobs have no animation frames yet (%s). Fetch them from maplestory.io?" % (len(todo), shown)):
+                try:
+                    saved, missing = mf.fetch(sprites_dir, mf.Api(), say=say, only=todo)
+                    mf.remember_not_found(sprites_dir, missing)
+                    say("  %d frames saved.%s" % (saved, " maplestory.io has no %s: they're matched by their PNG (add frames by hand as"
+                                                   " name.<anything>.png)." % ", ".join(missing) if missing else ""))
+                except Exception as e:   # no network, the site down: carry on without
+                    say("  Couldn't fetch frames (%s): carrying on with what's there." % e)
+            else:
+                skip.add("frames")
+                say("  OK (asked once). Later: python mob_frames.py")
+    if skip != before:
+        config["not_now"] = sorted(skip)
+        save_config(path, config)
+
+def get_ready_in_game(sct, config, path):
+    """First thing in the game: anything new to mark (F8; Esc means not now,
+    remembered), and maps to teach again. Returns True if the setup changed."""
+    skip = set(config.get("not_now", []))
+    before = json.dumps(config, sort_keys=True)
+    mobs = config.get("mobs") or {}
+    if numpy_or_none() and "bottom" in mobs and not mobs.get("tag") and "tag" not in skip:
+        say("New: the mob search can follow you on screen by your name tag.")
+        mark_tag(sct, mobs)
+        if not mobs.get("tag"):
+            skip.add("tag")
+            say("  (asked once; --tag to mark it later)")
+    area = config.get("map_name")
+    if area and area["x2"] - area["x1"] + 1 < NAME_MIN_W and "map_name" not in skip:
+        say("The map name area is %d px wide: longer names get cut off and look alike (The Burnt Land III and V)."
+            % (area["x2"] - area["x1"] + 1))
+        if mark_map_name(config):
+            for m in config.get("maps", {}).values():
+                m.pop("name_reading", None)   # names read from the new area: teach each again
+        skip.add("map_name")   # asked once either way
+    old = sorted(n for n, m in config.get("maps", {}).items() if m.get("rows") and not name_taught(m))
+    if old:
+        say("%d map(s) need teaching again (names are read a new way): on each, press F9: %s"
+            % (len(old), ", ".join(old[:4]) + (", ..." if len(old) > 4 else "")))
+    if skip != set(config.get("not_now", [])):
+        config["not_now"] = sorted(skip)
+    if json.dumps(config, sort_keys=True) != before:
+        save_config(path, config)
+        return True
+    return False
+
 def run(args):
     import mss
     sct, config = mss.mss(), load_config(args.config, required=False)
@@ -1909,6 +2039,7 @@ def run(args):
         say("First run: let's mark your bars, minimap and mobs (hover, then F8).")
         setup(args.config, args.sprites, args.game or "maplestory")
         config = load_config(args.config)
+    get_ready_in_game(sct, config, args.config)
     if args.game and config.get("game") != args.game:   # --game other: sampled colours again
         config["game"] = args.game
         save_config(args.config, config)
@@ -1919,7 +2050,7 @@ def run(args):
         screen.sizes = map_sizes(maps)
         screen.map_mobs = {n: e.get("mobs") for n, e in maps.items()}
         if LAYER:
-            LAYER.maps, LAYER.taught = sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items()}
+            LAYER.maps, LAYER.taught = sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items() if name_taught(m)}
             LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
             while not LAYER.commands.empty():
                 kind, value = LAYER.commands.get()
@@ -2468,7 +2599,9 @@ def selftest():
     assert ones(a) == 4 * 8 + 2 * 8 + 6 * 2 + 2 * 8 and rows_score(a, a) == 1.0
     assert rows_score(a, text_rows(name_area(henesys, 1), 60, 14)) == 1.0
     assert rows_score(a, text_rows(name_area(ellinia), 60, 14)) < 0.5 and rows_score([0] * 14, [0] * 14) == 0.0
-    reader = MapReader({"Henesys": {"rows": ["%x" % r for r in a]}, "Ellinia": {"rows": ["%x" % r for r in text_rows(name_area(ellinia), 60, 14)]}})
+    reader = MapReader({"Henesys": {"rows": ["%x" % r for r in a], "name_reading": NAME_READING},
+                        "Ellinia": {"rows": ["%x" % r for r in text_rows(name_area(ellinia), 60, 14)], "name_reading": NAME_READING},
+                        "Old Map": {"rows": ["%x" % r for r in a]}})   # taught before names were read this way: not matched
     assert reader.read(name_area(henesys, 1), 60, 14) == "Henesys" and reader.read(name_area(ellinia), 60, 14) == "Ellinia"
     assert reader.read(name_area([(5, 3, 50, 11)]), 60, 14) == ""   # a map you haven't taught
     assert safe_name("Henesys Hunting Ground!") == "Henesys_Hunting_Ground_" and safe_name("Slime-2") == "Slime-2"
@@ -2536,7 +2669,7 @@ def selftest():
         paint(fake.px, 800, 600 + x, 92 + y, 600 + x1, 92 + y1, white)
     stamp(fake.px, 800, 450, 310); stamp(fake.px, 800, 500, 310)   # mobs 54 and 104 px right of you
     config = {"map_name": {"x1": 600, "y1": 92, "x2": 659, "y2": 105},
-              "maps": {"Henesys Field": {"rows": ["%x" % v for v in a], "colors": [[200, 40, 160]], "step_x": 2, "step_y": 2,
+              "maps": {"Henesys Field": {"rows": ["%x" % v for v in a], "name_reading": NAME_READING, "colors": [[200, 40, 160]], "step_x": 2, "step_y": 2,
                                          "cell": 10, "min_hits": 3, "names": ["blob"], "mob_w": 20}},
               "mobs": {"x": 400, "y": 320, "top": 300, "bottom": 340, "reach": 100, "gap": 20, "colors": [list(green)]}}
     screen = Screen(fake, config)
@@ -2689,6 +2822,55 @@ def selftest():
     assert memory.update([moved], 1.2, "A") == [moved + (False,)]                 # seen again nearby: not counted twice
     assert memory.update([(0.7, "slime", 110, 50, 40, 30)], 1.3, "A")[1] == moved + (True,)   # another mob there doesn't replace it
     assert memory.update([], 1.4, "B") == []                                       # another map forgets it
+    # Getting ready: packages and frames offered once; a no is remembered.
+    with tempfile.TemporaryDirectory() as d:
+        path, lib = os.path.join(d, "kabuto-bars.json"), os.path.join(d, "mobs")
+        os.mkdir(lib)
+        answers, installed, asked = [], [], []
+        def fake_ask(q, default=True):
+            asked.append(q); return answers.pop(0)
+        def frames_offered(lib, path, fake_ask, asked, answers):
+            with open(os.path.join(lib, MAP_LIST), "w") as f:
+                json.dump([{"name": "A", "mobs": ["snail.png"]}], f)
+            class FakeFrames:
+                fetched = []
+                def needing_frames(self, sprites): return ["snail.png"]
+                def Api(self): return None
+                def fetch(self, sprites, api, say=None, only=None): self.fetched.append(only); return 3, []
+                def remember_not_found(self, sprites, missing): pass
+            frames, asked[:] = FakeFrames(), []
+            answers[:] = [True]
+            get_ready(path, lib, ask=fake_ask, install=None, tool=lambda ask: frames)
+            assert frames.fetched == [["snail.png"]] and "1 of your mobs" in asked[-1]
+            answers[:] = [False]
+            get_ready(path, lib, ask=fake_ask, install=None, tool=lambda ask: frames)
+            assert "frames" in load_config(path)["not_now"]
+            get_ready(path, lib, ask=fake_ask, install=None, tool=lambda ask: frames)
+            assert len(asked) == 2
+        global EXTRAS
+        saved_extras, EXTRAS = EXTRAS, (("kabuto-no-such-package", "kabuto_no_such_module"),)
+        try:
+            answers[:] = [False]
+            get_ready(path, lib, ask=fake_ask, install=lambda names: installed.extend(names) or True, tool=lambda ask: None)
+            assert installed == [] and load_config(path)["not_now"] == ["packages"] and "kabuto-no-such-package" in asked[0]
+            get_ready(path, lib, ask=fake_ask, install=lambda names: installed.extend(names) or True, tool=lambda ask: None)
+            assert len(asked) == 1                                            # not asked again
+            os.remove(path); answers[:] = [True]
+            get_ready(path, lib, ask=fake_ask, install=lambda names: installed.extend(names) or True, tool=lambda ask: None)
+            assert installed == ["kabuto-no-such-package"] and not os.path.exists(path)   # yes: installed, nothing to remember
+            EXTRAS = ()
+            if numpy_or_none():   # frames: fetched for the mobs without any, once
+                frames_offered(lib, path, fake_ask, asked, answers)
+        finally:
+            EXTRAS = saved_extras
+        # In the game: maps taught before names were read this way are listed; a wide name area isn't asked about.
+        config = {"map_name": {"x1": 0, "y1": 0, "x2": 199, "y2": 12}, "maps": {"Old": {"rows": ["1"]}, "New": {"rows": ["1"], "name_reading": NAME_READING}}}
+        import contextlib, io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            assert get_ready_in_game(None, config, path) is False
+        assert "1 map(s) need teaching again" in out.getvalue() and ": Old" in out.getvalue(), out.getvalue()
+    assert ask("anything?") is False or sys.stdin.isatty()                   # no terminal: no
     # MapleStory's fixed colours replace sampled ones; other games keep theirs.
     ms = apply_game({"game": "maplestory", "bars": {"hp": {"color": [1, 2, 3]}, "xp": {"color": [1, 2, 3]}}, "minimap": {"dot": [9, 9, 9]}})
     assert ms["bars"]["hp"]["color"] == [248, 10, 0] and ms["bars"]["xp"]["color"] == [206, 243, 0] and ms["minimap"]["dot"] == [255, 221, 68]
@@ -2886,6 +3068,8 @@ def main():
         learn_map(a.config, a.sprites, a.map)   # asks in the terminal; in the game, F9 does this
     else:
         # The pad's setup buttons work from the start, setup included.
+        if not (a.setup or a.mobs or a.mark or a.tag):
+            get_ready(a.config, a.sprites)   # what this version needs: asked in the terminal, before the game layer
         a.pads = None if a.dry_run else PadLink(a)
         if a.pads:
             watch_pad_keys(a.pads)

@@ -45,6 +45,35 @@ def listed_pngs(sprites_dir):
                 files.append(png)
     return files
 
+NOT_FOUND = "frames-not-found.txt"   # in the mobs folder: PNGs maplestory.io has no mob for (delete it to try them again)
+
+def not_found(sprites_dir):
+    """The PNGs an earlier run found no mob for."""
+    try:
+        with open(os.path.join(sprites_dir, NOT_FOUND), encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip()}
+    except FileNotFoundError:
+        return set()
+
+def remember_not_found(sprites_dir, missing):
+    """Adds `missing` to the not-found list, so they aren't asked about again."""
+    names = sorted(not_found(sprites_dir) | set(missing))
+    if names:
+        with open(os.path.join(sprites_dir, NOT_FOUND), "w", encoding="utf-8") as f:
+            f.write("".join(n + "\n" for n in names))
+
+def needing_frames(sprites_dir):
+    """The PNGs map.json lists that are there but have no animation frames yet
+    (and weren't found missing on maplestory.io before)."""
+    names = os.listdir(sprites_dir)
+    skip = not_found(sprites_dir)
+    out = []
+    for png in listed_pngs(sprites_dir):
+        stem = os.path.splitext(png)[0]
+        if png in names and png not in skip and not any(n != png and n.startswith(stem + ".") and n.lower().endswith(".png") for n in names):
+            out.append(png)
+    return out
+
 class Api:
     """maplestory.io, politely: a short pause between calls and patience when
     it's busy (it answers 503 when asked too fast)."""
@@ -79,11 +108,11 @@ class Api:
     def render(self, mob_id, animation, frame):
         return self.get("%s/%d/render/%s/%d" % (self.base, mob_id, animation, frame))
 
-def fetch(sprites_dir, api, dry_run=False, say=print):
-    """Fetches the missing frames for every PNG map.json lists. Returns
-    (frames saved, names not found)."""
+def fetch(sprites_dir, api, dry_run=False, say=print, only=None):
+    """Fetches the missing frames for every PNG map.json lists (or just those
+    in `only`). Returns (frames saved, names not found)."""
     saved, missing = 0, []
-    for png in listed_pngs(sprites_dir):
+    for png in (only if only is not None else listed_pngs(sprites_dir)):
         stem = os.path.splitext(png)[0]
         name, mob_id = wanted(stem)
         try:
@@ -137,6 +166,18 @@ def selftest():
         with open(os.path.join(d, "map.json"), "w") as f:
             json.dump([{"name": "C", "mobs": ["mystery_blob.png"]}], f)
         assert fetch(d, api, say=said.append) == (0, ["mystery_blob.png"]) and "end the file name with its ID" in said[-1]
+        # What still needs frames: listed, there, no frames, not known missing.
+        with open(os.path.join(d, "map.json"), "w") as f:
+            json.dump([{"name": "A", "mobs": ["snail.png", "slime.png", "blob.png", "gone.png", "odd.png"]}], f)
+        for name in ("snail.png", "slime.png", "blob.png", "odd.png"):
+            open(os.path.join(d, name), "wb").close()
+        assert needing_frames(d) == ["blob.png", "odd.png"]                # snail and slime have frames; gone.png isn't there
+        remember_not_found(d, ["odd.png"])
+        assert needing_frames(d) == ["blob.png"] and not_found(d) == {"odd.png"}
+        remember_not_found(d, ["blob.png"])
+        assert not_found(d) == {"odd.png", "blob.png"} and needing_frames(d) == []
+        api.calls.clear()
+        assert fetch(d, api, say=said.append, only=["slime.png"])[1] == [] and {c[0] for c in api.calls} <= {210100}
     print("selftest passed")
 
 def main():
@@ -153,6 +194,8 @@ def main():
         raise SystemExit("No %s: run this next to your mobs folder (or pass --sprites)" % os.path.join(a.sprites, "map.json"))
     print("Fetching frames for the mobs in %s from maplestory.io (%s v%s)..." % (os.path.join(a.sprites, "map.json"), a.region, a.version))
     saved, missing = fetch(a.sprites, Api(a.region, a.version), a.dry_run)
+    if not a.dry_run:
+        remember_not_found(a.sprites, missing)
     print("Done: %d frames saved%s." % (saved, "; not found: " + ", ".join(missing) if missing else ""))
 
 if __name__ == "__main__":

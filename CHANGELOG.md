@@ -13,6 +13,9 @@ and show up in the pad's **Updates** panel.
 - 👀 **Your field of view**: walkers count on your platform, flyers at your
   height (`"view": "screen"` counts everything on screen); a mob hidden for a
   moment by hit effects or mist is held for 0.6 s, so attacks don't stutter
+- ▶️ **One command**: `python screen_stats.py` offers what's missing when it
+  starts (Pillow, numpy and scipy; frames for mobs without any; your name
+  tag; a wider map-name area; maps to teach again), each asked once
 - 🎞️ **`tools/mob_frames.py`** fetches each mob's stand, move, fly and hit
   frames from maplestory.io for everything in `map.json`
 - 🏷️ **You're followed by your name tag**: mark it once (setup, or `--tag`),

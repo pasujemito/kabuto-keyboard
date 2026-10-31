@@ -164,9 +164,9 @@ bytes).
 
 1. Install Python 3 once (python.org, or `winget install Python.Python.3.12`
    on Windows; tick **Add to PATH**), then:
-   `pip install mss pynput pyserial pillow numpy scipy` (numpy finds mobs
-   by shape, scipy makes that several times faster; the python.org installer's
-   default "tcl/tk" option gives the game layer what it needs)
+   `pip install mss pynput pyserial` (the python.org installer's default
+   "tcl/tk" option gives the game layer what it needs; the first run offers
+   the rest)
 2. Copy `tools/screen_stats.py` onto the laptop (it's a single file:
    `https://raw.githubusercontent.com/pasujemito/kabuto-keyboard/main/tools/screen_stats.py`).
 3. Pair the pad with the laptop over Bluetooth as usual (that's how keys get in).
@@ -175,6 +175,20 @@ bytes).
 5. Run `python screen_stats.py` in the folder you copied it to. The first run
    walks you through setup (below) and saves `kabuto-bars.json` there; after
    that it finds the pad on the USB cable and starts sending.
+
+**One command, also after updating.** `python screen_stats.py` checks what
+it needs each time it starts and offers it, so there's nothing else to run:
+
+- in the terminal: installing Pillow, numpy and scipy (for finding mobs by
+  shape), and fetching the animation frames of any mob in `mobs/map.json`
+  that has none yet (it downloads `mob_frames.py` next to it if missing);
+- then in the game (F8 to mark, Esc for not now): your name tag, and the map
+  name area again if it's too narrow for long names; and which maps need
+  teaching again with F9.
+
+Each is asked once: a "no" is remembered (`not_now` in `kabuto-bars.json`;
+delete an entry to be asked again), and mobs maplestory.io doesn't have are
+kept in `mobs/frames-not-found.txt`.
 
 Over USB there's no Wi-Fi, `kabuto.local` or PIN involved: having the pad
 plugged in is the permission. Without a cable, it uses Wi-Fi instead.

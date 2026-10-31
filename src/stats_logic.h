@@ -184,19 +184,20 @@ struct StuckWatch {
 
 // ---- the screen reader's keys, pressed on the pad ---------------------------
 // "tool" steps press tools/screen_stats.py's keys from the pad: mark (its F8),
-// skip (Esc), map (F9), outlines (F10) and hide (F11), so setup and the game
-// layer need no keyboard and work whatever has focus. They wait here until the
+// skip (Esc), map (F9), outlines (F10), hide (F11), looser (F6) and stricter
+// (F7) mob colours, so setup, tuning and the game layer need no keyboard and
+// work whatever has focus. They wait here until the
 // script asks (USB "KABUTO keys", Wi-Fi POST /api/tool/keys); ones older than
 // TOOL_KEY_MAX_AGE_MS are dropped, so presses with no script running don't
 // fire later.
-enum ToolKey : uint8_t { TOOL_NONE, TOOL_MARK, TOOL_SKIP, TOOL_MAP, TOOL_OUTLINES, TOOL_HIDE };
+enum ToolKey : uint8_t { TOOL_NONE, TOOL_MARK, TOOL_SKIP, TOOL_MAP, TOOL_OUTLINES, TOOL_HIDE, TOOL_LOOSER, TOOL_STRICTER };
 const uint32_t TOOL_KEY_MAX_AGE_MS = 3000;
 inline const char* toolKeyName(uint8_t key) {
-    static const char* const names[] = {"", "mark", "skip", "map", "outlines", "hide"};
-    return key <= TOOL_HIDE ? names[key] : "";
+    static const char* const names[] = {"", "mark", "skip", "map", "outlines", "hide", "looser", "stricter"};
+    return key <= TOOL_STRICTER ? names[key] : "";
 }
 inline uint8_t toolKeyFromName(const char* name) {
-    for (uint8_t k = TOOL_MARK; name && k <= TOOL_HIDE; ++k)
+    for (uint8_t k = TOOL_MARK; name && k <= TOOL_STRICTER; ++k)
         if (!strcmp(name, toolKeyName(k))) return k;
     return TOOL_NONE;
 }

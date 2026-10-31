@@ -384,7 +384,7 @@
     <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
     <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
-    <button class="btn sm" id="newSetupLayer" title="A layer of buttons for the PC screen reader: mark, skip, which map, outlines, hide">🍁 Setup layer</button>
+    <button class="btn sm" id="newSetupLayer" title="Two layers of buttons for the PC screen reader: setup (mark, skip, which map, outlines) and tuning (looser, stricter, outlines, hide)">🍁 Setup layer</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
   </section>
@@ -737,26 +737,34 @@ function showTab(t){
 }
 
 /* layers */
-// A layer whose buttons are the PC screen reader's keys (mark, skip, which
-// map, outlines, hide) plus one back, so setup and the game layer work from
-// the pad. An empty button on the current layer, if any, switches to it.
+// Two layers whose buttons are the PC screen reader's keys, so setup, tuning
+// and the game layer work from the pad: MS🍁 Setup (mark, skip, which map,
+// outlines, on to Tune, back) and MS🍁 Tune (looser, stricter, outlines,
+// hide, to Setup, back). An empty button on the current layer, if any,
+// switches to Setup.
 function addSetupLayer(){
-  if(cfg.layers.length>=meta.maxLayers)throw new Error('No room for another layer (at most '+meta.maxLayers+').');
-  const from=selLayer,setup=cfg.layers.length,keys=Object.keys(TOOL_KEYS);
+  if(cfg.layers.length+2>meta.maxLayers)throw new Error('No room for two more layers (at most '+meta.maxLayers+').');
+  const from=selLayer,setup=cfg.layers.length,tune=setup+1,fromName=cfg.layers[from].name||'layer '+from;
+  const tool=k=>{const [name,hotkey]=TOOL_KEYS[k],label=name+' ('+hotkey+')';return [label,label,[{type:'tool',key:k}]];};
+  const go=(label,name,layer)=>[label,name,[{type:'layer',layer}]];
+  const layouts=[['MS🍁 Setup',[tool('mark'),tool('skip'),tool('map'),tool('outlines'),go('Tune ▸','Go to MS🍁 Tune',tune),go('Back','Back to '+fromName,from)]],
+                 ['MS🍁 Tune',[tool('looser'),tool('stricter'),tool('outlines'),tool('hide'),go('◂ Setup','Go to MS🍁 Setup',setup),go('Back','Back to '+fromName,from)]]];
+  const same=(w,steps)=>w.steps.length===1&&JSON.stringify(w.steps)===JSON.stringify(steps);
+  const wanted=[...new Set(layouts.flatMap(([,items])=>items.slice(0,meta.keyCount).map(([, ,steps])=>JSON.stringify(steps))).concat(JSON.stringify([{type:'layer',layer:setup}])))];
+  if(cfg.workflows.length+wanted.filter(j=>!cfg.workflows.some(w=>same(w,JSON.parse(j)))).length>64)throw new Error('Recording storage is full.');
   const reuse=(name,steps)=>{
-    let w=cfg.workflows.find(w=>w.steps.length===1&&JSON.stringify(w.steps)===JSON.stringify(steps));
+    let w=cfg.workflows.find(w=>same(w,steps));
     if(!w){w={id:freshId(),name,kind:'nano',recording:true,steps};cfg.workflows.push(w);}
     return w.id;
   };
-  const needed=keys.length+2-keys.filter(k=>cfg.workflows.some(w=>w.steps.length===1&&w.steps[0].type==='tool'&&w.steps[0].key===k)).length;
-  if(cfg.workflows.length+needed>64)throw new Error('Recording storage is full.');
-  const layer={name:'MS🍁 Setup',keys:[]};cfg.layers.push(layer);normalize();
-  keys.slice(0,meta.keyCount-1).forEach((k,i)=>{const [name,hotkey]=TOOL_KEYS[k];layer.keys[i].name=name+' ('+hotkey+')';setAssignment(layer.keys[i],'single',[reuse(name+' ('+hotkey+')',[{type:'tool',key:k}])]);});
-  const back=layer.keys[meta.keyCount-1];back.name='Back';setAssignment(back,'single',[reuse('Back to '+(cfg.layers[from].name||'layer '+from),[{type:'layer',layer:from}])]);
+  for(const [name,items] of layouts){
+    const layer={name,keys:[]};cfg.layers.push(layer);normalize();
+    items.slice(0,meta.keyCount).forEach(([label,wname,steps],i)=>{layer.keys[i].name=label;setAssignment(layer.keys[i],'single',[reuse(wname,steps)]);});
+  }
   const empty=cfg.layers[from].keys.map((k,i)=>k.steps.length?-1:i).filter(i=>i>=0).pop();
   if(empty!==undefined){const k=cfg.layers[from].keys[empty];k.name='🍁 Setup';setAssignment(k,'single',[reuse('Go to MS🍁 Setup',[{type:'layer',layer:setup}])]);}
   cfg.version=2;selLayer=setup;selKey=0;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();renderRecordings();updateDirty();
-  toast('Added the MS🍁 Setup layer'+(empty!==undefined?'; button '+(empty+1)+' on '+(cfg.layers[from].name||'layer '+from)+' goes to it':'')+'. Save to use it.');
+  toast('Added the MS🍁 Setup and Tune layers'+(empty!==undefined?'; button '+(empty+1)+' on '+fromName+' goes to Setup':'')+'. Save to use them.');
 }
 function renderLayers(){
   const b=$("#layerbar");b.replaceChildren();
@@ -1100,7 +1108,7 @@ function recordingSteps(recording,seen=new Set()){
   });
 }
 // Buttons for tools/screen_stats.py ("tool" steps): its keys, pressed on the pad.
-const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11']};
+const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11'],looser:['Looser','F6'],stricter:['Stricter','F7']};
 function isToolRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='tool';}
 function recordingSummary(recording){
   if(isToolRecording(recording)){const k=TOOL_KEYS[recording.steps[0].key];return `Screen reader key · ${k?k[0]+' ('+k[1]+')':recording.steps[0].key}`;}

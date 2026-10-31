@@ -191,18 +191,21 @@ the game has focus:
 | F8 | mark the point under the pointer (setup) |
 | Esc | skip a setup step |
 | F9 | which map is this? A window lists the maps in `mobs/map.json`, your 5 most recently taught first. Just type to search (words in any order, `rocky 2` finds Rocky Road II), ↑↓ to move, Enter or a double click teaches it (about 4 s), Esc closes. Taught maps are green, changed ones amber. Click back into the game after |
-| F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, ×2 for two side by side), the minimap and where it reads your dot (cyan), the map name area |
+| F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, with how well its PNG matched, e.g. *red-snail 98%*), clumps of mob colour that aren't a mob (grey, *not a mob 31%*), the minimap and where it reads your dot (cyan), the map name area |
 | F11 | hide or show the layer |
+| F6 / F7 | **looser / stricter** mob colours on this map (tolerance ±5, saved straight away; the strip shows it). Watch the F10 outlines while you press |
 
 **Or press them on the pad.** In the editor, **Recordings → 🍁 Setup layer**
-adds a layer called *MS🍁 Setup* whose buttons are those keys:
+adds two layers whose buttons are those keys:
 
-| Button | 1 | 2 | 3 | 4 | 5 | 6 |
+| Layer | 1 | 2 | 3 | 4 | 5 | 6 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Does | Mark (F8) | Skip (Esc) | Which map (F9) | Outlines (F10) | Hide layer (F11) | Back |
+| *MS🍁 Setup* | Mark (F8) | Skip (Esc) | Which map (F9) | Outlines (F10) | Tune ▸ | Back |
+| *MS🍁 Tune* | Looser (F6) | Stricter (F7) | Outlines (F10) | Hide layer (F11) | ◂ Setup | Back |
 
 and puts a **🍁 Setup** button on a free key of the layer you were on, to get
-there. Save, then press 🍁 Setup on the pad: hover something in the game,
+there. (Made a Setup layer with 1.17.0-1.17.2? Press the button again for the
+Tune layer; the old layer can be deleted.) Save, then press 🍁 Setup on the pad: hover something in the game,
 press **Mark** on the pad, and so on, with no keyboard and whatever has focus.
 **Back** returns to your layer. The buttons type nothing into the game: the
 pad keeps each press (for up to 3 s) until the script collects it, over the
@@ -262,7 +265,11 @@ to 5), leaves out the black outline, white and greys every sprite has, and
 keeps colours that are much commoner on the mob than on the map. Detection
 then looks for a **clump** of mob colour about the size of your smallest mob,
 so stray matching pixels spread over the scenery don't count; the map's
-busiest patch sets how big a clump must be. It prints what it kept:
+busiest patch sets how big a clump must be. Then each clump is checked
+against your PNGs: MapleStory draws sprites pixel for pixel, so a real mob
+lines up with one of them (facing either way), outline and all. Scenery that
+merely shares a colour (a sign, a fence, flowers) doesn't, and isn't counted;
+two mobs side by side are two matches. It prints what it kept:
 
 ```
   boar.png: skipped [102, 51, 34] (32% of it, but the map has it too: 14.5%, up to 100 hits in one patch)
@@ -270,6 +277,16 @@ busiest patch sets how big a clump must be. It prints what it kept:
   stump.png: no colour of its own - it looks too much like the map to spot
   A mob needs 11 hits in a 28 px patch (the map's busiest patch had 4)
 ```
+
+**Tuning it live:** if it misses mobs, press **Looser** (F6, or on the
+*MS🍁 Tune* layer); if it sees mobs that aren't there, **Stricter** (F7). Each
+press moves that map's colour `tolerance` by 5 (10-100; 40 to start) and
+saves it in `kabuto-bars.json` straight away: the next reading uses it, and
+the F10 outlines show the effect (matched mobs with their %, grey boxes for
+what was turned down). Because the shape check rejects look-alike scenery,
+erring a little loose is fine. Two more per-map settings there, by hand:
+`shape` (how well a PNG must match, 0-1; 0.5 by default; 0 turns the check
+off) and `min_hits` (how big a clump of colour must be).
 
 **Seeing further than you reach:** mobs are looked for in your hitbox's height
 2.5 times your reach either side (`sight` in `kabuto-bars.json`; lower it if

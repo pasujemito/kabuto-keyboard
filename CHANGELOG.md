@@ -3,6 +3,25 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.0
+
+- 🔍 **Mobs found by shape** (with numpy): every animation frame of the map's
+  mobs is matched along the band level with your feet, part by part (outline,
+  body, eye...). Works where colour can't, like Perion's brown stumps and
+  boars on brown rock; only mobs on your platform count. Tested on real
+  scenes from Perion, Sleepywood and Kerning: 20 of 21 mobs found, nothing
+  wrong counted. scipy makes it several times faster
+- 🎞️ **`tools/mob_frames.py`** fetches each mob's stand, move, fly and hit
+  frames from maplestory.io for everything in `map.json`
+- 🏷️ **You're followed by your name tag**: mark it once (setup, or `--tag`),
+  and the hitbox and search move with you wherever the camera puts you
+- 🗺️ **Map names read reliably**: MapleStory's light title bar no longer
+  counts as text, so different maps stop looking alike (teach maps again)
+- 🧪 **`tools/scene_check.py`** replays screenshots through the reader and
+  draws what it found
+- 💬 A colour skipped for being too small a part of its mob now says so,
+  instead of blaming the map; maps can be taught without colours (by shape)
+
 ## 1.17.3
 
 - 🔎 **Searchable map picker**: F9 (Which map) opens a list you can type

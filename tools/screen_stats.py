@@ -11,7 +11,7 @@ Nothing else leaves your PC: no screenshots, no reading text. All the work
 happens here, so the pad only stores a few numbers.
 
 Easiest: plug the pad into the game PC with a USB data cable, then
-    pip install mss pynput pyserial pillow
+    pip install mss pynput pyserial pillow numpy scipy
     python screen_stats.py
 The first run walks you through setup; after that it finds the pad on the
 cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
@@ -19,7 +19,11 @@ cable and starts sending. No Wi-Fi or PIN over USB. To redo setup:
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
     # right end; the minimap's top-left and bottom-right corners (and your dot
     # with --game other); the map's name; your character's head, feet and
-    # attack reach (the hitbox mobs are looked for in).
+    # attack reach (the hitbox mobs are looked for in); your name tag (so
+    # you're followed wherever the camera puts you; --tag to redo just that).
+With numpy, mobs are found by shape: every animation frame of the map's mobs
+(mob.png plus mob.*.png; fetch them with mob_frames.py) matched along the band
+level with your feet. scipy makes it several times faster.
 MapleStory's bar and dot colours are built in (--game maplestory, the
 default), so bars can be empty during setup. --game other samples them.
 
@@ -311,7 +315,7 @@ SIGHT = 2.5   # how far you look for mobs, in attack reaches either side
 # way) should line up with what's on screen. Scenery that merely shares a
 # colour doesn't, and is left out, so tolerance can be generous.
 
-SHAPE_MIN = 0.5       # how well a sprite must match, 0-1 (per map: "shape"; 0 = no check)
+SHAPE_MIN = 0.6       # how well a sprite must match, 0-1 (per map: "shape"; 0 = no check)
 SHAPE_POINTS = 160    # solid pixels compared per sprite, spread evenly over it
 
 def sprite_shapes(sprites, table):
@@ -492,13 +496,17 @@ def mob_fields(view, reach):
 # compared after. Small shifts are allowed; a mostly matching name wins.
 
 def text_rows(raw, w, h, light=170):
-    """The map name area's light pixels (the name's letters), one int per row."""
+    """The map name area's light pixels (the name's letters), one int per row.
+    Light means at least `light` and clearly brighter than the area itself
+    (its middle brightness + 40), so a light title bar behind the name, as
+    MapleStory's minimap has, isn't taken for letters."""
+    lum = [raw[i] * 3 + raw[i + 1] * 6 + raw[i + 2] for i in range(0, w * h * 3, 3)]
+    cut = min(2450, max(light * 10, sorted(lum)[len(lum) // 2] + 400)) if lum else light * 10
     rows = []
     for y in range(h):
         bits = 0
         for x in range(w):
-            i = (y * w + x) * 3
-            if raw[i] * 3 + raw[i + 1] * 6 + raw[i + 2] >= light * 10:
+            if lum[y * w + x] >= cut:
                 bits |= 1 << x
         rows.append(bits)
     return rows
@@ -592,6 +600,7 @@ def learn_mob_colors(sprites, backgrounds, w, h, tolerance=40, gap=40, mid=None)
         for i, share in owned:
             if share_on_map[i] <= share / 4:
                 kept |= 1 << i
+    own = kept   # the colours the map hasn't got: any dropped below were too little of their mob to spot
     # Checks landing on each sprite, as colour bits, and how many fit in one patch.
     fit = {name: min(1.0, (2 * cell) ** 2 / float(sw * sh)) for name, (sw, sh, _) in sprites.items()}
     on_sprite = {name: [table[p[0] >> 3 << 10 | p[1] >> 3 << 5 | p[2] >> 3] for y in range(0, sh, step) for x in range(0, sw, step)
@@ -611,11 +620,14 @@ def learn_mob_colors(sprites, backgrounds, w, h, tolerance=40, gap=40, mid=None)
         for i, share in owned:
             if kept >> i & 1:
                 report.append("  %s: %s (%d%% of it, %.1f%% of the map)" % (name, colors[i], share * 100, share_on_map[i] * 100))
+            elif own >> i & 1:
+                report.append("  %s: skipped %s (%d%% of it and not on the map, but too little of it to spot from afar)"
+                              % (name, colors[i], share * 100))
             else:
                 report.append("  %s: skipped %s (%d%% of it, but the map has it too: %.1f%%, up to %d hits in one patch)"
                               % (name, colors[i], share * 100, share_on_map[i] * 100, peak(1 << i)))
         if not mine:
-            report.append("  %s: no colour of its own - it looks too much like the map to spot" % name)
+            report.append("  %s: no colour of its own to spot it by%s" % (name, " (its shape still can, with numpy)" if numpy_or_none() else ""))
     chosen = [i for i in range(len(colors)) if kept >> i & 1]
     if chosen:
         report.append("  A mob needs %d hits in a %d px patch (the map's busiest patch had %d)" % (need, 2 * cell, peak(kept)))
@@ -710,6 +722,216 @@ def read_bars(sct, bars):
         readings[name] = fill_percent(row, bar["color"], bar.get("tolerance", 60), step=bar.get("fade", 30))
     return readings
 
+# ---- shape search: your PNGs matched across the screen (numpy) -----------------
+# Colour can't pick out mobs on maps that share their colours (Perion's brown
+# stumps and boars on brown rock). With numpy (pip install numpy), every
+# animation frame of the map's mobs is matched across a band level with your
+# feet instead, each colour part of it (outline, body, axe...) checked where
+# it should be: a fast pass over the band, then a strict check of the best
+# spots. Frames: mob.png plus mob.<anything>.png (tools/mob_frames.py fetches
+# the stand, move and hit frames). Without numpy, colours as before.
+
+FEET_SLACK = 28       # px a mob's feet may be above or below yours and still count as on your platform
+FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
+
+def numpy_or_none():
+    try:
+        import numpy
+        return numpy
+    except ImportError:
+        return None
+
+def ffts(np):
+    """(rfft2, irfft2): scipy's when installed (several times faster, every
+    core), else numpy's."""
+    try:
+        from scipy import fft
+        return (lambda a, size: fft.rfft2(a, size, workers=-1)), (lambda a, size: fft.irfft2(a, size, workers=-1))
+    except ImportError:
+        return np.fft.rfft2, np.fft.irfft2
+
+def frame_files(sprites_dir, files):
+    """{mob: [file, ...]}: each listed PNG and its animation frames
+    (snail.png, snail.move0.png, snail.hit10.png ...)."""
+    out = {}
+    names = sorted(os.listdir(sprites_dir)) if os.path.isdir(sprites_dir) else []
+    for f in files:
+        mob = os.path.splitext(f)[0]
+        found = [n for n in names if n == f or (n.startswith(mob + ".") and n.lower().endswith(SPRITE_TYPES))]
+        if found:
+            out[mob] = found
+    return out
+
+def fast_len(n):
+    """The next size FFTs are quick at (2, 3 and 5 only)."""
+    while True:
+        m = n
+        for p in (2, 3, 5):
+            while m % p == 0:
+                m //= p
+        if m == 1:
+            return n
+        n += 1
+
+def colour_parts(np, rgba):
+    """A frame's colour parts: [(mean rgb, mask)] for groups of near shades
+    (3% of it or more): outline, body, eye..."""
+    solid = rgba[..., 3] >= 200
+    a = rgba.astype(np.int32)
+    key = (a[..., 0] // 48) * 100 + (a[..., 1] // 48) * 10 + a[..., 2] // 48
+    out = []
+    values, counts = np.unique(key[solid], return_counts=True)
+    for v, n in zip(values, counts):
+        if n >= solid.sum() * 0.03:
+            m = solid & (key == v)
+            out.append((tuple(float(c) for c in a[..., :3][m].mean(axis=0)), m.astype(np.float32)))
+    return out
+
+def strict_score(np, nears, parts, x, y, h, w, floor=0.08):
+    """Every part must be there: a geometric mean of how much of each part
+    matches, weighted by its size (but no part below `floor`), so a small
+    flickering one (flames, sparkles) can't veto a match and scenery sharing
+    some colours can't pass."""
+    total = sum(m.sum() for _, m in parts)
+    wsum = logs = 0.0
+    for near, (_, m) in zip(nears, parts):
+        share = float((near[y:y + h, x:x + w] * m).sum() / m.sum())
+        weight = max(m.sum() / total, floor)
+        wsum += weight
+        logs += weight * np.log(share + 0.05)
+    return round(float(np.exp(logs / wsum) - 0.05), 3)
+
+class ShapeSearch:
+    """A map's mob frames (both facings, near-duplicates dropped), searched for
+    in the band level with your feet, as wide as the screen at most. A fixed
+    band size keeps each frame's FFT computed once."""
+    def __init__(self, np, frames, sight, width=None, slack=FEET_SLACK):
+        """`frames`: {mob: [rgba array, ...]}; `width`: the screen's."""
+        self.np, self.sight, self.slack, self.frames, self.cache = np, sight, slack, [], {}
+        self.rfft, self.irfft = ffts(np)
+        for mob, images in sorted(frames.items()):
+            seen = []
+            for rgba in images:
+                for flipped in (False, True):
+                    r = np.ascontiguousarray(rgba[:, ::-1] if flipped else rgba)
+                    solid = r[..., 3] >= 200
+                    if any(sh.shape == solid.shape and (sh != solid).sum() < 0.1 * solid.sum() for sh in seen):
+                        continue   # much the same frame again
+                    seen.append(solid)
+                    parts = colour_parts(np, r)
+                    if not parts:
+                        continue
+                    sizes = [float(m.sum()) for _, m in parts]
+                    # The fast pass looks at the bigger parts only (10%+, or the
+                    # 3 biggest); the strict check at all of them.
+                    big = [i for i, n in enumerate(sizes) if n >= 0.1 * sum(sizes)] or \
+                          sorted(range(len(parts)), key=lambda i: -sizes[i])[:3]
+                    self.frames.append((mob, parts, r.shape[0], r.shape[1], big, sum(sizes[i] for i in big)))
+        self.h = max([f[2] for f in self.frames] or [1])
+        self.w = max([f[3] for f in self.frames] or [1])
+        self.bh = self.h + 2 * slack
+        self.bw = min(2 * sight, width or 2 * sight) + self.w
+        self.fft = (fast_len(self.bh + self.h), fast_len(self.bw + self.w))
+
+    def search(self, screen, x, feet, tolerance=50, need=SHAPE_MIN):
+        """Mobs level with you: [(score, mob, left, top, width, height)], best
+        first, one per mob. `screen` is an (H, W, 3) array; x and feet are where
+        you stand on it."""
+        np = self.np
+        H, W = screen.shape[:2]
+        top = feet + self.slack - self.bh
+        left = max(-self.w, min(x - self.bw // 2, W + self.w - self.bw))   # centred on you, kept on the screen
+        band = np.zeros((self.bh, self.bw, 3), np.float32)   # off screen: matches nothing
+        y0, y1, x0, x1 = max(0, top), min(H, top + self.bh), max(0, left), min(W, left + self.bw)
+        if y1 > y0 and x1 > x0:
+            band[y0 - top:y1 - top, x0 - left:x1 - left] = screen[y0:y1, x0:x1]
+        t2, near, spectra, found = float(tolerance) ** 2, {}, {}, []
+        pp = (band * band).sum(axis=2)   # |p|^2 once: |p - c|^2 = |p|^2 - 2 p.c + |c|^2 per colour is then one product
+        for i, (mob, parts, h, w, big, big_total) in enumerate(self.frames):
+            nears, F = [], None
+            for j, (rgb, m) in enumerate(parts):
+                key = tuple(int(c) // 16 for c in rgb)   # near shades share one map
+                if key not in near:
+                    c = np.array(rgb, np.float32)
+                    near[key] = (pp - 2 * (band @ c) <= t2 - float(c @ c)).astype(np.float32)
+                nears.append(near[key])
+                if j not in big:
+                    continue
+                if key not in spectra:
+                    spectra[key] = self.rfft(near[key], self.fft)
+                if (i, j) not in self.cache:
+                    self.cache[(i, j)] = self.rfft(m[::-1, ::-1], self.fft)
+                product = spectra[key] * self.cache[(i, j)]
+                F = product if F is None else F + product
+            first = self.irfft(F, self.fft)[h - 1:self.bh, w - 1:self.bw] / big_total
+            rows = self.bh - self.slack - h          # where its feet are level with yours, give or take the slack
+            first[:max(0, rows - self.slack)] = 0
+            ys, xs = np.nonzero(first >= FIRST_PASS)
+            looked = []
+            for k in np.argsort(-first[ys, xs])[:12]:
+                cy, cx = int(ys[k]), int(xs[k])
+                if any(abs(cx - lx) < w // 2 and abs(cy - ly) < h // 2 for lx, ly in looked):
+                    continue
+                looked.append((cx, cy))
+                score = strict_score(np, nears, parts, cx, cy, h, w)
+                if score >= need:
+                    found.append((score, mob, left + cx, top + cy, w, h))
+        found.sort(key=lambda f: -f[0])
+        kept = []
+        for f in found:   # one per mob: overlapping finds are the same one
+            if all(abs((f[2] + f[4] / 2.0) - (k[2] + k[4] / 2.0)) > min(f[4], k[4]) * 0.6 for k in kept):
+                kept.append(f)
+        return kept
+
+class TagFinder:
+    """You, by your name tag (marked at setup): its leaf, letters and box
+    matched part by part, near where you were last (the whole screen when
+    lost), so a tag half under your pet's still wins. Returns the tag's
+    top-left and how sure (0-1)."""
+    def __init__(self, np, rgb, window=(260, 160)):
+        rgba = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255, rgb.dtype)], axis=2)
+        self.np, self.parts, self.window = np, colour_parts(np, rgba), window
+        self.rfft, self.irfft = ffts(np)
+        self.h, self.w = rgb.shape[:2]
+        self.last = None
+
+    def find(self, screen, need=0.3, skip_bottom=80):
+        np = self.np
+        H, W = screen.shape[:2]
+        spots = []
+        if self.last:
+            lx, ly = self.last
+            spots.append((max(0, lx - self.window[0]), max(0, ly - self.window[1]),
+                          min(W, lx + self.w + self.window[0]), min(H - skip_bottom, ly + self.h + self.window[1])))
+        spots.append((0, 0, W, H - skip_bottom))   # lost: the whole screen but the HUD
+        for x0, y0, x1, y1 in spots:
+            area = screen[y0:y1, x0:x1].astype(np.float32)
+            if area.shape[0] < self.h or area.shape[1] < self.w:
+                continue
+            size = (fast_len(area.shape[0] + self.h), fast_len(area.shape[1] + self.w))
+            nears, F, total = [], None, sum(m.sum() for _, m in self.parts)
+            for rgb, m in self.parts:
+                near = (((area - np.array(rgb, np.float32)) ** 2).sum(axis=2) <= 2500).astype(np.float32)
+                nears.append(near)
+                product = self.rfft(near, size) * self.rfft(m[::-1, ::-1], size)
+                F = product if F is None else F + product
+            first = self.irfft(F, size)[self.h - 1:area.shape[0], self.w - 1:area.shape[1]] / total
+            best, looked = (0.0, 0, 0), []
+            for k in np.argsort(-first, axis=None)[:400]:
+                y, x = divmod(int(k), first.shape[1])
+                if any(abs(x - lx) < self.w // 2 and abs(y - ly) < self.h // 2 for lx, ly in looked):
+                    continue
+                looked.append((x, y))
+                if len(looked) > 25:
+                    break
+                score = strict_score(np, nears, self.parts, x, y, self.h, self.w, floor=0.15)
+                if score > best[0]:
+                    best = (score, x + x0, y + y0)
+            if best[0] >= need:
+                self.last = (best[1], best[2])
+                return best[1], best[2], best[0]
+        return None
+
 # ---- tuning live: looser / stricter mob colours ------------------------------
 
 TOL_STEP, TOL_MIN, TOL_MAX = 5, 10, 100
@@ -746,6 +968,14 @@ class Screen:
         self.current = None   # the taught map you're on ("" untaught, None no map library)
         self.sizes = {}       # {map: its minimap size}, from map.json
         self.box = None       # the minimap box last read
+        self.map_mobs = {}    # {map: its mob PNGs}, from map.json
+        self.searches = {}    # {map: ShapeSearch}
+        self.you = None       # (x, feet) where your name tag says you are, else None
+        self.np, self.tag, self.pixels = numpy_or_none(), None, None
+        tag = (config.get("mobs") or {}).get("tag")
+        if self.np and tag:
+            rgb = self.np.frombuffer(bytes.fromhex(tag["rgb"]), self.np.uint8).reshape(tag["h"], tag["w"], 3)
+            self.tag = TagFinder(self.np, rgb)
         apply_game(config)
 
     def map_name(self):
@@ -783,11 +1013,72 @@ class Screen:
             self.shapes[key] = sprite_shapes(sprites, color_table(found["colors"], tolerance)) or None
         return self.shapes[key]
 
+    def screen(self):
+        """The whole (primary) screen as an array, once per reading, for the
+        name tag and the shape search; (array, left, top)."""
+        if self.pixels is None:
+            monitors = self.sct.monitors
+            m = monitors[1] if len(monitors) > 1 else monitors[0]
+            shot = grab(self.sct, m["left"], m["top"], m["width"], m["height"])
+            self.pixels = (self.np.frombuffer(shot, self.np.uint8).reshape(m["height"], m["width"], 3), m["left"], m["top"])
+        return self.pixels
+
+    def find_you(self):
+        """Where you stand: your name tag's place on screen if found, else
+        where you stood at setup. Sets self.you (None when not tracked)."""
+        mb = self.config.get("mobs") or {}
+        self.you = None
+        if self.tag:
+            pixels, ox, oy = self.screen()
+            found = self.tag.find(pixels)
+            if found:
+                self.you = (found[0] + ox - mb["tag"]["x"], found[1] + oy - mb["tag"]["y"])
+        return self.you
+
+    def shape_search(self, name):
+        """The map's ShapeSearch: numpy, a taught map and its mob frames (from
+        map.json); None otherwise."""
+        if not self.np or not name or not self.sprites_dir or name not in self.map_mobs:
+            return None
+        if name not in self.searches:
+            mb = self.config["mobs"]
+            try:
+                from PIL import Image
+                frames = {}
+                for mob, files in frame_files(self.sprites_dir, self.map_mobs[name] or []).items():
+                    frames[mob] = [self.np.asarray(Image.open(os.path.join(self.sprites_dir, f)).convert("RGBA")) for f in files]
+            except Exception:   # no Pillow, unreadable files
+                frames = {}
+            sight = int(mb.get("reach", 350) * mb.get("sight", SIGHT))
+            monitors = self.sct.monitors
+            width = (monitors[1] if len(monitors) > 1 else monitors[0])["width"]
+            self.searches[name] = ShapeSearch(self.np, frames, sight, width) if frames else None
+        return self.searches[name]
+
     def mobs(self, name):
-        """Mob fields for the reading (see mob_fields), with this map's colours
-        when it's taught, else the ones from setup. {} without a mob detector."""
+        """Mob fields for the reading (see mob_fields): by shape with numpy and
+        the map's frames; else with this map's colours when it's taught, or the
+        ones from setup. {} without a mob detector."""
         self.boxes = []
         mb = self.config.get("mobs")
+        if mb and "x" in mb and self.you:   # follow you: the box moves with your name tag
+            height = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
+            mb = dict(mb, x=self.you[0], y=self.you[1] - height // 2, top=self.you[1] - height, bottom=self.you[1])
+        search = self.shape_search(name) if mb else None
+        if search:
+            pixels, ox, oy = self.screen()
+            x, feet = (self.you or (mb["x"], mb.get("bottom", mb["y"])))
+            entry = self.config.get("maps", {}).get(name) or {}
+            found = search.search(pixels, x - ox, feet - oy, mob_tolerance(self.config, name) + 10, entry.get("shape", SHAPE_MIN))
+            view = {"L": [], "R": []}
+            for score, mob, left, top, w, h in found:
+                left, top = left + ox, top + oy
+                near = 0 if left <= x <= left + w else min(abs(left - x), abs(left + w - x))
+                view["R" if left + w / 2.0 >= x else "L"].append((near, mob))
+                self.boxes.append((left, top, left + w, top + h, mob, 1, score))
+            for side in view:
+                view[side].sort(key=lambda m: m[0])
+            return mob_fields(view, mb.get("reach", 350))
         found = self.config.get("maps", {}).get(name) if name else None
         found = found or mb
         if not mb or not found or not found.get("colors"):
@@ -808,7 +1099,9 @@ class Screen:
 
     def read(self):
         c = self.config
+        self.pixels = None   # a fresh screen this reading
         out = read_bars(self.sct, c.get("bars", {}))
+        self.find_you()
         name = self.current = self.map_name()   # first: the map decides the minimap's size
         dot, world, mm = None, None, self.minimap_box(name)
         if mm:
@@ -980,6 +1273,7 @@ def setup_mobs(sct, config, sprites_dir):
             say("  skipped"); return
         mobs.update(hitbox(*pts), sight=SIGHT)
         say("  Hitbox: %d px tall, %d px to each side." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
+        mark_tag(sct, mobs)
         learned = learn_here(sct, mobs, sprites) if sprites else None
         if learned:
             mobs.update(learned)
@@ -995,6 +1289,32 @@ def setup_mobs(sct, config, sprites_dir):
             say("  skipped"); return
         mobs.update(hitbox(*pts[:3]), colors=[pixel(sct, x, y) for x, y in pts[3:]])
     config["mobs"] = mobs
+
+def mark_tag(sct, mobs):
+    """Your name tag, so you're found wherever the camera puts you: its
+    top-left and bottom-right corners, kept with where it sits from your feet."""
+    pts = mark_points("Name tag: hover the TOP-LEFT corner of YOUR name tag (under your character), F8; "
+                      "then its BOTTOM-RIGHT corner, F8 (Esc skips)", 2)
+    if len(pts) < 2:
+        say("  skipped: you're looked for where you stood at setup"); return
+    (ax, ay), (bx, by) = pts
+    x1, y1, x2, y2 = min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)
+    if x2 - x1 < 10 or y2 - y1 < 6:
+        say("  That's too small for a name tag: skipped"); return
+    w, h = x2 - x1 + 1, y2 - y1 + 1
+    mobs["tag"] = {"x": x1 - mobs["x"], "y": y1 - mobs["bottom"], "w": w, "h": h, "rgb": grab(sct, x1, y1, w, h).hex()}
+    say("  Name tag kept (%d x %d px): you'll be followed wherever the camera puts you." % (w, h))
+
+def retag(path):
+    """--tag: mark just your name tag, keeping the rest of the setup."""
+    import mss
+    config = load_config(path)
+    mobs = config.get("mobs")
+    if not mobs or "bottom" not in mobs:
+        raise SystemExit("Mark your hitbox first: python screen_stats.py --mobs")
+    mark_tag(mss.mss(), mobs)
+    save_config(path, config)
+    say("Saved %s" % path)
 
 def learn_here(sct, mobs, sprites):
     """Mob settings for `sprites` against the map you're on, watched for 4 s
@@ -1194,7 +1514,11 @@ def teach_map(sct, config, sprites_dir, name):
     say("Teaching %s with %d sprite(s)." % (name, len(sprites)))
     learned = learn_here(sct, mobs, sprites)
     if not learned:
-        return "No usable mob colours for %s: nothing saved" % name
+        if not numpy_or_none():
+            return ("No usable mob colours for %s: nothing saved. pip install numpy to find these mobs by shape instead."
+                    % name)
+        say("  No colours of their own here: they'll be found by shape (numpy).")
+        learned = {"sprites": sorted(sprites)}
     learned["rows"] = ["%x" % r for r in rows]
     learned["taught_at"] = int(time.time())   # recent maps come first in the F9 list
     config.setdefault("maps", {})[name] = learned
@@ -1505,6 +1829,7 @@ def run(args):
     while True:
         maps = map_list.get()
         screen.sizes = map_sizes(maps)
+        screen.map_mobs = {n: e.get("mobs") for n, e in maps.items()}
         if LAYER:
             LAYER.maps, LAYER.taught = sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items()}
             LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
@@ -1517,6 +1842,7 @@ def run(args):
                     else:
                         save_config(args.config, config)
                         screen = Screen(sct, config, args.sprites)
+                        screen.sizes, screen.map_mobs = map_sizes(maps), {n: e.get("mobs") for n, e in maps.items()}
                         say("Taught %s: its mobs are looked for whenever this name shows." % value)
                 elif kind == "tune":   # F6 / F7: value is +1 (looser) or -1 (stricter)
                     tuned = tune_tolerance(config, screen.current, value)
@@ -1526,8 +1852,9 @@ def run(args):
                             % ("Looser" if value > 0 else "Stricter", tuned[1], tuned[0]))
                     else:
                         say("No mob colours here to tune: teach this map first (F9)")
+        started = time.time()
         readings = screen.read()
-        line = describe(readings)
+        line = describe(readings) + "  %d ms" % ((time.time() - started) * 1000)   # how long a reading takes here
         try:
             pad = pads.get() if pads else None
             link = pad.where if pad else "dry run"
@@ -1543,9 +1870,11 @@ def run(args):
             wait = 3
         if LAYER:
             hint = "%s changed in %s: F9 to relearn" % (screen.current, MAP_LIST) if screen.current in LAYER.changed else None
+            if screen.tag and not screen.you:
+                hint = (hint + " \u00b7 " if hint else "") + "can't see your name tag"
             tol = mob_tolerance(config, screen.current) if readings.get("mobs") is not None else None
             LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint, tol),
-                       layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box))
+                       layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box, screen.you))
         time.sleep(wait)
 
 # ---- the game layer -------------------------------------------------------------
@@ -1619,12 +1948,16 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None):
     out.append(("F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
     return out
 
-def layer_shapes(config, monitor, boxes, r, mm=None):
+def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
     """Outlines over the game: [(x0, y0, x1, y1, colour, label), ...] in screen
     coordinates. The minimap (`mm`, else the setup's) and name area are drawn
     just outside what's read."""
     out = []
     mb = config.get("mobs")
+    if mb and "x" in mb and you:   # where your name tag says you are
+        height = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
+        mb = dict(mb, x=you[0], y=you[1] - height // 2, top=you[1] - height, bottom=you[1])
+        out.append((you[0] - 5, you[1] - 5, you[0] + 5, you[1] + 5, "#00e5ff", ""))
     if mb and "x" in mb:
         if mb.get("cell") or config.get("maps"):   # mobs are looked for this far
             left, top, w, h = mob_area(mb, monitor, mb.get("sight", SIGHT))
@@ -2009,7 +2342,11 @@ def selftest():
     assert sniff(b"\x89PNG\r\n\x1a\n").startswith("a damaged") and sniff(b"RIFF\0\0\0\0WEBPVP8 ").startswith("a WebP")
     assert sniff(b"\0\0\0\x1cftypavif").startswith("an AVIF") and sniff(b"hello") == "not an image Pillow knows"
     learned, report = learn_mob_colors({"grass.png": (20, 20, [(60, 200, 60, 255)] * 400)}, [field], 300, 60)
-    assert not learned["colors"] and "looks too much like the map" in report[-1]
+    assert not learned["colors"] and "no colour of its own" in report[-1]
+    # A colour the map hasn't got, but only a speck of the mob: dropped, and said why.
+    speck = [(60, 200, 60, 255) if not (x < 2 and y < 2) else (200, 40, 160, 255) for y in range(20) for x in range(20)]
+    learned, report = learn_mob_colors({"speck.png": (20, 20, speck)}, [field], 300, 60)
+    assert not learned["colors"] and any("not on the map, but too little of it to spot" in r for r in report), report
     learned, _ = learn_mob_colors({"blob.png": (20, 20, sprite)}, [field], 300, 60)
     assert learned["names"] == ["blob"] and learned["mob_w"] == 20, learned   # colours named after their sprite
     # Every mob in sight: counted each side, nearest first, named; two side by
@@ -2207,6 +2544,38 @@ def selftest():
             assert list(map_sprites(lib, "Henesys")) == ["snail.png"] and sorted(map_sprites(lib, "Ellinia")) == ["slime.png", "snail.png"]
             assert map_sprites(lib, "Perion") == {}
 
+    # Shape search: animation frames sit next to their PNG; FFT sizes are quick ones.
+    with tempfile.TemporaryDirectory() as lib:
+        for name in ("snail.png", "snail.move0.png", "snail.hit10.png", "snail_big.png", "snailx.png", "slime.png"):
+            open(os.path.join(lib, name), "wb").close()
+        assert frame_files(lib, ["snail.png", "slime.png", "gone.png"]) == {"snail": ["snail.hit10.png", "snail.move0.png", "snail.png"],
+                                                                         "slime": ["slime.png"]}
+    assert [fast_len(n) for n in (1, 7, 97, 243, 1601)] == [1, 8, 100, 243, 1620]
+    np = numpy_or_none()
+    if np:   # the shape search and name tag themselves (numpy isn't needed to run this file)
+        rgba = np.array(sprite, np.uint8).reshape(20, 20, 4)
+        world = np.full((120, 400, 3), 40, np.uint8)
+        world[110:] = (60, 200, 60)                                           # grass
+        for x0, flip in ((60, False), (300, True)):                          # blobs standing on it, facing each way
+            r = rgba[:, ::-1] if flip else rgba
+            world[90:110, x0:x0 + 20][r[..., 3] > 0] = r[..., :3][r[..., 3] > 0]
+        world[93:107, 180:200] = (200, 40, 160)                              # a pink slab: a mob's colour, no mob
+        world[20:40, 130:150][rgba[..., 3] > 0] = rgba[..., :3][rgba[..., 3] > 0]   # a blob up on a ledge: not level with you
+        search = ShapeSearch(np, {"blob": [rgba]}, sight=200, width=400)
+        found = search.search(world, 200, 109)                                # you stand at x 200, feet at 109
+        assert sorted((f[1], f[2], f[3]) for f in found) == [("blob", 60, 90), ("blob", 300, 90)], found
+        assert all(f[0] > 0.9 for f in found) and len(search.frames) == 1   # the blob is symmetric: its mirror is the same frame
+        assert search.search(world, 200, 72) == []                          # feet half way up: neither level is yours
+        assert [(f[2], f[3]) for f in search.search(world, 200, 39)] == [(130, 20)]   # up on the ledge: that one is
+        tag = np.zeros((10, 30, 3), np.uint8); tag[:] = (60, 30, 90); tag[2:8, 1:7] = (220, 40, 30); tag[3:7, 10:28] = (230, 200, 160)
+        finder, shot = TagFinder(np, tag), np.full((200, 300, 3), (90, 140, 60), np.uint8)
+        shot[60:70, 40:70] = tag
+        assert finder.find(shot)[:2] == (40, 60) and finder.last == (40, 60)
+        shot[60:70, 40:70] = (90, 140, 60); shot[30:40, 200:230] = tag      # moved (the camera, or you)
+        assert finder.find(shot)[:2] == (200, 30)
+        shot[30:40, 200:230] = (90, 140, 60); shot[150:160, 100:130] = tag  # down in the HUD's strip: not looked at
+        assert finder.find(shot) is None
+
     # MapleStory's fixed colours replace sampled ones; other games keep theirs.
     ms = apply_game({"game": "maplestory", "bars": {"hp": {"color": [1, 2, 3]}, "xp": {"color": [1, 2, 3]}}, "minimap": {"dot": [9, 9, 9]}})
     assert ms["bars"]["hp"]["color"] == [248, 10, 0] and ms["bars"]["xp"]["color"] == [206, 243, 0] and ms["minimap"]["dot"] == [255, 221, 68]
@@ -2385,6 +2754,7 @@ def main():
     ap.add_argument("--map", nargs="?", const="", metavar="MAP",
                     help="teach the map you're on, with its mobs from map.json; asks which without one")
     ap.add_argument("--mark", choices=["death", "login"], help="capture a spot only that screen has")
+    ap.add_argument("--tag", action="store_true", help="mark just your name tag (so you're followed on screen)")
     ap.add_argument("--via", choices=["auto", "usb", "wifi"], default="auto",
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
     ap.add_argument("--host", default="kabuto.local", help="the pad's Wi-Fi address (default kabuto.local)")
@@ -2412,6 +2782,8 @@ def main():
             job = lambda: relearn_mobs(a.config, a.sprites)
         elif a.mark:
             job = lambda: mark(a.config, a.mark)
+        elif a.tag:
+            job = lambda: retag(a.config)
         else:
             job = lambda: run(a)
         try:

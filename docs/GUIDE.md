@@ -164,7 +164,8 @@ bytes).
 
 1. Install Python 3 once (python.org, or `winget install Python.Python.3.12`
    on Windows; tick **Add to PATH**), then:
-   `pip install mss pynput pyserial pillow` (the python.org installer's
+   `pip install mss pynput pyserial pillow numpy scipy` (numpy finds mobs
+   by shape, scipy makes that several times faster; the python.org installer's
    default "tcl/tk" option gives the game layer what it needs)
 2. Copy `tools/screen_stats.py` onto the laptop (it's a single file:
    `https://raw.githubusercontent.com/pasujemito/kabuto-keyboard/main/tools/screen_stats.py`).
@@ -255,6 +256,12 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    own character in the middle. Then up to 3 mobs of different kinds (it learns
    their colours); **Esc** when done. With mob sprites (below), you only mark
    the hitbox.
+4. **Name tag:** the top-left, then the bottom-right corner of **your name
+   tag** under your character. MapleStory's camera lags behind you and stops
+   at map edges, so you're rarely where the hitbox was marked: with numpy,
+   every reading finds your tag (part by part, so your pet's tag overlapping
+   it is fine) and the hitbox and mob search follow you. For a setup made
+   before 1.18, mark just the tag with `python screen_stats.py --tag`.
 
 **Mob sprites** pick far better colours than one hovered pixel. Put PNGs of the
 mobs you fight, with **transparent backgrounds** (a frame or two each, any
@@ -298,6 +305,28 @@ the nearest is** each side (in % of your reach: 100% is its edge) and its
 snail). The console shows it: `seen L1 (192%) R3 (52%) snail`. Older setups
 (colours marked by hand) keep sending sides only; run `--mobs` with sprites
 for the rest.
+
+**Finding mobs by shape (numpy):** colour can't tell Perion's brown stumps
+and boars from its brown rock, and mobs animate, so one PNG matches them only
+now and then. With numpy installed, the script instead matches every
+**animation frame** of the map's mobs, facing either way, along the band
+level with your feet: each colour part of a frame (outline, body, eye, axe)
+must sit where it should, a small flickering part (flames, sparkles) can't
+veto a match, and scenery that only shares colours can't pass. Only mobs on
+your platform count (their feet within 28 px of yours). Frames sit next to the
+mob's PNG as `mob.<anything>.png` (`axe_stump.png`, `axe_stump.move0.png`,
+`axe_stump.hit10.png`...). Fetch them for every mob in your `map.json` with:
+
+```bash
+python mob_frames.py        # stand, move, fly and hit frames from maplestory.io (GMS v83; --version to change)
+```
+
+It keeps the files you already have; a PNG whose name isn't a mob's is listed
+(end its name with the mob's ID, e.g. `zombie_mushroom_2230101.png`). With
+numpy, a map needs no colours of its own to be taught. Each reading's time is
+printed in the console (on a 4-core laptop about 0.4 s with scipy, 0.5 s
+without). Looser/Stricter (F6/F7) move the colour tolerance here too, and a
+map's `shape` (0.6 by default) sets how well a frame must match.
 
 **Mobs per map:** keep every mob's PNG once, in `mobs`, and describe each map
 in `mobs/map.json`: its name (as you like; the in-game name reads best) and
@@ -355,8 +384,10 @@ marks it too): stand on it and teach it again. A listed PNG that isn't in
 listed, PNGs in `mobs` are learned only for their maps, never for all of
 them. (Without `map.json`, the older layout still works: a folder per map,
 `mobs/Ellinia/*.png`.) If two maps' names look alike in the marked area, `--map` warns you:
-mark just the name. Names are read as light text (`light`, 170 by default, in
-`map_name`); lower it if the name is drawn darker. The pad gets the name (up to
+mark just the name, and make the area wide enough for the **longest** name
+(otherwise *The Burnt Land V* and *III* look the same). Names are read as
+text clearly lighter than the bar behind it, so MapleStory's light title bar
+doesn't count; maps taught before 1.18 need teaching again (F9). The pad gets the name (up to
 23 characters, spaces as `_`) to show, and to move home when you change maps.
 
 A mob that's the same colours as the map (a brown stump on brown dirt) can't
@@ -479,6 +510,21 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   mob types; bright skill effects in the same colours can fool it, and when
   the camera stops following you at a map edge, your character isn't where it
   was marked.
+
+### Checking screenshots
+
+`tools/scene_check.py` replays screenshots through the reader exactly as in
+the game, with your setup file and mobs folder, prints what it found and saves
+copies with the F10 outlines drawn on. Handy to see how well each map's mobs
+are picked up, or after changing frames or tolerance:
+
+```bash
+python scene_check.py --config kabuto-bars.json --sprites mobs --out checked scenes/*/*.png
+```
+
+A map whose name it doesn't recognise is guessed from the file name
+(`deep_valley_ii.png`); `--map "Deep Valley II"` says it outright. Shots must
+be at the resolution the setup was made at; PNG keeps colours exact.
 
 ### Updates from GitHub releases
 

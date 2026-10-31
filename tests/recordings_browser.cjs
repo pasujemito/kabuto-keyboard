@@ -240,6 +240,17 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.waitForFunction(()=>/Auto-pause/.test(document.querySelector('#liveStats').textContent));
   const pauseText=await page.locator('#liveStats').textContent();
   assert.match(pauseText,/◀ Facing left/);assert.match(pauseText,/Map not taught/);assert.match(pauseText,/Nearest Blue Snail · right · 180% of reach/);
+  // No mob readings (an untaught map): smart can't stop for mobs, and the dashboard says why.
+  patternState={...patternState,action:'attack'};liveState={...liveState,mobs:0,ml:-1,mr:-1,dl:-1,dr:-1,mob:undefined,map:'-'};
+  await page.waitForFunction(()=>/Mobs not counted/.test(document.querySelector('#liveStats').textContent));
+  const blindText=await page.locator('#liveStats').textContent();
+  assert.match(blindText,/⚠ Can't see mobs: attacking anyway/);assert.match(blindText,/this map isn't taught\. On it, press Which map \(F9\)/);
+  assert.equal(await page.locator('#liveStats .radar').count(),0);
+  liveState={...liveState,map:'Henesys'};
+  await page.waitForFunction(()=>/no mob detection on this map/.test(document.querySelector('#liveStats').textContent));
+  patternState={...patternState,smart:false};
+  await page.waitForFunction(()=>/Smart off/.test(document.querySelector('#liveStats').textContent));
+  assert.doesNotMatch(await page.locator('#liveStats').textContent(),/Can't see mobs/);
   patternState=null;
   liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
   await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
@@ -247,19 +258,25 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#liveStats .live-row').count(),1);   // unread bars aren't shown
   liveState=null;await page.waitForFunction(()=>document.querySelector('#liveStats').hidden);
   await page.locator('#tabRecordings').click();
-  // The screen reader's setup keys as pad buttons: a layer of them, a way back,
-  // and a free button on the current layer that goes there.
+  // The screen reader's keys as pad buttons: a Setup and a Tune layer, ways
+  // between them and back, and a free button on the current layer to get in.
   const layersBefore=await page.evaluate(()=>cfg.layers.length);
   await page.locator('#newSetupLayer').click();
-  const setupLayer=await page.evaluate(()=>{const L=cfg.layers[cfg.layers.length-1];return {name:L.name,keys:L.keys.map(k=>[k.name,cfg.workflows.find(w=>w.id===k.steps[0]?.workflow)?.steps[0]])};});
-  assert.equal(await page.evaluate(()=>cfg.layers.length),layersBefore+1);
-  assert.equal(setupLayer.name,'MS🍁 Setup');
-  assert.deepEqual(setupLayer.keys,[['Mark (F8)',{type:'tool',key:'mark'}],['Skip (Esc)',{type:'tool',key:'skip'}],['Which map (F9)',{type:'tool',key:'map'}],
-    ['Outlines (F10)',{type:'tool',key:'outlines'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['Back',{type:'layer',layer:0}]]);
+  const layerKeys=i=>page.evaluate(i=>{const L=cfg.layers[i];return {name:L.name,keys:L.keys.map(k=>[k.name,cfg.workflows.find(w=>w.id===k.steps[0]?.workflow)?.steps[0]])};},i);
+  assert.equal(await page.evaluate(()=>cfg.layers.length),layersBefore+2);
+  assert.deepEqual(await layerKeys(layersBefore),{name:'MS🍁 Setup',keys:[['Mark (F8)',{type:'tool',key:'mark'}],['Skip (Esc)',{type:'tool',key:'skip'}],
+    ['Which map (F9)',{type:'tool',key:'map'}],['Outlines (F10)',{type:'tool',key:'outlines'}],['Tune ▸',{type:'layer',layer:layersBefore+1}],['Back',{type:'layer',layer:0}]]});
+  assert.deepEqual(await layerKeys(layersBefore+1),{name:'MS🍁 Tune',keys:[['Looser (F6)',{type:'tool',key:'looser'}],['Stricter (F7)',{type:'tool',key:'stricter'}],
+    ['Outlines (F10)',{type:'tool',key:'outlines'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['◂ Setup',{type:'layer',layer:layersBefore}],['Back',{type:'layer',layer:0}]]});
   assert.deepEqual(await page.evaluate(n=>cfg.layers[0].keys.filter(k=>k.name==='🍁 Setup').map(k=>cfg.workflows.find(w=>w.id===k.steps[0].workflow).steps[0]),layersBefore),[{type:'layer',layer:layersBefore}]);
   assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Mark \(F8\)/);
-  await page.locator('#newSetupLayer').click();   // a second one reuses the same recordings
-  assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),5);
+  assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Looser \(F6\)/);
+  const toolCount=await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length);
+  assert.equal(toolCount,7);
+  if(await page.evaluate(()=>cfg.layers.length+2<=meta.maxLayers)){
+    await page.locator('#newSetupLayer').click();   // again: the same recordings are reused
+    assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),7);
+  }
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();
   assert.match(await page.locator('#networkStatus').textContent(),/Saved: HomeNet\. Joined only to check for updates/);

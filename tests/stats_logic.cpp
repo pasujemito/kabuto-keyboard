@@ -104,6 +104,7 @@ int main(){
     // stale ones dropped, the oldest pushed out when full.
     assert(toolKeyFromName("mark")==TOOL_MARK&&toolKeyFromName("hide")==TOOL_HIDE&&toolKeyFromName("f8")==TOOL_NONE&&toolKeyFromName(nullptr)==TOOL_NONE);
     assert(std::string(toolKeyName(TOOL_OUTLINES))=="outlines"&&std::string(toolKeyName(99))=="");
+    assert(toolKeyFromName("looser")==TOOL_LOOSER&&toolKeyFromName("stricter")==TOOL_STRICTER&&std::string(toolKeyName(TOOL_STRICTER))=="stricter");
     ToolKeys tk;char out[64];tk.take(0,out,sizeof(out));assert(!out[0]);
     tk.push(TOOL_MARK,1000);tk.push(TOOL_SKIP,4500);tk.push(TOOL_MAP,5000);tk.take(5000,out,sizeof(out));
     assert(std::string(out)=="skip,map"&&tk.count==0);   // the mark is 4 s old

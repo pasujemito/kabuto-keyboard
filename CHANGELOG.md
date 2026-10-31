@@ -3,6 +3,25 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.17.3
+
+- 🔎 **Searchable map picker**: F9 (Which map) opens a list you can type
+  into: words in any order, any case, `2` finds `II`. Recently taught maps
+  come first, taught ones are green and changed ones amber; ↑↓, Enter and
+  Esc work, with a count of matches
+- 🧩 **Shape check with your PNGs**: each clump of mob colour is confirmed by
+  laying your sprites over it (facing either way). Scenery that only shares
+  a colour (signs, fences, flowers) no longer counts as mobs, and two mobs
+  side by side are counted by their shapes. F10 shows each match's % and
+  greys out what was turned down
+- 🎚️ **Looser / Stricter live**: F6 / F7, or the new *MS🍁 Tune* pad layer,
+  move that map's colour tolerance by 5 and save it at once; the strip shows
+  the value
+- 👾 **Says when mobs aren't being counted**, and why (map not taught, no mob
+  detection), on the dashboard and in red on the game strip. A smart pattern
+  that can't see mobs, and so keeps attacking, shows "⚠ Can't see mobs"; a
+  pattern with Smart off shows "Smart off"
+
 ## 1.17.2
 
 - 🗺️ **`map.json` describes each map**: `[{"name": "Rocky Road II", "mobs":

@@ -25,11 +25,15 @@ default), so bars can be empty during setup. --game other samples them.
 
 The game layer: a strip across the top of the game shows what's read and
 sent, the map and the mobs, and each setup step, so you needn't leave the
-game. F8-F11 work while the game has focus:
+game. F6-F11 work while the game has focus:
     F8   mark (during setup)     F9   which map is this? (pick it from map.json)
     F10  outlines on the game    F11  hide or show the layer
-Or press them on the pad: the editor's "Setup layer" (Recordings) gives the
-pad buttons for Mark, Skip, Which map, Outlines, Hide and Back.
+    F6   looser mob colours      F7   stricter mob colours (this map, saved)
+Or press them on the pad: the editor's "Setup layer" (Recordings) gives two
+pad layers: Setup (Mark, Skip, Which map, Outlines) and Tune (Looser,
+Stricter, Outlines, Hide).
+Each clump of mob colour is checked against your PNGs (MapleStory draws
+sprites pixel for pixel), so scenery sharing a colour isn't counted.
 The game must be windowed or borderless. --no-layer for the terminal only.
 Mob sprites: put PNGs with transparent backgrounds (a frame or two of each
 mob) in a "mobs" folder here; setup learns their colours instead of asking
@@ -244,7 +248,7 @@ def color_table(colors, tolerance=40):
     return _tables[key]
 
 def mob_samples(raw, w, h, table, gap, mid, step, cell):
-    """The checks that hit a mob colour: [((right side?, cell x, cell y), colour bits, x), ...]."""
+    """The checks that hit a mob colour: [((right side?, cell x, cell y), colour bits, x, y), ...]."""
     out = []
     for y in range(0, h, step):
         row = y * w
@@ -254,14 +258,14 @@ def mob_samples(raw, w, h, table, gap, mid, step, cell):
             i = (row + x) * 3
             bits = table[raw[i] >> 3 << 10 | raw[i + 1] >> 3 << 5 | raw[i + 2] >> 3]
             if bits:
-                out.append(((x >= mid, x // cell, y // cell), bits, x))
+                out.append(((x >= mid, x // cell, y // cell), bits, x, y))
     return out
 
 def patches(samples, mask=-1):
     """Hits per patch (2 x 2 cells, about a mob's size), from samples whose
     colour bits are in `mask`: {(side, cell x, cell y): (hits, nearest x)}."""
     cells = {}
-    for key, bits, x in samples:
+    for key, bits, x, _ in samples:
         if bits & mask:
             n, xs = cells.get(key, (0, []))
             cells[key] = (n + 1, xs + [x])
@@ -301,18 +305,128 @@ def mob_sides(raw, w, h, colors, tolerance=40, gap=40, mid=None, step_x=6, step_
 
 SIGHT = 2.5   # how far you look for mobs, in attack reaches either side
 
-def mob_view(raw, w, h, colors, tolerance=40, gap=40, mid=None, step=6, min_hits=3, cell=16, names=None, mob_w=0, boxes=None):
+# ---- shape check: your PNGs laid over each clump ------------------------------
+# Colour finds candidates; the shape decides. MapleStory draws sprites pixel
+# for pixel, so where a clump of mob colour is, a mob's PNG (facing either
+# way) should line up with what's on screen. Scenery that merely shares a
+# colour doesn't, and is left out, so tolerance can be generous.
+
+SHAPE_MIN = 0.5       # how well a sprite must match, 0-1 (per map: "shape"; 0 = no check)
+SHAPE_POINTS = 160    # solid pixels compared per sprite, spread evenly over it
+
+def sprite_shapes(sprites, table):
+    """Your PNGs ready to lay over the screen: for each sprite and its mirror
+    image, a grid of its solid pixels [(dx, dy, r, g, b, colour group)] (at
+    most about SHAPE_POINTS; groups of near shades, the tiny ones left out),
+    the box and centre of its mob colours (per `table`; the centre is lined up
+    with a clump's) and its size. Sprites with none of the mob colours are
+    left out."""
+    out = []
+    for name, (sw, sh, pixels) in sorted(sprites.items()):
+        solid = [(x, y, tuple(pixels[y * sw + x][:3])) for y in range(sh) for x in range(sw) if pixels[y * sw + x][3] >= 200]
+        keyed = [(x, y) for x, y, c in solid if table[c[0] >> 3 << 10 | c[1] >> 3 << 5 | c[2] >> 3]]
+        if not keyed:
+            continue
+        grid = max(1, int((len(solid) / float(SHAPE_POINTS)) ** 0.5 + 0.999))
+        points = [(x, y, c) for x, y, c in solid if x % grid == 0 and y % grid == 0]
+        sizes = {}
+        for _, _, c in points:
+            sizes[(c[0] // 48, c[1] // 48, c[2] // 48)] = sizes.get((c[0] // 48, c[1] // 48, c[2] // 48), 0) + 1
+        groups = {g: i for i, g in enumerate(sorted(g for g, n in sizes.items() if n >= max(3, len(points) // 20)))}
+        points = [(x, y, c + (groups[(c[0] // 48, c[1] // 48, c[2] // 48)],)) for x, y, c in points
+                  if (c[0] // 48, c[1] // 48, c[2] // 48) in groups]
+        kx0, kx1 = min(x for x, _ in keyed), max(x for x, _ in keyed)
+        ky0, ky1 = min(y for _, y in keyed), max(y for _, y in keyed)
+        cx, cy = sum(x for x, _ in keyed) / float(len(keyed)), sum(y for _, y in keyed) / float(len(keyed))
+        base = os.path.splitext(name)[0]
+        out.append({"name": base, "points": [(x, y) + c for x, y, c in points], "key": (kx0, ky0, kx1, ky1),
+                    "center": (cx, cy), "size": (sw, sh)})
+        out.append({"name": base, "points": [(sw - 1 - x, y) + c for x, y, c in points],
+                    "key": (sw - 1 - kx1, ky0, sw - 1 - kx0, ky1), "center": (sw - 1 - cx, cy), "size": (sw, sh)})
+    return out
+
+def shape_score(raw, w, h, points, ox, oy, t2):
+    """How well a sprite matches the screen with its top-left at ox, oy, 0-1:
+    for each of its colour groups (outline, body, feet...) the share of its
+    pixels on screen within tolerance, combined so every part must be there
+    (a geometric mean): scenery in some of its colours but without, say, its
+    dark outline isn't it. 0 when less than half of it is on screen."""
+    inside, hit = {}, {}
+    for dx, dy, r, g, b, group in points:
+        x, y = ox + dx, oy + dy
+        if 0 <= x < w and 0 <= y < h:
+            inside[group] = inside.get(group, 0) + 1
+            i = (y * w + x) * 3
+            if (raw[i] - r) ** 2 + (raw[i + 1] - g) ** 2 + (raw[i + 2] - b) ** 2 <= t2:
+                hit[group] = hit.get(group, 0) + 1
+    if sum(inside.values()) * 2 < len(points):
+        return 0.0
+    product = 1.0
+    for g, n in inside.items():
+        product *= hit.get(g, 0) / float(n) + 0.05
+    return round(max(0.0, product ** (1.0 / len(inside)) - 0.05), 3)
+
+def fit_shape(raw, w, h, shape, cx, cy, t2, step):
+    """The best place for one sprite whose mob colours centre near cx, cy:
+    (score, left, top). A coarse look within a step either way with a third of
+    its pixels, then pixel by pixel around the best with all of them."""
+    kcx, kcy = shape["center"]
+    ox, oy = int(round(cx - kcx)), int(round(cy - kcy))
+    spacing = max(1, step // 2)
+    span = range(-step, step + 1, spacing)
+    coarse = shape["points"][::3]
+    _, bx, by = max((shape_score(raw, w, h, coarse, ox + dx, oy + dy, t2), ox + dx, oy + dy) for dx in span for dy in span)
+    fine = range(-(spacing // 2 + 1), spacing // 2 + 2)
+    return max((shape_score(raw, w, h, shape["points"], bx + dx, by + dy, t2), bx + dx, by + dy) for dx in fine for dy in fine)
+
+def find_shapes(raw, w, h, shapes, hits, tolerance, step, need=SHAPE_MIN, prefer=None):
+    """Where your sprites line up within one clump of mob colour (`hits`:
+    [(x, y), ...]): ([(score, name, left, top, shape), ...] matching at least
+    `need`, one per mob, best first; the best score of all). A clump wider than
+    a mob is tried at each spot along it, so two mobs side by side are two
+    matches and a fence beside a mob isn't another one."""
+    t2, xs = tolerance ** 2, [x for x, _ in hits]
+    width = max(1, min(s["key"][2] - s["key"][0] + 1 for s in shapes))
+    lo, hi = min(xs), max(xs)
+    if hi - lo <= width * 1.5:
+        centres = [(lo + hi) / 2.0]
+    else:
+        centres = [lo + width / 2.0 + k * width / 2.0 for k in range(int((hi - lo - width) / (width / 2.0)) + 1)] + [hi - width / 2.0]
+    tried = []
+    for c in centres:
+        near = [(x, y) for x, y in hits if abs(x - c) <= width / 2.0] or hits
+        cx, cy = sum(x for x, _ in near) / float(len(near)), sum(y for _, y in near) / float(len(near))
+        best = (0.0, None, 0, 0, None)
+        for shape in sorted(shapes, key=lambda s: s["name"] != prefer):
+            score, left, top = fit_shape(raw, w, h, shape, cx, cy, t2, step)
+            if score > best[0]:
+                best = (score, shape["name"], left, top, shape)
+            if score >= need:
+                break
+        tried.append(best)
+    found = []
+    for match in sorted(tried, key=lambda m: -m[0]):
+        if match[0] >= need and all(abs(match[2] - kept[2]) > width * 0.75 for kept in found):   # one per mob
+            found.append(match)
+    return found, max(m[0] for m in tried)
+
+def mob_view(raw, w, h, colors, tolerance=40, gap=40, mid=None, step=6, min_hits=3, cell=16, names=None, mob_w=0, boxes=None,
+             shapes=None, shape_min=SHAPE_MIN, shape_tolerance=None):
     """Every mob in the area, each side nearest first: {"L": [(distance px,
     name), ...], "R": [...]}. A mob is a clump: patches with at least
     `min_hits` hits whose cells touch. A clump wider than one mob (`mob_w` px)
     counts as that many side by side. `names` (one per colour) name a mob after
-    the sprite most of its hits came from; None without them. With a `boxes`
-    list, each clump's (x0, y0, x1, y1, name, count) in the area is added to it."""
+    the sprite most of its hits came from; None without them. With `shapes`
+    (sprite_shapes), a clump counts only if a sprite lines up with it (at
+    least `shape_min`; pixels within `shape_tolerance`, default tolerance +
+    20), and is named after it. With a `boxes` list, each clump's (x0, y0, x1,
+    y1, name, count, shape match or None) in the area is added to it; a clump
+    the shapes turned down has count 0."""
     mid = w // 2 if mid is None else mid
     samples = mob_samples(raw, w, h, color_table(colors, tolerance), gap, mid, step, cell)
     cells = {}
-    for key, bits, x in samples:
-        cells.setdefault(key, []).append((bits, x))
+    for key, bits, x, y in samples:
+        cells.setdefault(key, []).append((bits, x, y))
     hot = set()
     for (side, cx, cy), (n, _) in patches(samples).items():
         if n >= min_hits:
@@ -328,19 +442,32 @@ def mob_view(raw, w, h, colors, tolerance=40, gap=40, mid=None, step=6, min_hits
                     hot.remove(k)
                     todo.append(k)
         hits = [hit for k in group for hit in cells[k]]
-        xs = [x for _, x in hits]
+        xs = [x for _, x, _ in hits]
         votes = {}
-        for bits, _ in hits:
+        for bits, _, _ in hits:
             for i, name in enumerate(names or []):
                 if bits >> i & 1:
                     votes[name] = votes.get(name, 0) + 1
         name = max(sorted(votes), key=votes.get) if votes else None
+        rows = [cy for _, _, cy in group]
+        outline = (min(xs), min(rows) * cell, max(xs) + step, (max(rows) + 1) * cell)
+        side = "R" if group[0][0] else "L"
+        if shapes:   # each mob is a sprite that lines up; none: mob colours, but no mob there
+            found, best = find_shapes(raw, w, h, shapes, [(x, y) for _, x, y in hits], shape_tolerance or tolerance + 20,
+                                      step, shape_min, name)
+            if not found and boxes is not None:
+                boxes.append(outline + (name, 0, best))
+            for score, shaped, left, top, shape in found:
+                x0, x1 = left + shape["key"][0], left + shape["key"][2]
+                view[side].append((0 if x0 <= mid <= x1 else min(abs(x0 - mid), abs(x1 - mid)), shaped))
+                if boxes is not None:
+                    boxes.append((left, top, left + shape["size"][0], top + shape["size"][1], shaped, 1, score))
+            continue
         near = min(abs(x - mid) for x in xs)
         count = max(1, int(round((max(xs) - min(xs) + step) / float(mob_w)))) if mob_w else 1
-        view["R" if group[0][0] else "L"] += [(near + k * mob_w, name) for k in range(count)]
+        view[side] += [(near + k * mob_w, name) for k in range(count)]
         if boxes is not None:
-            rows = [cy for _, _, cy in group]
-            boxes.append((min(xs), min(rows) * cell, max(xs) + step, (max(rows) + 1) * cell, name, count))
+            boxes.append(outline + (name, count, None))
     for side in view:
         view[side].sort(key=lambda m: m[0])
     return view
@@ -459,7 +586,7 @@ def learn_mob_colors(sprites, backgrounds, w, h, tolerance=40, gap=40, mid=None)
     table = color_table(colors, tolerance)
     shots = [mob_samples(bg, w, h, table, gap, mid, step, cell) for bg in backgrounds]
     total = max(1, len(range(0, h, step)) * len(range(0, w, step)))
-    share_on_map = [min([sum(1 for _, bits, _ in ss if bits >> i & 1) / total for ss in shots] or [0]) for i in range(len(colors))]
+    share_on_map = [min([sum(1 for _, bits, _, _ in ss if bits >> i & 1) / total for ss in shots] or [0]) for i in range(len(colors))]
     kept = 0
     for name, owned in owners.items():
         for i, share in owned:
@@ -583,10 +710,34 @@ def read_bars(sct, bars):
         readings[name] = fill_percent(row, bar["color"], bar.get("tolerance", 60), step=bar.get("fade", 30))
     return readings
 
+# ---- tuning live: looser / stricter mob colours ------------------------------
+
+TOL_STEP, TOL_MIN, TOL_MAX = 5, 10, 100
+
+def mob_tolerance(config, name):
+    """How close a pixel's colour must be to a mob colour on this map: its own
+    "tolerance" if tuned, else the setup's (40 by default)."""
+    mb = config.get("mobs") or {}
+    found = config.get("maps", {}).get(name) if name else None
+    return (found or {}).get("tolerance", mb.get("tolerance", 40))
+
+def tune_tolerance(config, name, step):
+    """Looser (+1) or stricter (-1) mob colours on the map you're on (or, with
+    no taught map, the setup's): tolerance moves TOL_STEP within TOL_MIN-TOL_MAX.
+    Returns (what was tuned, new tolerance), or None with no mob colours here."""
+    mb = config.get("mobs")
+    found = config.get("maps", {}).get(name) if name else None
+    target = found or mb
+    if not mb or not target or not target.get("colors"):
+        return None
+    target["tolerance"] = min(TOL_MAX, max(TOL_MIN, mob_tolerance(config, name) + step * TOL_STEP))
+    return (name if found else "every map"), target["tolerance"]
+
 class Screen:
     """Everything read each tick, plus what's learned at start (the map)."""
-    def __init__(self, sct, config):
+    def __init__(self, sct, config, sprites_dir=None):
         mm = config.get("minimap") or {}
+        self.sprites_dir, self.shapes = sprites_dir, {}
         self.sct, self.config, self.state = sct, config, GameState()
         self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
         area = config.get("map_name")
@@ -615,6 +766,23 @@ class Screen:
             return mm
         return dict(mm, x2=mm["x1"] + size["width"] - 1, y2=mm["y1"] + size["height"] - 1)
 
+    def mob_shapes(self, name, found, tolerance):
+        """The sprites to check clumps against on this map (sprite_shapes), from
+        its PNGs; None without them (no sprites folder, Pillow or PNGs), when
+        its "shape" is 0, or for colours marked by hand."""
+        if not self.sprites_dir or not found.get("sprites") or not found.get("shape", SHAPE_MIN):
+            return None
+        key = (name, tolerance, tuple(map(tuple, found["colors"])))
+        if key not in self.shapes:
+            try:
+                taught = set(found["sprites"])
+                sprites = map_sprites(self.sprites_dir, name) if name else load_sprites(self.sprites_dir, taught)
+                sprites = {n: v for n, v in sprites.items() if n in taught}
+            except (SystemExit, Exception):   # no Pillow, unreadable files: colour only
+                sprites = {}
+            self.shapes[key] = sprite_shapes(sprites, color_table(found["colors"], tolerance)) or None
+        return self.shapes[key]
+
     def mobs(self, name):
         """Mob fields for the reading (see mob_fields), with this map's colours
         when it's taught, else the ones from setup. {} without a mob detector."""
@@ -630,11 +798,12 @@ class Screen:
                                       mb.get("gap", 40), mid=mb["x"] - left, step_x=found.get("step_x", 6),
                                       step_y=found.get("step_y", 8), min_hits=found.get("min_hits", 3))}
         left, top, w, h = mob_area(mb, self.sct.monitors[0], mb.get("sight", SIGHT))
-        boxes = []
-        view = mob_view(grab(self.sct, left, top, w, h), w, h, found["colors"], mb.get("tolerance", 40), mb.get("gap", 40),
+        boxes, tolerance = [], mob_tolerance(self.config, name)
+        view = mob_view(grab(self.sct, left, top, w, h), w, h, found["colors"], tolerance, mb.get("gap", 40),
                         mid=mb["x"] - left, step=found.get("step_x", 6), min_hits=found.get("min_hits", 3),
-                        cell=found["cell"], names=found.get("names"), mob_w=found.get("mob_w", 0), boxes=boxes)
-        self.boxes = [(x0 + left, y0 + top, x1 + left, y1 + top, name, n) for x0, y0, x1, y1, name, n in boxes]
+                        cell=found["cell"], names=found.get("names"), mob_w=found.get("mob_w", 0), boxes=boxes,
+                        shapes=self.mob_shapes(name, found, tolerance), shape_min=found.get("shape", SHAPE_MIN))
+        self.boxes = [(x0 + left, y0 + top, x1 + left, y1 + top) + tuple(rest) for x0, y0, x1, y1, *rest in boxes]
         return mob_fields(view, mb.get("reach", 350))
 
     def read(self):
@@ -675,7 +844,7 @@ class Screen:
 # it, so F8 only worked with the terminal in front. On Windows the keys' state
 # is read directly instead (GetAsyncKeyState), which needs no hook.
 
-KEYS = {"f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "esc": 0x1B}   # Windows key codes
+KEYS = {"f6": 0x75, "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "esc": 0x1B}   # Windows key codes
 
 class KeyEdges:
     """Which keys went down since the last look, from the keys down now."""
@@ -688,7 +857,7 @@ class KeyEdges:
         return pressed
 
 class Keys:
-    """Calls on_key("f8" ... "f11" or "esc") on its own thread, wherever the
+    """Calls on_key("f6" ... "f11" or "esc") on its own thread, wherever the
     focus is."""
     def __init__(self, on_key):
         self.on_key, self.stopped, self.listener = on_key, threading.Event(), None
@@ -737,7 +906,7 @@ def press(key):
         fn(key)
 
 # The pad's setup layer buttons ("tool" steps) and the keys they stand for.
-PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11"}
+PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11", "looser": "f6", "stricter": "f7"}
 
 def pointer():
     """Where the mouse pointer is on the screen."""
@@ -1027,6 +1196,7 @@ def teach_map(sct, config, sprites_dir, name):
     if not learned:
         return "No usable mob colours for %s: nothing saved" % name
     learned["rows"] = ["%x" % r for r in rows]
+    learned["taught_at"] = int(time.time())   # recent maps come first in the F9 list
     config.setdefault("maps", {})[name] = learned
     return None
 
@@ -1309,6 +1479,8 @@ def describe(r):
         parts.append("map %4.1f,%4.1f" % (r["x"], r["y"]))
     if r.get("mobs") is not None:
         parts.append("mobs " + (r["mobs"] or "-"))
+    if r.get("mobs") is None and r.get("state", "ok") == "ok":
+        parts.append("mobs: not looking" + (" (map not taught: F9)" if r.get("map") == "-" else ""))
     if r.get("ml") is not None:
         near = lambda side: "%d%%" % r["d" + side] if r.get("d" + side) is not None else "-"
         parts.append("seen L%d (%s) R%d (%s)" % (r["ml"], near("l"), r["mr"], near("r")) + (" " + r["mn"] if r.get("mn") else ""))
@@ -1328,23 +1500,32 @@ def run(args):
     if args.game and config.get("game") != args.game:   # --game other: sampled colours again
         config["game"] = args.game
         save_config(args.config, config)
-    screen, pad, link, map_list = Screen(sct, config), None, None, MapList(args.sprites)
+    screen, pad, link, map_list = Screen(sct, config, args.sprites), None, None, MapList(args.sprites)
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         maps = map_list.get()
         screen.sizes = map_sizes(maps)
         if LAYER:
-            LAYER.maps, LAYER.taught = sorted(maps), set(config.get("maps", {}))
+            LAYER.maps, LAYER.taught = sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items()}
             LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
             while not LAYER.commands.empty():
-                _, name = LAYER.commands.get()   # ("teach", map name) from F9
-                problem = teach_map(sct, config, args.sprites, name)
-                if problem:
-                    say(problem)
-                else:
-                    save_config(args.config, config)
-                    screen = Screen(sct, config)
-                    say("Taught %s: its mobs are looked for whenever this name shows." % name)
+                kind, value = LAYER.commands.get()
+                if kind == "teach":   # F9: value is the map
+                    problem = teach_map(sct, config, args.sprites, value)
+                    if problem:
+                        say(problem)
+                    else:
+                        save_config(args.config, config)
+                        screen = Screen(sct, config, args.sprites)
+                        say("Taught %s: its mobs are looked for whenever this name shows." % value)
+                elif kind == "tune":   # F6 / F7: value is +1 (looser) or -1 (stricter)
+                    tuned = tune_tolerance(config, screen.current, value)
+                    if tuned:
+                        save_config(args.config, config)
+                        say("%s: tolerance %d on %s (saved). Watch the outlines (F10)."
+                            % ("Looser" if value > 0 else "Stricter", tuned[1], tuned[0]))
+                    else:
+                        say("No mob colours here to tune: teach this map first (F9)")
         readings = screen.read()
         line = describe(readings)
         try:
@@ -1362,7 +1543,8 @@ def run(args):
             wait = 3
         if LAYER:
             hint = "%s changed in %s: F9 to relearn" % (screen.current, MAP_LIST) if screen.current in LAYER.changed else None
-            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint),
+            tol = mob_tolerance(config, screen.current) if readings.get("mobs") is not None else None
+            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint, tol),
                        layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box))
         time.sleep(wait)
 
@@ -1379,7 +1561,33 @@ def run(args):
 INK, DIM, AMBER, RED = "#e8eaed", "#8b919e", "#ffb020", "#ff5d5d"
 BAR_COLORS = {"hp": "#ff5d5d", "mana": "#4f8cff", "xp": "#cef300"}
 
-def layer_status(r, link, game=None, maps=(), hint=None):
+ROMAN = {"1": "i", "2": "ii", "3": "iii", "4": "iv", "5": "v", "6": "vi", "7": "vii", "8": "viii", "9": "ix", "10": "x"}
+
+def search_words(text):
+    """Lower case, punctuation as spaces: "Rocky Road: II" -> ["rocky", "road", "ii"]."""
+    return "".join(c.lower() if c.isalnum() else " " for c in text).split()
+
+def pick_list(names, query="", taught=None, changed=()):
+    """The F9 list: [(map, note), ...], best first. With a query, the maps that
+    have every word of it somewhere in the name (any order or case; 2 also
+    finds II), names starting with it first. Without one, the 5 most recently
+    taught, then the rest A-Z. Notes: "changed: teach again", "recent",
+    "taught" or ""."""
+    taught = taught or {}
+    recent = sorted((n for n in names if taught.get(n)), key=lambda n: -taught[n])[:5]
+    def note(n):
+        return "changed: teach again" if n in changed else "recent" if n in recent else "taught" if n in taught else ""
+    words = search_words(query)
+    if not words:
+        return [(n, note(n)) for n in recent + sorted((n for n in names if n not in recent), key=str.lower)]
+    def matches(name):
+        have = search_words(name)
+        return all(any(w in h or (w in ROMAN and h == ROMAN[w]) for h in have) for w in words)
+    hits = [n for n in names if matches(n)]
+    hits.sort(key=lambda n: (not " ".join(search_words(n)).startswith(" ".join(words)), n not in recent, n.lower()))
+    return [(n, note(n)) for n in hits]
+
+def layer_status(r, link, game=None, maps=(), hint=None, tol=None):
     """The strip's first line from a reading: [(text, colour), ...]."""
     known = GAMES.get(game)
     out = [("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER),
@@ -1390,7 +1598,7 @@ def layer_status(r, link, game=None, maps=(), hint=None):
     if r.get("state", "ok") != "ok":
         out.append((r["state"].upper(), RED))
     if r.get("map") == "-":
-        out.append(("new map: F9" if maps else "map not taught", AMBER))
+        out.append(("new map, mobs not seen: F9" if maps else "map not taught", RED))
     elif r.get("map"):
         out.append((r["map"].replace("_", " "), INK))
     if hint:
@@ -1404,7 +1612,11 @@ def layer_status(r, link, game=None, maps=(), hint=None):
                         RED if d <= 100 else DIM))
     elif r.get("mobs") is not None:
         out.append(("mobs " + (r["mobs"] or "-"), INK))
-    out.append(("F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
+    elif r.get("map") != "-":   # nothing to say how many: smart can't stop for them
+        out.append(("not looking for mobs" + (": F9 on this map" if maps else ""), RED))
+    if tol is not None:   # how close a colour must be to a mob's (F6 looser, F7 stricter)
+        out.append(("tolerance %d" % tol, DIM))
+    out.append(("F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
     return out
 
 def layer_shapes(config, monitor, boxes, r, mm=None):
@@ -1419,8 +1631,12 @@ def layer_shapes(config, monitor, boxes, r, mm=None):
             out.append((left, top, left + w, top + h, "#4f8cff", "sight"))
         left, top, w, h = mob_area(mb, monitor)
         out.append((left, top, left + w, top + h, RED, "reach"))
-    for x0, y0, x1, y1, name, n in boxes:
-        out.append((x0, y0, x1, y1, AMBER, (name or "mob").replace("_", " ") + (" x%d" % n if n > 1 else "")))
+    for x0, y0, x1, y1, name, n, *match in boxes:
+        score = " %d%%" % round(match[0] * 100) if match and match[0] is not None else ""
+        if n:
+            out.append((x0, y0, x1, y1, AMBER, (name or "mob").replace("_", " ") + (" x%d" % n if n > 1 else "") + score))
+        else:   # mob colours the shape check turned down
+            out.append((x0, y0, x1, y1, DIM, "not a mob" + score))
     mm = mm or config.get("minimap")
     if mm:
         out.append((mm["x1"] - 2, mm["y1"] - 2, mm["x2"] + 2, mm["y2"] + 2, "#45d6b5", "minimap"))   # labelled below
@@ -1458,7 +1674,7 @@ class Layer:
         root.report_callback_exception = self._error
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
         self.status, self.shapes, self.message, self.until = [("Kabuto", AMBER), ("starting", DIM)], [], "", 0
-        self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], set(), None
+        self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], {}, None
         self.changed = set()
         self.unlisten = listen(self.keys.put)
 
@@ -1510,6 +1726,8 @@ class Layer:
                 self.outlines = not self.outlines
             elif key == "f11":
                 self.hidden = not self.hidden
+            elif key in ("f6", "f7"):   # looser / stricter mob colours, done by the reading loop
+                self.commands.put(("tune", 1 if key == "f6" else -1))
         with self.lock:
             status, shapes = list(self.status), list(self.shapes)
             message = self.message if time.time() < self.until else ""
@@ -1548,29 +1766,84 @@ class Layer:
         c.tag_lower(bg)
 
     def _pick_map(self):
-        """Which map (from map.json) this is: a small window, one click."""
+        """Which map (from map.json) this is: a searchable list. Type to
+        narrow it, arrows to move, Enter or a double click to pick, Esc to close."""
         tk = self.tk
         if self.picker:
             self.picker.destroy()
         if not self.maps:
-            self.say('List your maps in mobs/%s, e.g. {"Henesys": ["snail.png"]}, with the PNGs in mobs, then F9' % MAP_LIST)
+            self.say('List your maps in mobs/%s, e.g. [{"name": "Henesys", "mobs": ["snail.png"]}], with the PNGs in mobs, then F9' % MAP_LIST)
             return
+        panel, field, font = "#1e2128", "#16181d", "Segoe UI"
         win = self.picker = tk.Toplevel(self.root)
         win.title("Which map is this?")
         win.attributes("-topmost", True)
-        win.configure(bg="#1e2128", padx=10, pady=8)
-        tk.Label(win, text="Which map are you on? Its mobs (its PNGs in %s) are learned here." % MAP_LIST, bg="#1e2128", fg=INK).pack(anchor="w")
-        def pick(name):
+        win.configure(bg=panel, padx=16, pady=14)
+        w, h = 460, 540
+        win.geometry("%dx%d+%d+%d" % (w, h, self.monitor["left"] + (self.monitor["width"] - w) // 2,
+                                      self.monitor["top"] + max(40, (self.monitor["height"] - h) // 3)))
+        tk.Label(win, text="Which map are you on?", bg=panel, fg=INK, font=(font, 14, "bold")).pack(anchor="w")
+        tk.Label(win, text="Type to search  \u00b7  \u2191\u2193 to move  \u00b7  Enter picks  \u00b7  Esc closes",
+                 bg=panel, fg=DIM, font=(font, 9)).pack(anchor="w", pady=(2, 10))
+        query = tk.StringVar()
+        entry = tk.Entry(win, textvariable=query, bg=field, fg=INK, insertbackground=INK, relief="flat", font=(font, 12),
+                         highlightthickness=1, highlightbackground="#2b2f39", highlightcolor=AMBER)
+        entry.pack(fill="x", ipady=7)
+        box = tk.Frame(win, bg=panel)
+        box.pack(fill="both", expand=True, pady=(10, 6))
+        bar = tk.Scrollbar(box, orient="vertical")
+        rows = tk.Listbox(box, bg=field, fg=INK, font=(font, 11), activestyle="none", relief="flat", highlightthickness=0,
+                          selectbackground=AMBER, selectforeground=field, borderwidth=0, yscrollcommand=bar.set)
+        bar.config(command=rows.yview)
+        bar.pack(side="right", fill="y")
+        rows.pack(side="left", fill="both", expand=True)
+        foot = tk.Frame(win, bg=panel)
+        foot.pack(fill="x")
+        count = tk.Label(foot, bg=panel, fg=DIM, font=(font, 9))
+        count.pack(side="left")
+        shown = []
+        def close(_=None):
             win.destroy()
             self.picker = None
-            self.commands.put(("teach", name))
-        for name in self.maps:
-            note = "   (changed: teach again)" if name in self.changed else "   (taught)" if name in self.taught else ""
-            tk.Button(win, text=name + note, anchor="w",
-                      command=lambda n=name: pick(n)).pack(fill="x", pady=1)
-        tk.Button(win, text="Cancel", command=lambda: (win.destroy(), setattr(self, "picker", None))).pack(fill="x", pady=(6, 0))
-        win.geometry("+%d+%d" % (self.monitor["left"] + 40, self.monitor["top"] + 60))
-        win.focus_force()
+        def choose(_=None):
+            picked = rows.curselection()
+            if picked:
+                name = shown[picked[0]][0]
+                close()
+                self.commands.put(("teach", name))
+            return "break"
+        def move(step):
+            if shown:
+                at = min(max((rows.curselection() or (0,))[0] + step, 0), len(shown) - 1)
+                rows.selection_clear(0, "end"); rows.selection_set(at); rows.activate(at); rows.see(at)
+            return "break"
+        def refresh(*_):
+            shown[:] = pick_list(self.maps, query.get(), self.taught, self.changed)
+            rows.delete(0, "end")
+            for i, (name, note) in enumerate(shown):
+                rows.insert("end", "  %s%s" % (name, "     " + note if note else ""))
+                if note:
+                    rows.itemconfig(i, fg=AMBER if note.startswith("changed") else "#45d6b5")
+            if shown:
+                rows.selection_set(0); rows.see(0)
+            total = len(self.maps)
+            count.config(text=("%d of %d maps" % (len(shown), total) if query.get().strip() else "%d maps" % total)
+                         + ("" if shown else "  \u00b7  no match"))
+        tk.Button(foot, text="Cancel", command=close, bg=field, fg=INK, relief="flat", padx=12,
+                  activebackground="#2b2f39", activeforeground=INK).pack(side="right")
+        tk.Button(foot, text="Teach this map", command=choose, bg=AMBER, fg=field, relief="flat", padx=12,
+                  activebackground="#ffc04d", activeforeground=field, font=(font, 10, "bold")).pack(side="right", padx=(0, 8))
+        query.trace_add("write", refresh)
+        for key, step in (("<Down>", 1), ("<Up>", -1), ("<Next>", 10), ("<Prior>", -10)):
+            entry.bind(key, lambda e, s=step: move(s))
+            rows.bind(key, lambda e, s=step: move(s))
+        for widget in (entry, rows):
+            widget.bind("<Return>", choose)
+        rows.bind("<Double-Button-1>", choose)
+        win.bind("<Escape>", close)
+        self.pick = {"query": query, "rows": shown, "choose": choose, "move": move, "list": rows}   # for the self-test
+        refresh()
+        win.after(50, entry.focus_force)
 
 def with_layer(job, enabled=True):
     """Runs `job` with the game layer up (the job on its own thread; the
@@ -1944,7 +2217,56 @@ def selftest():
     # Mob outlines: each clump's box in the area, named, with its count.
     boxes = []
     mob_view(sight, 1000, 30, [[200, 40, 160]], gap=40, step=2, min_hits=3, cell=10, names=["blob"], mob_w=20, boxes=boxes)
-    assert sorted(boxes) == [(104, 0, 118, 20, "blob", 1), (604, 0, 618, 20, "blob", 1), (804, 0, 838, 20, "blob", 2)], sorted(boxes)
+    assert sorted(boxes) == [(104, 0, 118, 20, "blob", 1, None), (604, 0, 618, 20, "blob", 1, None), (804, 0, 838, 20, "blob", 2, None)], sorted(boxes)
+    # The shape check: the blob PNG (either way round) lines up with each real
+    # blob; a slab of the same pink, or pink scattered on grass, doesn't.
+    shapes = sprite_shapes({"blob.png": (20, 20, sprite)}, color_table([[200, 40, 160]], 40))
+    assert len(shapes) == 2 and shapes[0]["key"] == (3, 3, 16, 13) and shapes[1]["key"] == (3, 3, 16, 13), shapes[0]["key"]
+    assert 50 <= len(shapes[0]["points"]) <= 300 and sprite_shapes({"grass.png": (2, 2, [(60, 200, 60, 255)] * 4)}, color_table([[200, 40, 160]], 40)) == []
+    fake_mobs = bytearray(sight)
+    paint(fake_mobs, 1000, 300, 6, 340, 18, (200, 40, 160))              # a pink slab: colour, no shape
+    paint(fake_mobs, 1000, 450, 2, 500, 28, (60, 200, 60))                # grass...
+    for x in range(450, 500, 3):
+        paint(fake_mobs, 1000, x, 8, x + 1, 22, (200, 40, 160))           # ...with pink flowers
+    common = dict(gap=40, step=2, min_hits=3, cell=10, names=["blob"], mob_w=20)
+    assert sum(map(len, mob_view(fake_mobs, 1000, 30, [[200, 40, 160]], **common).values())) == 7   # colour alone counts them all (the slab as two)
+    boxes = []
+    checked = mob_view(fake_mobs, 1000, 30, [[200, 40, 160]], boxes=boxes, shapes=shapes, **common)
+    assert [d for d, _ in checked["R"]] == [103, 303, 323] and [d for d, _ in checked["L"]] == [384], checked   # the real blobs stay
+    turned_down, kept = [b for b in boxes if b[5] == 0], [b for b in boxes if b[5]]
+    assert len(turned_down) == 2 and all(b[6] < SHAPE_MIN for b in turned_down) and {b[0] for b in turned_down} == {300, 450}, boxes
+    assert sorted(b[:4] for b in kept) == [(100, 5, 120, 25), (600, 5, 620, 25), (800, 5, 820, 25), (820, 5, 840, 25)], kept   # where each PNG lines up
+    assert all(b[6] > 0.9 for b in kept), kept
+    flipped = canvas(200, 30, grey)
+    for y in range(20):
+        for x in range(20):
+            if sprite[y * 20 + x][3]:
+                flipped[((5 + y) * 200 + 160 + 19 - x) * 3:((5 + y) * 200 + 160 + 20 - x) * 3] = bytes(sprite[y * 20 + x][:3])
+    pink = [(x, y) for y in range(8, 19, 2) for x in range(163, 177, 2)]
+    found, best = find_shapes(flipped, 200, 30, shapes, pink, 60, 2)   # facing the other way
+    assert len(found) == 1 and found[0][2:4] == (160, 5) and best > 0.9, found
+    assert find_shapes(canvas(200, 30, grey), 200, 30, shapes, pink, 60, 2) == ([], 0.0)
+    assert shape_score(flipped, 200, 30, shapes[0]["points"], 195, 5, 3600) == 0.0   # mostly off screen: no verdict
+    # Looser / stricter: the map's own tolerance moves in steps, within limits.
+    tuned = {"mobs": {"tolerance": 40, "colors": [[1, 2, 3]]}, "maps": {"Henesys": {"colors": [[200, 40, 160]]}}}
+    assert mob_tolerance(tuned, "Henesys") == 40 and tune_tolerance(tuned, "Henesys", 1) == ("Henesys", 45)
+    assert mob_tolerance(tuned, "Henesys") == 45 and tuned["mobs"]["tolerance"] == 40   # just that map
+    for _ in range(30):
+        tune_tolerance(tuned, "Henesys", -1)
+    assert mob_tolerance(tuned, "Henesys") == TOL_MIN and tune_tolerance(tuned, "", 1) == ("every map", 45)
+    assert tune_tolerance({"mobs": {"x": 1}}, "", 1) is None and tune_tolerance({}, "Henesys", 1) is None
+    # The F9 list: recently taught first, then A-Z; a search keeps maps with
+    # every word (any order or case, 2 finds II), names starting with it first.
+    names = ["Rocky Road II", "Rocky Road I", "Henesys Hunting Ground", "Ant Tunnel I", "Perion: Rocky Mountain", "ellinia"]
+    taught = {"Henesys Hunting Ground": 100, "Ant Tunnel I": 300, "ellinia": 0}
+    assert pick_list(names, "", taught, {"ellinia"}) == [("Ant Tunnel I", "recent"), ("Henesys Hunting Ground", "recent"),
+        ("ellinia", "changed: teach again"), ("Perion: Rocky Mountain", ""), ("Rocky Road I", ""), ("Rocky Road II", "")]
+    assert [n for n, _ in pick_list(names, "rocky")] == ["Rocky Road I", "Rocky Road II", "Perion: Rocky Mountain"]
+    assert [n for n, _ in pick_list(names, "road 2")] == ["Rocky Road II"] and [n for n, _ in pick_list(names, "ROAD ii")] == ["Rocky Road II"]
+    assert [n for n, _ in pick_list(names, "mountain perion")] == ["Perion: Rocky Mountain"]   # any order, punctuation ignored
+    assert [n for n, _ in pick_list(names, "hun gro")] == ["Henesys Hunting Ground"] and pick_list(names, "zakum") == []
+    assert search_words("Perion: Rocky-Mountain II") == ["perion", "rocky", "mountain", "ii"]
+
     # The game layer's strip and outlines.
     strip = layer_status({"hp": 72.4, "mana": 40.0, "xp": 63.2, "map": "Henesys_Field", "mobs": "R", "ml": 1, "mr": 3, "dl": 192,
                           "dr": 52, "mn": "Blue_Snail", "state": "ok"}, "USB COM9", "maplestory", ["Henesys Field"])
@@ -1952,13 +2274,21 @@ def selftest():
     assert texts[:5] == ["Kabuto \u00b7 MS", "USB COM9", "HP 72%", "MP 40%", "XP 63%"] and "Henesys Field" in texts, texts
     assert "\u25c01 \u00b7 3\u25b6" in texts and ("target Blue_Snail 52%", RED) in strip, strip
     strip = layer_status({"hp": 0.0, "state": "dead", "map": "-", "ml": 0, "mr": 0}, "can't reach Kabuto", None, ["A"])
-    assert ("DEAD", RED) in strip and ("new map: F9", AMBER) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
-    assert ("map not taught", AMBER) in layer_status({"map": "-"}, "USB", None, [])
+    assert ("DEAD", RED) in strip and ("new map, mobs not seen: F9", RED) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
+    assert ("map not taught", RED) in layer_status({"map": "-"}, "USB", None, [])
+    assert ("tolerance 45", DIM) in layer_status({"mobs": "R"}, "USB", tol=45) and not any(t.startswith("tolerance") for t, _ in layer_status({"mobs": "R"}, "USB"))
+    # No mob readings on a taught map (or without maps): said in red, since smart can't stop for mobs then.
+    assert ("not looking for mobs: F9 on this map", RED) in layer_status({"map": "Henesys", "mobs": None}, "USB", None, ["Henesys"])
+    assert ("not looking for mobs", RED) in layer_status({"hp": 50.0}, "USB") and not any("not looking" in t for t, _ in layer_status({"mobs": ""}, "USB"))
+    assert "mobs: not looking (map not taught: F9)" in describe({"map": "-", "state": "ok"}) and "not looking" not in describe({"mobs": "", "state": "ok"})
     shapes = layer_shapes({"mobs": {"x": 400, "y": 320, "top": 300, "bottom": 340, "reach": 100, "gap": 20, "cell": 10},
                            "minimap": {"x1": 600, "y1": 10, "x2": 760, "y2": 90}, "map_name": {"x1": 600, "y1": 92, "x2": 659, "y2": 105}},
-                          {"left": 0, "top": 0, "width": 800, "height": 600}, [(450, 310, 470, 330, "Blue_Snail", 2)], {"x": 50.0, "y": 50.0})
+                          {"left": 0, "top": 0, "width": 800, "height": 600},
+                          [(450, 310, 470, 330, "Blue_Snail", 2), (100, 310, 120, 330, "Blue_Snail", 1, 0.83), (200, 310, 220, 330, "Blue_Snail", 0, 0.31)],
+                          {"x": 50.0, "y": 50.0})
     labels = {label: (x0, y0, x1, y1) for x0, y0, x1, y1, _, label in shapes}
     assert labels["sight"] == (150, 300, 650, 340) and labels["reach"] == (300, 300, 500, 340) and labels["Blue Snail x2"] == (450, 310, 470, 330)
+    assert labels["Blue Snail 83%"] == (100, 310, 120, 330) and labels["not a mob 31%"] == (200, 310, 220, 330)
     assert labels["minimap"] == (598, 8, 762, 92) and labels["you"] == (676, 46, 684, 54) and labels["map name"] == (598, 90, 661, 107), labels
     assert [c for *_, c, label in shapes if label == "you"] != ["#ffdd44"]   # never the dot's colour: the reader would see it
 

@@ -28,7 +28,7 @@ firmware updates from this repo's GitHub releases.
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
-| `tools/` | build hooks, backup, release signing, recorder, `screen_stats.py` (PC screen reader, game layer, MapleStory colours) |
+| `tools/` | build hooks, backup, release signing, recorder, `screen_stats.py` (PC screen reader, game layer, MapleStory colours, shape search), `mob_frames.py` (animation frames), `scene_check.py` (replay screenshots; scored against `.json` answers next to them) |
 | `tests/` | host tests (C++ with Arduino stubs, Node/Chromium) |
 
 ## Build and test
@@ -85,7 +85,10 @@ release workflow runs all C++ and Python tests.
   map's minimap size; PNGs kept once in `mobs`): written by hand except
   `minimap`, which F9 teaching fills in. Machine-learned data (name pixels,
   mob colours) stays in `kabuto-bars.json`. Maps are told apart by the name's
-  pixels (no OCR); the pad only gets the name.
+  pixels (no OCR); the pad only gets the name. With numpy (optional, never
+  required: CI has none), mobs are found by shape from their animation frames
+  (`mob.png` + `mob.*.png`) and you by your name tag; numpy-only code must
+  stay behind `numpy_or_none()` and its self-tests skip without it.
 - Keep the README light. Details go in `docs/GUIDE.md`, changes in
   `CHANGELOG.md`.
 

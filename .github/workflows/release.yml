@@ -75,6 +75,8 @@ jobs:
           python3 tools/release_index.py --selftest
           python3 tools/flash_backup.py --selftest
           python3 tools/screen_stats.py --selftest
+          python3 tools/mob_frames.py --selftest
+          python3 tools/scene_check.py --selftest
           python3 tools/recorder.py --selftest
 
       - name: Sign and publish

@@ -312,8 +312,19 @@ now and then. With numpy installed, the script instead matches every
 **animation frame** of the map's mobs, facing either way, along the band
 level with your feet: each colour part of a frame (outline, body, eye, axe)
 must sit where it should, a small flickering part (flames, sparkles) can't
-veto a match, and scenery that only shares colours can't pass. Only mobs on
-your platform count (their feet within 28 px of yours). Frames sit next to the
+veto a match, and scenery that only shares colours can't pass.
+
+Only mobs in **your field of view** count: as far as your sight either side,
+and at your level. Walking mobs count when their feet are within 28 px of
+yours (on your platform, not the ledge above or below); flying ones (mobs
+with `fly` frames) when they're anywhere at your height, from your feet up to
+your head. To count everything on screen instead, put `"view": "screen"` in
+your setup's `mobs`. A mob missed for a moment (hit effects, skills, mist
+drifting over it) is **held** where it was last seen for 0.6 s (`"hold"` in
+`mobs`), so attacking doesn't stop and start mid-fight; the game layer marks
+it `(held)`.
+
+Frames sit next to the
 mob's PNG as `mob.<anything>.png` (`axe_stump.png`, `axe_stump.move0.png`,
 `axe_stump.hit10.png`...). Fetch them for every mob in your `map.json` with:
 

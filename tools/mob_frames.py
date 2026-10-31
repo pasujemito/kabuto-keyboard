@@ -101,8 +101,13 @@ def fetch(sprites_dir, api, dry_run=False, say=print):
         for a, i in todo:
             if dry_run:
                 continue
-            with open(os.path.join(sprites_dir, "%s.%s%d.png" % (stem, a, i)), "wb") as f:
-                f.write(api.render(mob_id, a, i))
+            data = api.render(mob_id, a, i)
+            if not data.startswith(b"\x89PNG"):   # an error page, not a frame: leave nothing behind
+                say("    %s %s%d: not an image, skipped" % (png, a, i)); continue
+            path = os.path.join(sprites_dir, "%s.%s%d.png" % (stem, a, i))
+            with open(path + ".part", "wb") as f:   # written whole, then named, so a stopped run leaves no half frame
+                f.write(data)
+            os.replace(path + ".part", path)
             saved += 1
     return saved, missing
 
@@ -122,12 +127,13 @@ def selftest():
             calls = []
             def find(self, name): return {"snail": 100100, "slime": 210100}.get(name)
             def frames(self, mob_id): return {"stand": 1, "move": 2}
-            def render(self, mob_id, a, i): self.calls.append((mob_id, a, i)); return b"png"
+            def render(self, mob_id, a, i): self.calls.append((mob_id, a, i)); return b"<html>busy" if (mob_id, a, i) == (210100, "stand", 0) else b"\x89PNG..."
         api, said = FakeApi(), []
-        assert fetch(d, api, say=said.append) == (5, [])          # snail.stand0 was there already
+        assert fetch(d, api, say=said.append) == (4, [])          # snail.stand0 was there already; slime.stand0 wasn't a PNG
+        assert "not an image" in " ".join(said) and not os.path.exists(os.path.join(d, "slime.stand0.png"))
         assert sorted(api.calls) == [(100100, "move", 0), (100100, "move", 1), (210100, "move", 0), (210100, "move", 1),
                                      (210100, "stand", 0)], api.calls
-        assert os.path.exists(os.path.join(d, "slime.move1.png")) and fetch(d, api, say=said.append) == (0, [])   # all there now
+        assert os.path.exists(os.path.join(d, "slime.move1.png")) and fetch(d, api, say=said.append) == (0, [])   # the rest are there now
         with open(os.path.join(d, "map.json"), "w") as f:
             json.dump([{"name": "C", "mobs": ["mystery_blob.png"]}], f)
         assert fetch(d, api, say=said.append) == (0, ["mystery_blob.png"]) and "end the file name with its ID" in said[-1]

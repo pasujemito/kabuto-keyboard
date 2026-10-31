@@ -11,6 +11,9 @@ and show up in the pad's **Updates** panel.
   boars on brown rock; only mobs on your platform count. Tested on real
   scenes from Perion, Sleepywood and Kerning: 20 of 21 mobs found, nothing
   wrong counted. scipy makes it several times faster
+- 👀 **Your field of view**: walkers count on your platform, flyers at your
+  height (`"view": "screen"` counts everything on screen); a mob hidden for a
+  moment by hit effects or mist is held for 0.6 s, so attacks don't stutter
 - 🎞️ **`tools/mob_frames.py`** fetches each mob's stand, move, fly and hit
   frames from maplestory.io for everything in `map.json`
 - 🏷️ **You're followed by your name tag**: mark it once (setup, or `--tag`),

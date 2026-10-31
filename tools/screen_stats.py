@@ -803,11 +803,15 @@ def strict_score(np, nears, parts, x, y, h, w, floor=0.08):
 
 class ShapeSearch:
     """A map's mob frames (both facings, near-duplicates dropped), searched for
-    in the band level with your feet, as wide as the screen at most. A fixed
-    band size keeps each frame's FFT computed once."""
-    def __init__(self, np, frames, sight, width=None, slack=FEET_SLACK):
-        """`frames`: {mob: [rgba array, ...]}; `width`: the screen's."""
+    in your field of view: the screen either side of you (as far as `sight`),
+    at your level. Walking mobs count with their feet level with yours (give
+    or take `slack`); flying ones (in `flyers`) when they're at your height
+    (`body` px above your feet); with view "screen", anything on screen. A
+    fixed band size keeps each frame's FFT computed once."""
+    def __init__(self, np, frames, sight, width=None, slack=FEET_SLACK, body=0, flyers=(), view="level", height=None):
+        """`frames`: {mob: [rgba array, ...]}; `width`, `height`: the screen's."""
         self.np, self.sight, self.slack, self.frames, self.cache = np, sight, slack, [], {}
+        self.body, self.flyers, self.view = body, set(flyers), ("screen" if view == "screen" and height else "level")
         self.rfft, self.irfft = ffts(np)
         for mob, images in sorted(frames.items()):
             seen = []
@@ -829,7 +833,7 @@ class ShapeSearch:
                     self.frames.append((mob, parts, r.shape[0], r.shape[1], big, sum(sizes[i] for i in big)))
         self.h = max([f[2] for f in self.frames] or [1])
         self.w = max([f[3] for f in self.frames] or [1])
-        self.bh = self.h + 2 * slack
+        self.bh = height if self.view == "screen" else self.h + (body if self.flyers else 0) + 2 * slack
         self.bw = min(2 * sight, width or 2 * sight) + self.w
         self.fft = (fast_len(self.bh + self.h), fast_len(self.bw + self.w))
 
@@ -839,7 +843,7 @@ class ShapeSearch:
         you stand on it."""
         np = self.np
         H, W = screen.shape[:2]
-        top = feet + self.slack - self.bh
+        top = 0 if self.view == "screen" else feet + self.slack - self.bh
         left = max(-self.w, min(x - self.bw // 2, W + self.w - self.bw))   # centred on you, kept on the screen
         band = np.zeros((self.bh, self.bw, 3), np.float32)   # off screen: matches nothing
         y0, y1, x0, x1 = max(0, top), min(H, top + self.bh), max(0, left), min(W, left + self.bw)
@@ -864,8 +868,9 @@ class ShapeSearch:
                 product = spectra[key] * self.cache[(i, j)]
                 F = product if F is None else F + product
             first = self.irfft(F, self.fft)[h - 1:self.bh, w - 1:self.bw] / big_total
-            rows = self.bh - self.slack - h          # where its feet are level with yours, give or take the slack
-            first[:max(0, rows - self.slack)] = 0
+            if self.view != "screen":   # at your level: feet level with yours, or (flying) at your height
+                lowest = self.bh - h - 2 * self.slack - (self.body if mob in self.flyers else 0)
+                first[:max(0, lowest)] = 0
             ys, xs = np.nonzero(first >= FIRST_PASS)
             looked = []
             for k in np.argsort(-first[ys, xs])[:12]:
@@ -932,6 +937,28 @@ class TagFinder:
                 return best[1], best[2], best[0]
         return None
 
+HOLD_SECONDS = 0.6    # a mob missed this soon after it was seen still counts (one missed reading)
+
+class MobMemory:
+    """Mobs seen a moment ago still count when a reading misses them: hit
+    effects, skills and mist cover a mob for a frame or two mid-fight, and
+    attacking shouldn't stop and start. A mob is held where it was last seen
+    for `hold` seconds; a find of the same mob near there replaces it. A new
+    map forgets everything."""
+    def __init__(self, hold=HOLD_SECONDS):
+        self.hold, self.seen, self.place = hold, [], None
+
+    def update(self, found, now, place=None):
+        """`found`: this reading's [(score, mob, left, top, width, height)].
+        Returns them plus the held ones, each with a last field: True if held."""
+        if place != self.place:
+            self.seen, self.place = [], place
+        def same(f, k):
+            return f[1] == k[1] and abs((f[2] + f[4] / 2.0) - (k[2] + k[4] / 2.0)) <= max(f[4], k[4], 40)
+        held = [k for t, k in self.seen if now - t <= self.hold and not any(same(f, k) for f in found)]
+        self.seen = [(now, f) for f in found] + [(t, k) for t, k in self.seen if k in held]
+        return [tuple(f) + (False,) for f in found] + [tuple(k) + (True,) for k in held]
+
 # ---- tuning live: looser / stricter mob colours ------------------------------
 
 TOL_STEP, TOL_MIN, TOL_MAX = 5, 10, 100
@@ -971,6 +998,8 @@ class Screen:
         self.map_mobs = {}    # {map: its mob PNGs}, from map.json
         self.searches = {}    # {map: ShapeSearch}
         self.you = None       # (x, feet) where your name tag says you are, else None
+        self.memory = MobMemory((config.get("mobs") or {}).get("hold", HOLD_SECONDS))
+        self.clock = time.monotonic
         self.np, self.tag, self.pixels = numpy_or_none(), None, None
         tag = (config.get("mobs") or {}).get("tag")
         if self.np and tag:
@@ -1051,8 +1080,12 @@ class Screen:
                 frames = {}
             sight = int(mb.get("reach", 350) * mb.get("sight", SIGHT))
             monitors = self.sct.monitors
-            width = (monitors[1] if len(monitors) > 1 else monitors[0])["width"]
-            self.searches[name] = ShapeSearch(self.np, frames, sight, width) if frames else None
+            m = monitors[1] if len(monitors) > 1 else monitors[0]
+            files = frame_files(self.sprites_dir, self.map_mobs[name] or [])
+            flyers = {mob for mob, names in files.items() if any(".fly" in n for n in names)}
+            body = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
+            self.searches[name] = ShapeSearch(self.np, frames, sight, m["width"], body=body, flyers=flyers,
+                                              view=mb.get("view", "level"), height=m["height"]) if frames else None
         return self.searches[name]
 
     def mobs(self, name):
@@ -1070,12 +1103,12 @@ class Screen:
             x, feet = (self.you or (mb["x"], mb.get("bottom", mb["y"])))
             entry = self.config.get("maps", {}).get(name) or {}
             found = search.search(pixels, x - ox, feet - oy, mob_tolerance(self.config, name) + 10, entry.get("shape", SHAPE_MIN))
+            found = [(score, mob, left + ox, top + oy, w, h) for score, mob, left, top, w, h in found]
             view = {"L": [], "R": []}
-            for score, mob, left, top, w, h in found:
-                left, top = left + ox, top + oy
+            for score, mob, left, top, w, h, held in self.memory.update(found, self.clock(), name):
                 near = 0 if left <= x <= left + w else min(abs(left - x), abs(left + w - x))
                 view["R" if left + w / 2.0 >= x else "L"].append((near, mob))
-                self.boxes.append((left, top, left + w, top + h, mob, 1, score))
+                self.boxes.append((left, top, left + w, top + h, mob, 1, score, held))
             for side in view:
                 view[side].sort(key=lambda m: m[0])
             return mob_fields(view, mb.get("reach", 350))
@@ -1966,6 +1999,7 @@ def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
         out.append((left, top, left + w, top + h, RED, "reach"))
     for x0, y0, x1, y1, name, n, *match in boxes:
         score = " %d%%" % round(match[0] * 100) if match and match[0] is not None else ""
+        score += " (held)" if len(match) > 1 and match[1] else ""   # missed just now, seen a moment ago
         if n:
             out.append((x0, y0, x1, y1, AMBER, (name or "mob").replace("_", " ") + (" x%d" % n if n > 1 else "") + score))
         else:   # mob colours the shape check turned down
@@ -2567,6 +2601,14 @@ def selftest():
         assert all(f[0] > 0.9 for f in found) and len(search.frames) == 1   # the blob is symmetric: its mirror is the same frame
         assert search.search(world, 200, 72) == []                          # feet half way up: neither level is yours
         assert [(f[2], f[3]) for f in search.search(world, 200, 39)] == [(130, 20)]   # up on the ledge: that one is
+        bat = rgba[..., [2, 0, 1, 3]].copy()                                  # another colour: a flying mob
+        world[55:75, 240:260][bat[..., 3] > 0] = bat[..., :3][bat[..., 3] > 0]   # 35 px above your feet
+        frames = {"blob": [rgba], "bat": [bat]}
+        assert sorted((f[1], f[2]) for f in ShapeSearch(np, frames, 200, 400, body=40, flyers={"bat"}).search(world, 200, 109)) == \
+            [("bat", 240), ("blob", 60), ("blob", 300)]                       # flyers count at your height, walkers at your feet
+        assert "bat" not in [f[1] for f in ShapeSearch(np, frames, 200, 400, body=40).search(world, 200, 109)]
+        everything = ShapeSearch(np, frames, 200, 400, view="screen", height=120).search(world, 200, 109)
+        assert sorted((f[1], f[2]) for f in everything) == [("bat", 240), ("blob", 60), ("blob", 130), ("blob", 300)], everything
         tag = np.zeros((10, 30, 3), np.uint8); tag[:] = (60, 30, 90); tag[2:8, 1:7] = (220, 40, 30); tag[3:7, 10:28] = (230, 200, 160)
         finder, shot = TagFinder(np, tag), np.full((200, 300, 3), (90, 140, 60), np.uint8)
         shot[60:70, 40:70] = tag
@@ -2576,6 +2618,15 @@ def selftest():
         shot[30:40, 200:230] = (90, 140, 60); shot[150:160, 100:130] = tag  # down in the HUD's strip: not looked at
         assert finder.find(shot) is None
 
+    # Mobs missed for a moment (hit effects, mist) are held where they were seen.
+    memory, snail = MobMemory(0.6), (0.9, "snail", 100, 50, 40, 30)
+    assert memory.update([snail], 0.0, "A") == [snail + (False,)]
+    assert memory.update([], 0.4, "A") == [snail + (True,)] and memory.update([], 0.7, "A") == []   # held 0.6 s, then gone
+    moved = (0.8, "snail", 112, 50, 40, 30)
+    memory.update([snail], 1.0, "A")
+    assert memory.update([moved], 1.2, "A") == [moved + (False,)]                 # seen again nearby: not counted twice
+    assert memory.update([(0.7, "slime", 110, 50, 40, 30)], 1.3, "A")[1] == moved + (True,)   # another mob there doesn't replace it
+    assert memory.update([], 1.4, "B") == []                                       # another map forgets it
     # MapleStory's fixed colours replace sampled ones; other games keep theirs.
     ms = apply_game({"game": "maplestory", "bars": {"hp": {"color": [1, 2, 3]}, "xp": {"color": [1, 2, 3]}}, "minimap": {"dot": [9, 9, 9]}})
     assert ms["bars"]["hp"]["color"] == [248, 10, 0] and ms["bars"]["xp"]["color"] == [206, 243, 0] and ms["minimap"]["dot"] == [255, 221, 68]

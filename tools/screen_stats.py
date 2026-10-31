@@ -1045,6 +1045,40 @@ def tune_tolerance(config, name, step):
     target["tolerance"] = min(TOL_MAX, max(TOL_MIN, mob_tolerance(config, name) + step * TOL_STEP))
     return (name if found else "every map"), target["tolerance"]
 
+class Ground:
+    """The height you look for mobs at: your feet where you last stood. While
+    you jump, climb or fall the minimap dot moves up and down, so the field of
+    view stays on the platform you left (and follows you sideways); once the
+    dot is still for `steady` readings in a row you've landed, and it moves to
+    wherever your feet are now. The dot shows where you really are, whatever
+    the camera does. Without a dot, your name tag being still is used instead."""
+    def __init__(self, steady=2, slack=1.0, tag_slack=4):
+        self.steady, self.slack, self.tag_slack = steady, slack, tag_slack
+        self.feet, self.last, self.still = None, None, 0
+
+    def update(self, you, dot_y=None):
+        """`you`: (x, feet) from your name tag, or None; `dot_y`: the minimap
+        dot's height in minimap pixels, or None. Returns (x, feet to look at),
+        or None when you aren't found."""
+        if not you:
+            self.last, self.still = None, 0
+            return None
+        x, feet = you
+        if self.last is not None:
+            last_dot, last_feet = self.last
+            if dot_y is not None and last_dot is not None:
+                same = abs(dot_y - last_dot) <= self.slack           # the camera may move; the dot only moves with you
+            else:
+                same = abs(feet - last_feet) <= self.tag_slack
+            self.still = self.still + 1 if same else 0
+        self.last = (dot_y, feet)
+        if self.feet is None or self.still >= self.steady:
+            self.feet = feet
+        return x, self.feet
+
+    def reset(self):
+        self.feet, self.last, self.still = None, None, 0
+
 class Screen:
     """Everything read each tick, plus what's learned at start (the map)."""
     def __init__(self, sct, config, sprites_dir=None):
@@ -1062,6 +1096,7 @@ class Screen:
         self.searches = {}    # {map: ShapeSearch}
         self.you = None       # (x, feet) where your name tag says you are, else None
         self.memory = MobMemory((config.get("mobs") or {}).get("hold", HOLD_SECONDS))
+        self.ground, self.seen = Ground(), None   # seen: where your name tag puts your feet right now
         self.clock = time.monotonic
         self.np, self.tag, self.pixels = numpy_or_none(), None, None
         tag = (config.get("mobs") or {}).get("tag")
@@ -1115,16 +1150,19 @@ class Screen:
             self.pixels = (self.np.frombuffer(shot, self.np.uint8).reshape(m["height"], m["width"], 3), m["left"], m["top"])
         return self.pixels
 
-    def find_you(self):
-        """Where you stand: your name tag's place on screen if found, else
-        where you stood at setup. Sets self.you (None when not tracked)."""
+    def find_you(self, dot_y=None):
+        """Where you are: your name tag's place on screen (self.seen), and the
+        field of view's place (self.you): that, but at the height of the
+        platform you last stood on while you jump or climb (Ground). Both None
+        when your tag isn't found (then the box from setup is used)."""
         mb = self.config.get("mobs") or {}
-        self.you = None
+        self.seen = None
         if self.tag:
             pixels, ox, oy = self.screen()
             found = self.tag.find(pixels)
             if found:
-                self.you = (found[0] + ox - mb["tag"]["x"], found[1] + oy - mb["tag"]["y"])
+                self.seen = (found[0] + ox - mb["tag"]["x"], found[1] + oy - mb["tag"]["y"])
+        self.you = self.ground.update(self.seen, dot_y)
         return self.you
 
     def shape_search(self, name):
@@ -1197,9 +1235,11 @@ class Screen:
         c = self.config
         self.pixels = None   # a fresh screen this reading
         out = read_bars(self.sct, c.get("bars", {}))
-        self.find_you()
-        name = self.current = self.map_name()   # first: the map decides the minimap's size
-        dot, world, mm = None, None, self.minimap_box(name)
+        name = self.map_name()   # first: the map decides the minimap's size
+        if name != self.current:
+            self.ground.reset()   # another map: no platform yet
+        self.current = name
+        dot, world, mm, dot_y = None, None, self.minimap_box(name), None
         if mm:
             if mm != self.box:   # another size: the slide so far doesn't carry over
                 self.box, self.minimap = mm, MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
@@ -1209,6 +1249,8 @@ class Screen:
             if dot:                      # a login or loading screen isn't the map
                 self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
+                dot_y = dot[1] * (h - 1) / 100.0   # minimap px: is it still? (Ground)
+        self.find_you(dot_y)   # after the minimap: jumping, the field of view stays on your platform
         found = self.mobs(name)
         mobs = found.pop("mobs", None)   # None: no mob detector, so the pad doesn't wait for mobs
         watches = {}
@@ -2813,6 +2855,23 @@ def selftest():
         shot[30:40, 200:230] = (90, 140, 60); shot[150:160, 100:130] = tag  # down in the HUD's strip: not looked at
         assert finder.find(shot) is None
 
+    # Jumping, the field of view stays on your platform until the minimap dot is still again.
+    g = Ground()
+    assert g.update((700, 546), 120.0) == (700, 546)                          # first sight: where you are
+    assert g.update((705, 546), 120.0) == (705, 546)                          # walking: follows you sideways
+    assert g.update((710, 496), 116.0) == (710, 546)                          # jumping: your tag rises, the view doesn't
+    assert g.update((715, 470), 113.5) == (715, 546)
+    assert g.update((720, 546), 120.0) == (720, 546)                          # landed where you were
+    for _ in range(2):                                                        # up onto a higher platform: still in the air...
+        assert g.update((730, 480), 114.0)[1] == 546
+    assert g.update((730, 480), 114.0) == (730, 480)                          # ...until the dot's been still twice: landed there
+    assert g.update((730, 500), 114.0) == (730, 500)                          # the camera moving: the dot's still, so the view follows your feet
+    assert g.update(None, 114.0) is None and g.update((730, 500), 114.0) == (730, 500)   # tag lost a moment
+    g = Ground()                                                              # no minimap: your tag being still decides
+    assert [g.update((700, f))[1] for f in (546, 546, 500, 470, 546, 546, 546)] == [546, 546, 546, 546, 546, 546, 546]
+    assert [g.update((700, f))[1] for f in (480, 480, 480)] == [546, 546, 480]
+    g.reset()
+    assert g.update((700, 300), 50.0) == (700, 300)                           # another map: starts afresh
     # Mobs missed for a moment (hit effects, mist) are held where they were seen.
     memory, snail = MobMemory(0.6), (0.9, "snail", 100, 50, 40, 30)
     assert memory.update([snail], 0.0, "A") == [snail + (False,)]

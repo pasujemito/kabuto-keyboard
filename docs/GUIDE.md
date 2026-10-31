@@ -333,7 +333,12 @@ and at your level. Walking mobs count when their feet are within 28 px of
 yours (on your platform, not the ledge above or below); flying ones (mobs
 with `fly` frames) when they're anywhere at your height, from your feet up to
 your head. To count everything on screen instead, put `"view": "screen"` in
-your setup's `mobs`. A mob missed for a moment (hit effects, skills, mist
+your setup's `mobs`. **Jumping** doesn't lift your field of view: it follows
+your name tag sideways but stays at the platform you left until you've
+landed, which it tells from your minimap dot staying still for two readings
+(the dot moves with you, not with the camera). Climb to a higher platform
+and it moves up once you're standing there; the game layer's cyan marker
+shows where it's looking from. A mob missed for a moment (hit effects, skills, mist
 drifting over it) is **held** where it was last seen for 0.6 s (`"hold"` in
 `mobs`), so attacking doesn't stop and start mid-fight; the game layer marks
 it `(held)`.

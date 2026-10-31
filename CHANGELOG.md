@@ -3,6 +3,13 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## Screen reader update (after 1.18.0, PC only)
+
+- 🦘 **Jumping keeps your field of view on your platform**: sight and reach
+  follow you sideways, but only move up or down once you've landed (the
+  minimap dot still for two readings), so mobs on your platform stay counted
+  mid-jump. No pad update needed: get the new `tools/screen_stats.py`
+
 ## 1.18.0
 
 - 🔍 **Mobs found by shape** (with numpy): every animation frame of the map's

@@ -361,8 +361,11 @@ python mob_frames.py        # stand, move, fly and hit frames from maplestory.io
 It keeps the files you already have; a PNG whose name isn't a mob's is listed
 (end its name with the mob's ID, e.g. `zombie_mushroom_2230101.png`). With
 numpy, a map needs no colours of its own to be taught. Each reading's time is
-printed in the console (on a 4-core laptop about 0.4 s with scipy, 0.5 s
-without). Looser/Stricter (F6/F7) move the colour tolerance here too, and a
+printed in the console: about 0.4 s on a 2-core laptop (scipy helps more
+with more cores), and the first reading on a new map takes a second or two
+while its frames are prepared. Only the current map's frames are kept in
+memory (about 200 MB at most), so low-memory PCs don't slow down as you
+travel. Looser/Stricter (F6/F7) move the colour tolerance here too, and a
 map's `shape` (0.6 by default) sets how well a frame must match.
 
 **Mobs per map:** keep every mob's PNG once, in `mobs`, and describe each map

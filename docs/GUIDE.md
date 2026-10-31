@@ -324,6 +324,13 @@ drifting over it) is **held** where it was last seen for 0.6 s (`"hold"` in
 `mobs`), so attacking doesn't stop and start mid-fight; the game layer marks
 it `(held)`.
 
+A mob **partly covered** still counts: where its pixels don't match but the
+screen there is near white, yellow or orange (hit effects, damage numbers),
+or past the screen's edge, they're taken as unseen rather than wrong, as long
+as 60% of it is seen. Its outlines may then be a pixel off, as they blur
+around effects. Other mobs in front of it, or in the way, are fine as long as
+enough of it shows.
+
 Frames sit next to the
 mob's PNG as `mob.<anything>.png` (`axe_stump.png`, `axe_stump.move0.png`,
 `axe_stump.hit10.png`...). Fetch them for every mob in your `map.json` with:
@@ -536,6 +543,30 @@ python scene_check.py --config kabuto-bars.json --sprites mobs --out checked sce
 A map whose name it doesn't recognise is guessed from the file name
 (`deep_valley_ii.png`); `--map "Deep Valley II"` says it outright. Shots must
 be at the resolution the setup was made at; PNG keeps colours exact.
+
+**Screenshots as tests:** next to a screenshot, a `.json` of the same name
+holds the answers: the map, and the mobs in your field of view (on your
+platform, or flying at your height) by name and the x of their middle on
+screen:
+
+```json
+{
+  "map": "Damp Forest",
+  "mobs": {
+    "octopus": [438, 546, 651, 1160],
+    "jr_necki": [710, 968]
+  }
+}
+```
+
+Each screenshot then says what was missed, counted wrongly or misnamed, the
+run ends with a total, and it fails if anything was off. To add a scene, take
+the screenshot, run with `--draft` (it writes the answers from what it found,
+only where there are none), and correct the file: delete what's wrong, fix
+names, and add any mob it missed (an image viewer such as Paint shows the x
+under the mouse). Mobs on other platforms, players, pets and item drops are
+left out. The more scenes, the better the reader can be tuned; each change to
+it is checked against all of them.
 
 ### Updates from GitHub releases
 

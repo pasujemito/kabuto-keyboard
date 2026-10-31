@@ -8,9 +8,8 @@ and show up in the pad's **Updates** panel.
 - 🔍 **Mobs found by shape** (with numpy): every animation frame of the map's
   mobs is matched along the band level with your feet, part by part (outline,
   body, eye...). Works where colour can't, like Perion's brown stumps and
-  boars on brown rock; only mobs on your platform count. Tested on real
-  scenes from Perion, Sleepywood and Kerning: 20 of 21 mobs found, nothing
-  wrong counted. scipy makes it several times faster
+  boars on brown rock; only mobs on your platform count. scipy makes it
+  several times faster
 - 👀 **Your field of view**: walkers count on your platform, flyers at your
   height (`"view": "screen"` counts everything on screen); a mob hidden for a
   moment by hit effects or mist is held for 0.6 s, so attacks don't stutter
@@ -21,7 +20,13 @@ and show up in the pad's **Updates** panel.
 - 🗺️ **Map names read reliably**: MapleStory's light title bar no longer
   counts as text, so different maps stop looking alike (teach maps again)
 - 🧪 **`tools/scene_check.py`** replays screenshots through the reader and
-  draws what it found
+  draws what it found; with an answer file next to a screenshot it's a test
+  (missed, wrong, misnamed), and `--draft` starts one
+- 💥 **Mobs under hit effects or past the screen's edge** still count: bright
+  effect pixels and off-screen ones are taken as unseen, not wrong. All 21
+  mobs in the 6 sample scenes are found and named right, nothing else counted
+- 🐛 The search looks at the 12 best *distinct* spots, so a strong mob's
+  neighbouring pixels no longer crowd out a weaker mob nearby
 - 💬 A colour skipped for being too small a part of its mob now says so,
   instead of blaming the map; maps can be taught without colours (by shape)
 

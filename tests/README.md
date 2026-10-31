@@ -28,7 +28,7 @@ python3 tools/release_index.py --selftest  # needs the openssl CLI
 python3 tools/next_version.py --selftest
 python3 tools/screen_stats.py --selftest     # screen maths, USB + Wi-Fi sending; no screen, pad or pyserial needed (shape search too with numpy)
 python3 tools/mob_frames.py --selftest       # map.json mobs to frames; no network needed
-python3 tools/scene_check.py --selftest      # file-name map guesses, screenshot replay
+python3 tools/scene_check.py --selftest      # file-name map guesses, answer files and scoring, screenshot replay
 ```
 
 The editor test runs the actual page JavaScript with a mocked device API. It

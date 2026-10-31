@@ -733,6 +733,21 @@ def read_bars(sct, bars):
 
 FEET_SLACK = 28       # px a mob's feet may be above or below yours and still count as on your platform
 FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
+EFFECT_BRIGHT = 200   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
+VISIBLE_MIN = 0.6     # ...but at least this much of the mob must be seen
+MATCH_SLACK = 1       # px: a partly covered mob's edge pixels may find their colour this far away
+COVERED = 0.1         # ...when this much of it is covered (effects, the screen's edge)
+
+def grown(np, a, r):
+    """`a` (0/1) spread `r` px every way: the most of each pixel's neighbours."""
+    out = a.copy()
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dy or dx:
+                src = a[max(0, dy):a.shape[0] + min(0, dy), max(0, dx):a.shape[1] + min(0, dx)]
+                dst = out[max(0, -dy):a.shape[0] + min(0, -dy), max(0, -dx):a.shape[1] + min(0, -dx)]
+                np.maximum(dst, src, out=dst)
+    return out
 
 def numpy_or_none():
     try:
@@ -787,19 +802,43 @@ def colour_parts(np, rgba):
             out.append((tuple(float(c) for c in a[..., :3][m].mean(axis=0)), m.astype(np.float32)))
     return out
 
-def strict_score(np, nears, parts, x, y, h, w, floor=0.08):
+def strict_score(np, nears, parts, x, y, h, w, floor=0.08, hidden=None, loose=None, edges=None):
     """Every part must be there: a geometric mean of how much of each part
     matches, weighted by its size (but no part below `floor`), so a small
     flickering one (flames, sparkles) can't veto a match and scenery sharing
-    some colours can't pass."""
+    some colours can't pass. With `hidden` (off screen, or where the screen is
+    near white, yellow or orange), a mob's pixel that doesn't match there is
+    taken as covered by a hit effect or damage number, or past the screen's
+    edge: not seen rather than wrong, as long as most of the mob (VISIBLE_MIN)
+    is still seen. A mob partly covered so (COVERED or more) has blurred
+    outlines too: with `loose` (nears grown a px) and each part's `edges`, a
+    pixel on a part's edge may then find its colour a px away."""
     total = sum(m.sum() for _, m in parts)
+    hits = [near[y:y + h, x:x + w] for near in nears]
+    covers = [None] * len(parts)
+    if hidden is not None:
+        b = hidden[y:y + h, x:x + w]
+        covers = [m * b * (1 - hit) for hit, (_, m) in zip(hits, parts)]
+        covered = sum(c.sum() for c in covers) / total
+        if covered > 1 - VISIBLE_MIN:
+            covers = [None] * len(parts)   # too little of it seen to say
+        elif covered >= COVERED and loose is not None:   # outlines blur around effects
+            hits = [hit + (grow[y:y + h, x:x + w] - hit) * edge for hit, grow, edge in zip(hits, loose, edges)]
+            covers = [m * b * (1 - hit) for hit, (_, m) in zip(hits, parts)]
     wsum = logs = 0.0
-    for near, (_, m) in zip(nears, parts):
-        share = float((near[y:y + h, x:x + w] * m).sum() / m.sum())
-        weight = max(m.sum() / total, floor)
+    for hit, (_, m), cover in zip(hits, parts, covers):
+        seen = m.sum() - (cover.sum() if cover is not None else 0)
+        if seen < 1:
+            continue   # all of it covered: nothing to go by
+        share = float((hit * m).sum() / seen)
+        weight = max(m.sum() / total, floor) * seen / m.sum()   # what's seen of it counts
         wsum += weight
         logs += weight * np.log(share + 0.05)
     return round(float(np.exp(logs / wsum) - 0.05), 3)
+
+def part_edges(np, m):
+    """A part's edge: its pixels with a neighbour outside it."""
+    return m * grown(np, 1 - m, 1)
 
 class ShapeSearch:
     """A map's mob frames (both facings, near-duplicates dropped), searched for
@@ -830,7 +869,8 @@ class ShapeSearch:
                     # 3 biggest); the strict check at all of them.
                     big = [i for i, n in enumerate(sizes) if n >= 0.1 * sum(sizes)] or \
                           sorted(range(len(parts)), key=lambda i: -sizes[i])[:3]
-                    self.frames.append((mob, parts, r.shape[0], r.shape[1], big, sum(sizes[i] for i in big)))
+                    self.frames.append((mob, parts, r.shape[0], r.shape[1], big, sum(sizes[i] for i in big),
+                                        [part_edges(np, m) for _, m in parts]))
         self.h = max([f[2] for f in self.frames] or [1])
         self.w = max([f[3] for f in self.frames] or [1])
         self.bh = height if self.view == "screen" else self.h + (body if self.flyers else 0) + 2 * slack
@@ -849,9 +889,13 @@ class ShapeSearch:
         y0, y1, x0, x1 = max(0, top), min(H, top + self.bh), max(0, left), min(W, left + self.bw)
         if y1 > y0 and x1 > x0:
             band[y0 - top:y1 - top, x0 - left:x1 - left] = screen[y0:y1, x0:x1]
-        t2, near, spectra, found = float(tolerance) ** 2, {}, {}, []
+        t2, near, loose, spectra, found = float(tolerance) ** 2, {}, {}, {}, []
+        hidden = np.ones((self.bh, self.bw), np.float32)   # off screen: not seen
+        if y1 > y0 and x1 > x0:
+            hidden[y0 - top:y1 - top, x0 - left:x1 - left] = (band[y0 - top:y1 - top, x0 - left:x1 - left].max(axis=2) >= EFFECT_BRIGHT) \
+                if EFFECT_BRIGHT else 0
         pp = (band * band).sum(axis=2)   # |p|^2 once: |p - c|^2 = |p|^2 - 2 p.c + |c|^2 per colour is then one product
-        for i, (mob, parts, h, w, big, big_total) in enumerate(self.frames):
+        for i, (mob, parts, h, w, big, big_total, edges) in enumerate(self.frames):
             nears, F = [], None
             for j, (rgb, m) in enumerate(parts):
                 key = tuple(int(c) // 16 for c in rgb)   # near shades share one map
@@ -872,21 +916,32 @@ class ShapeSearch:
                 lowest = self.bh - h - 2 * self.slack - (self.body if mob in self.flyers else 0)
                 first[:max(0, lowest)] = 0
             ys, xs = np.nonzero(first >= FIRST_PASS)
-            looked = []
-            for k in np.argsort(-first[ys, xs])[:12]:
+            looked, grown_nears = [], None
+            if len(ys) and MATCH_SLACK:   # the strict check: edge pixels may find their colour a px away
+                grown_nears = []
+                for rgb, _ in parts:
+                    key = tuple(int(c) // 16 for c in rgb)
+                    if key not in loose:
+                        loose[key] = grown(np, near[key], MATCH_SLACK)
+                    grown_nears.append(loose[key])
+            values = first[ys, xs]
+            order = np.argpartition(-values, 2000)[:2000] if len(values) > 2000 else np.arange(len(values))
+            for k in order[np.argsort(-values[order])]:   # the 12 best distinct spots (a strong one's neighbours don't crowd out the rest)
                 cy, cx = int(ys[k]), int(xs[k])
                 if any(abs(cx - lx) < w // 2 and abs(cy - ly) < h // 2 for lx, ly in looked):
                     continue
+                if len(looked) == 12:
+                    break
                 looked.append((cx, cy))
-                score = strict_score(np, nears, parts, cx, cy, h, w)
+                score = strict_score(np, nears, parts, cx, cy, h, w, hidden=hidden, loose=grown_nears, edges=edges)
                 if score >= need:
-                    found.append((score, mob, left + cx, top + cy, w, h))
+                    found.append((score, mob, left + cx, top + cy, w, h, i))
         found.sort(key=lambda f: -f[0])
         kept = []
         for f in found:   # one per mob: overlapping finds are the same one
             if all(abs((f[2] + f[4] / 2.0) - (k[2] + k[4] / 2.0)) > min(f[4], k[4]) * 0.6 for k in kept):
                 kept.append(f)
-        return kept
+        return [f[:6] for f in kept]
 
 class TagFinder:
     """You, by your name tag (marked at setup): its leaf, letters and box
@@ -2607,6 +2662,13 @@ def selftest():
         assert sorted((f[1], f[2]) for f in ShapeSearch(np, frames, 200, 400, body=40, flyers={"bat"}).search(world, 200, 109)) == \
             [("bat", 240), ("blob", 60), ("blob", 300)]                       # flyers count at your height, walkers at your feet
         assert "bat" not in [f[1] for f in ShapeSearch(np, frames, 200, 400, body=40).search(world, 200, 109)]
+        hit = world.copy()
+        hit[103:110, 60:80] = (255, 230, 80)                                 # a hit flash over a third of one blob
+        hit[90:110, 0:14][rgba[:, 6:, 3] > 0] = rgba[:, 6:, :3][rgba[:, 6:, 3] > 0]   # another one partly past the screen's left edge
+        found = [(f[1], f[2]) for f in ShapeSearch(np, {"blob": [rgba]}, 200, 400).search(hit, 200, 109)]
+        assert ("blob", 60) in found and ("blob", -6) in found, found
+        hit[93:110, 60:80] = (255, 230, 80)                                  # all but its top: too little seen to say
+        assert ("blob", 60) not in [(f[1], f[2]) for f in ShapeSearch(np, {"blob": [rgba]}, 200, 400).search(hit, 200, 109)]
         everything = ShapeSearch(np, frames, 200, 400, view="screen", height=120).search(world, 200, 109)
         assert sorted((f[1], f[2]) for f in everything) == [("bat", 240), ("blob", 60), ("blob", 130), ("blob", 300)], everything
         tag = np.zeros((10, 30, 3), np.uint8); tag[:] = (60, 30, 90); tag[2:8, 1:7] = (220, 40, 30); tag[3:7, 10:28] = (230, 200, 160)

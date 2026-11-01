@@ -16,6 +16,10 @@ and show up in the pad's **Updates** panel.
   250 MB; before, every map visited added 350 MB or more), the name tag is
   looked for close by first, and a slow reading isn't followed by a full
   wait. Same results on the sample scenes (21 of 21)
+- 🐛 **F9 works at start again**: the one-time questions (name tag, map name
+  area) left F9 saying to list your maps until they were answered. The map
+  list is now there from the start, and F9 during a question means "later":
+  the picker opens, the map is taught, and the questions wait for next start
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

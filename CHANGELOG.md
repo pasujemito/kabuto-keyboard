@@ -3,7 +3,16 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
-## Screen reader update (after 1.18.2, PC only)
+## 1.18.3
+
+- 📈 **XP per hour starts afresh at each level-up**: when the XP bar drops
+  back to near 0 the rate restarts for the new level (its % are of a bigger
+  level) instead of counting on through it; level-ups are still counted
+- 📈 **XP per hour on the game layer's strip** (and the console), next to
+  your XP: `+3.2%/h, level in 25.4h`, with the same rules
+
+The rest is the screen reader, already on `main`:
+
 
 - ⚡ **`"frames"`: how many of each mob's animation frames are searched**
   (in `mobs`; 5 by default, the mob's own PNG then the poses least like it;

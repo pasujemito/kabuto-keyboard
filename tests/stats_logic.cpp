@@ -8,8 +8,13 @@ int main(){
     t.add(200,0);t.add(250,30000);assert(t.perHour()==-1);
     t.add(300,60000);assert(t.perHour()==6000);              // +10% in a minute = 600%/h
     assert(t.minutesToLevel()==7);                            // 70% left at 600%/h
-    // A level-up wraps the bar: 95% -> 3% is +8%, and counts a level.
-    XpTracker w;w.add(950,0);w.add(30,60000);assert(w.levels==1&&w.gained==80&&w.perHour()==4800);
+    // A level-up (95% -> 3%) counts a level and starts the rate afresh for the new level:
+    // nothing to show until a minute into it, then only what was gained since.
+    XpTracker w;w.add(900,0);w.add(950,60000);assert(w.perHour()==3000);
+    w.add(30,90000);assert(w.levels==1&&w.gained==0&&w.lastXp==30&&w.perHour()==-1&&w.minutesToLevel()==-1);
+    w.add(60,120000);assert(w.perHour()==-1);                 // 30 s into the new level
+    w.add(90,150000);assert(w.perHour()==3600&&w.levels==1);  // +6% in its first minute = 360%/h
+    w.add(5,160000);assert(w.levels==1&&w.gained==6*10);      // a drop from 9%: not a level (death, misread)
     // A small drop (death, misread) adds nothing and isn't a level.
     XpTracker d;d.add(500,0);d.add(450,30000);d.add(470,60000);assert(d.levels==0&&d.gained==20);
     // Out-of-range readings are ignored.

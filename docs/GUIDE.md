@@ -495,8 +495,11 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
 
 - The **Buttons** screen shows HP, MP and XP bars, with XP per hour, XP per
   minute (in % of a level), time to the next level and level-ups. The rate
-  appears after a minute of readings; **Reset XP rate** starts it afresh. It
-  counts through level-ups; small XP drops (death, a misread) are ignored.
+  appears after a minute of readings; **Reset XP rate** starts it afresh, and
+  so does every level-up (the bar dropping back to near 0), since a new
+  level's % are of a bigger level. Small XP drops (death, a misread) are
+  ignored. The game layer's strip (and the console) show it too:
+  `XP 18% +3.2%/h, level in 25.4h`.
 - Each HP/Mana potion has **Drink below (%)**: HP defaults to 50%, Mana to
   30%. While fresh readings arrive, a potion drinks as soon as its bar is under
   that, at most every 3 s, without pausing the attacks: quick taps in the gap

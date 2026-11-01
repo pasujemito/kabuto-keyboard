@@ -243,7 +243,11 @@ terminal as administrator.
 
 **MapleStory** colours are built in: HP 248,10,0, MP 0,120,248, XP 206,243,0
 and your minimap dot 255,221,68. Setup uses them instead of sampling the
-screen, and you mark only the minimap's corners, not your dot. Its **HP, MP
+screen, and you don't mark your dot. Its **minimap** always starts at the
+screen's top-left corner (only its size changes with the map), so you mark
+just its bottom-right corner; it's kept if your dot shows in it, else you
+mark both corners. Your dot is looked for below the minimap's header, whose
+region icon can share its colour (Perion's golden sun). Its **HP, MP
 and XP bars are found for you**: MapleStory centres its status bar along the
 bottom of the screen, so setup puts the bars there and keeps them if the HP
 bar is really there (it says so, with each bar's fill). Only if it can't see

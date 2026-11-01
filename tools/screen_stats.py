@@ -88,8 +88,16 @@ GAMES = {
                    "dot": [255, 221, 68],
                    # Where its bars are: the status bar is centred along the bottom of the screen, so
                    # (left, right) px from the middle and y px from the bottom (measured at 1366 x 768).
-                   "hud": {"hp": (-180, -78), "mana": (-72, 30), "xp": (41, 153), "y": -14}},
+                   "hud": {"hp": (-180, -78), "mana": (-72, 30), "xp": (41, 153), "y": -14},
+                   # Its minimap's top-left corner, from the screen's (only its size changes with the map),
+                   # and the header above the map picture (title, region icon, name) in px.
+                   "minimap_at": (0, 0), "minimap_header": 72},
 }
+
+def minimap_corner(game, monitor):
+    """Where the game's minimap starts on this screen, or None if it moves."""
+    at = (GAMES.get(game) or {}).get("minimap_at")
+    return (monitor["left"] + at[0], monitor["top"] + at[1]) if at else None
 
 def hud_bars(game, monitor):
     """The game's bars where its status bar puts them on this screen, or None
@@ -108,8 +116,11 @@ def apply_game(config):
         for name, color in game["bars"].items():
             if name in config.get("bars", {}):
                 config["bars"][name]["color"] = list(color)
-        if config.get("minimap"):
-            config["minimap"]["dot"] = list(game["dot"])
+        mm = config.get("minimap")
+        if mm:
+            mm["dot"] = list(game["dot"])
+            if "header" not in mm and game.get("minimap_header") and mm.get("y1", 99) <= 2:
+                mm["header"] = game["minimap_header"]   # a box from the screen's top: the dot is looked for below the header
     return config
 
 # Messages go to the console and, when it's up, the game layer's strip, so
@@ -149,11 +160,13 @@ def fill_percent(row, color, tolerance=60, min_run=3, step=30):
             run = 0
     return round(100.0 * end / len(row), 1)
 
-def find_dot(raw, w, h, color, tolerance=40, step=2):
+def find_dot(raw, w, h, color, tolerance=40, step=2, top=0):
     """Your dot on the minimap: the centre of the pixels matching its colour,
-    as (x, y) percent of the minimap, or None. Checks every `step`th pixel."""
+    as (x, y) percent of the minimap, or None. Checks every `step`th pixel,
+    from `top` px down (below the header, whose region icon may share the
+    dot's colour: Perion's golden sun)."""
     t2, sx, sy, n = tolerance ** 2, 0, 0, 0
-    for y in range(0, h, step):
+    for y in range(top, h, step):
         for x in range(0, w, step):
             if near(raw, (y * w + x) * 3, color, t2):
                 sx += x; sy += y; n += 1
@@ -1281,7 +1294,7 @@ class Screen:
                 self.box, self.minimap = mm, MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
             w, h = mm["x2"] - mm["x1"] + 1, mm["y2"] - mm["y1"] + 1
             raw = grab(self.sct, mm["x1"], mm["y1"], w, h)
-            dot = find_dot(raw, w, h, mm["dot"], mm.get("tolerance", 40))
+            dot = find_dot(raw, w, h, mm["dot"], mm.get("tolerance", 40), top=mm.get("header", 0))
             if dot:                      # a login or loading screen isn't the map
                 self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
@@ -1758,7 +1771,20 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
         x1, x2 = min(x1, x2), max(x1, x2)
         color = list(known["bars"][name]) if known else pixel(sct, x1 + 2, y)
         config["bars"][name] = {"x1": x1, "x2": x2, "y": y, "color": color, "tolerance": 60}
-    if known:
+    corner = minimap_corner(game, monitors[1] if len(monitors) > 1 else monitors[0])
+    if known and corner:   # its top-left is known: just the bottom-right, kept if your dot shows in the box
+        pts = mark_points("Minimap: hover its BOTTOM-RIGHT corner, F8 (its top-left is the screen's corner; Esc skips)", 1)
+        if pts:
+            (bx, by), (cx, cy) = pts[0], corner
+            w, h = bx - cx + 1, by - cy + 1
+            top = known.get("minimap_header", 0)
+            if w > 20 and h > top + 20 and find_dot(grab(sct, cx, cy, w, h), w, h, known["dot"], 40, top=top):
+                pts = [corner, pts[0], None]
+            else:
+                say("  Couldn't see your dot in that box (the game windowed away from the corner?): mark both corners.")
+                pts = mark_points("Minimap: hover its TOP-LEFT corner, F8; then its BOTTOM-RIGHT corner, F8 (Esc skips)", 2)
+                pts = pts + [None] if len(pts) == 2 else []
+    elif known:
         pts = mark_points("Minimap: hover its TOP-LEFT corner, F8; then its BOTTOM-RIGHT corner, F8 (Esc skips)", 2)
         pts = pts + [None] if len(pts) == 2 else []
     else:
@@ -1772,7 +1798,7 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
         say(problem)
     names = sorted(maps)
     if names:
-        say("Maps in %s: %s" % (MAP_LIST, ", ".join(names)))
+        say("%d maps in %s (%s%s)" % (len(names), MAP_LIST, ", ".join(names[:3]), ", ..." if len(names) > 3 else ""))
         mark_map_name(config)
     setup_mobs(sct, config, sprites_dir)
     old = load_config(path, required=False)
@@ -2575,6 +2601,12 @@ def selftest():
     x, y = find_dot(mm, 101, 51, yellow)
     assert abs(x - 21.0) < 2 and abs(y - 63.0) < 3, (x, y)
     assert find_dot(canvas(101, 51, grey), 101, 51, yellow) is None
+    paint(mm, 101, 60, 2, 80, 12, yellow)                                     # a dot-coloured icon in the header...
+    assert find_dot(mm, 101, 51, yellow)[1] < 50                              # ...drags the dot up
+    x, y = find_dot(mm, 101, 51, yellow, top=16)                             # looked for below the header: just the dot
+    assert abs(x - 21.0) < 2 and abs(y - 63.0) < 3, (x, y)
+    ms_mm = apply_game({"game": "maplestory", "minimap": {"x1": 0, "y1": 0, "x2": 138, "y2": 196}})["minimap"]
+    assert ms_mm["header"] == 72 and "header" not in apply_game({"game": "maplestory", "minimap": {"x1": 0, "y1": 72, "x2": 138, "y2": 196}})["minimap"]
     # A minimap that slides as you walk: a 400x120 map seen through a 100x40
     # minimap. Mid-map the view slides and your dot stays in the middle; at the
     # map's edge the view stops and the dot moves instead.
@@ -3007,6 +3039,8 @@ def selftest():
     hud = hud_bars("maplestory", {"left": 0, "top": 0, "width": 1366, "height": 768})
     assert [(hud[n]["x1"], hud[n]["x2"], hud[n]["y"]) for n in ("hp", "mana", "xp")] == [(503, 605, 754), (611, 713, 754), (724, 836, 754)]
     assert hud["xp"]["color"] == [206, 243, 0] and hud_bars("other", {"left": 0, "top": 0, "width": 800, "height": 600}) is None
+    assert minimap_corner("maplestory", {"left": 1920, "top": 0, "width": 1920, "height": 1080}) == (1920, 0)
+    assert minimap_corner("other", {"left": 0, "top": 0, "width": 800, "height": 600}) is None
     wide = hud_bars("maplestory", {"left": 1920, "top": 0, "width": 1920, "height": 1080})   # a second monitor, full HD
     assert (wide["hp"]["x1"], wide["hp"]["y"]) == (1920 + 960 - 180, 1066)
     # MapleStory's fixed colours replace sampled ones; other games keep theirs.

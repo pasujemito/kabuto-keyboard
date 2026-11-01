@@ -74,7 +74,7 @@ A minimap that slides as you walk is followed, so your map position keeps up.
 Run the self-test (no screen or pad needed):
     python screen_stats.py --selftest
 """
-import argparse, http.cookiejar, json, os, queue, random, sys, threading, time, urllib.error, urllib.parse, urllib.request
+import argparse, http.cookiejar, json, os, queue, random, re, sys, threading, time, urllib.error, urllib.parse, urllib.request
 
 BARS = (("hp", "HP"), ("mana", "Mana"), ("xp", "XP"))
 CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
@@ -1889,6 +1889,12 @@ class Pad:
             raise
 
 ESPRESSIF_VID = 0x303A   # the ESP32-S3's own USB port
+PAD_KEYS_SINCE = (1, 17, 0)   # firmware with the setup buttons ("KABUTO keys")
+
+def version_tuple(version):
+    """(1, 18, 0) from "1.18.0" (anything after the numbers ignored), or None."""
+    m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?", version or "")
+    return tuple(int(g or 0) for g in m.groups()) if m else None
 
 class UsbPad:
     """Sends readings down the USB cable ("KABUTO stats <form>" lines), so a
@@ -1924,8 +1930,9 @@ class UsbPad:
                 self.port.read(waiting)   # replies and the pad's log; just keep the buffer empty
 
     def keys(self, wait=1.0):
-        """Setup buttons pressed on the pad since the last ask, or None if the
-        pad doesn't answer (firmware from before them)."""
+        """Setup buttons pressed on the pad since the last ask. None only for
+        firmware from before them (its version says so); a pad that's slow to
+        answer (busy playing, its log in the way) just gives none this time."""
         with self.lock:
             self.port.write(b"KABUTO keys\n")
             end = time.time() + wait
@@ -1933,7 +1940,8 @@ class UsbPad:
                 line = self.port.readline().decode("ascii", "replace").strip()
                 if line == "KABUTO keys" or line.startswith("KABUTO keys "):
                     return [k for k in line[12:].split(",") if k]
-        return None
+        old = version_tuple(self.version)
+        return None if old and old < PAD_KEYS_SINCE else []
 
     @property
     def where(self):
@@ -1988,7 +1996,8 @@ def watch_pad_keys(link, every=0.15):
                 pad = link.get()
                 keys = pad.keys()
                 if keys is None:
-                    say("This pad's firmware has no setup buttons yet: update it to use them")
+                    say("This pad's firmware (%s) has no setup buttons: update it to %s or newer to use them"
+                        % (getattr(pad, "version", None) or "an old one", ".".join(map(str, PAD_KEYS_SINCE))))
                     return
                 for k in keys:
                     if k in PAD_KEYS:
@@ -3153,7 +3162,11 @@ def selftest():
     kabuto.replies = [b"KABUTO keys\n"]
     assert pad.keys() == []
     kabuto.replies = []
-    assert pad.keys(wait=0.05) is None   # older firmware doesn't answer
+    assert pad.keys(wait=0.05) is None   # firmware from before the setup buttons (1.16.0 here) doesn't answer
+    pad.version = "1.18.0"
+    assert pad.keys(wait=0.05) == []     # newer firmware slow to answer: none this time, not "update"
+    assert version_tuple("1.18.0") == (1, 18, 0) and version_tuple("v1.17") == (1, 17, 0) and version_tuple("dev") is None
+    assert version_tuple("1.16.9") < PAD_KEYS_SINCE <= version_tuple("1.17.0") < version_tuple("1.18.2")
     assert find_usb_pad([Port("COM1", 0x1234)], opener=lambda d: 1 / 0) is None   # no Espressif port: not opened
 
     # Login on 401, then the readings go through.

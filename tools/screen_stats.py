@@ -743,6 +743,7 @@ FEET_SLACK = 28       # px a mob's feet may be above or below yours and still co
 FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
 EFFECT_BRIGHT = 230   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
 VISIBLE_MIN = 0.6     # ...but at least this much of the mob must be seen
+KERNEL_MB = 250       # memory kept for a map's frames between readings (more is made afresh each reading)
 MATCH_SLACK = 1       # px: a partly covered mob's edge pixels may find their colour this far away
 COVERED = 0.1         # ...when this much of it is covered (effects, the screen's edge)
 
@@ -819,7 +820,7 @@ def strict_score(np, nears, parts, x, y, h, w, floor=0.08, hidden=None, loose=No
     taken as covered by a hit effect or damage number, or past the screen's
     edge: not seen rather than wrong, as long as most of the mob (VISIBLE_MIN)
     is still seen. A mob partly covered so (COVERED or more) has blurred
-    outlines too: with `loose` (nears grown a px) and each part's `edges`, a
+    outlines too: with `loose` (gives the nears grown a px) and each part's `edges`, a
     pixel on a part's edge may then find its colour a px away."""
     total = sum(m.sum() for _, m in parts)
     hits = [near[y:y + h, x:x + w] for near in nears]
@@ -831,7 +832,7 @@ def strict_score(np, nears, parts, x, y, h, w, floor=0.08, hidden=None, loose=No
         if covered > 1 - VISIBLE_MIN:
             covers = [None] * len(parts)   # too little of it seen to say
         elif covered >= COVERED and loose is not None:   # outlines blur around effects
-            hits = [hit + (grow[y:y + h, x:x + w] - hit) * edge for hit, grow, edge in zip(hits, loose, edges)]
+            hits = [hit + (grow[y:y + h, x:x + w] - hit) * edge for hit, grow, edge in zip(hits, loose(), edges)]
             covers = [m * b * (1 - hit) for hit, (_, m) in zip(hits, parts)]
     wsum = logs = 0.0
     for hit, (_, m), cover in zip(hits, parts, covers):
@@ -857,7 +858,7 @@ class ShapeSearch:
     fixed band size keeps each frame's FFT computed once."""
     def __init__(self, np, frames, sight, width=None, slack=FEET_SLACK, body=0, flyers=(), view="level", height=None):
         """`frames`: {mob: [rgba array, ...]}; `width`, `height`: the screen's."""
-        self.np, self.sight, self.slack, self.frames, self.cache = np, sight, slack, [], {}
+        self.np, self.sight, self.slack, self.frames, self.cache, self.cached = np, sight, slack, [], {}, 0
         self.body, self.flyers, self.view = body, set(flyers), ("screen" if view == "screen" and height else "level")
         self.rfft, self.irfft = ffts(np)
         for mob, images in sorted(frames.items()):
@@ -883,7 +884,7 @@ class ShapeSearch:
         self.w = max([f[3] for f in self.frames] or [1])
         self.bh = height if self.view == "screen" else self.h + (body if self.flyers else 0) + 2 * slack
         self.bw = min(2 * sight, width or 2 * sight) + self.w
-        self.fft = (fast_len(self.bh + self.h), fast_len(self.bw + self.w))
+        self.fft = (fast_len(self.bh), fast_len(self.bw))   # wrap-around only reaches the edge rows/columns thrown away
 
     def search(self, screen, x, feet, tolerance=50, need=SHAPE_MIN):
         """Mobs level with you: [(score, mob, left, top, width, height)], best
@@ -914,34 +915,43 @@ class ShapeSearch:
                 if j not in big:
                     continue
                 if key not in spectra:
-                    spectra[key] = self.rfft(near[key], self.fft)
-                if (i, j) not in self.cache:
-                    self.cache[(i, j)] = self.rfft(m[::-1, ::-1], self.fft)
-                product = spectra[key] * self.cache[(i, j)]
+                    spectra[key] = self.rfft(near[key], self.fft).astype(np.complex64)
+                kernel = self.cache.get((i, j))
+                if kernel is None:   # kept for every reading (single precision), up to KERNEL_MB; past that made each time
+                    kernel = self.rfft(m[::-1, ::-1], self.fft).astype(np.complex64)
+                    if self.cached + kernel.nbytes <= KERNEL_MB * 1e6:
+                        self.cache[(i, j)], self.cached = kernel, self.cached + kernel.nbytes
+                product = spectra[key] * kernel
                 F = product if F is None else F + product
             first = self.irfft(F, self.fft)[h - 1:self.bh, w - 1:self.bw] / big_total
             if self.view != "screen":   # at your level: feet level with yours, or (flying) at your height
                 lowest = self.bh - h - 2 * self.slack - (self.body if mob in self.flyers else 0)
                 first[:max(0, lowest)] = 0
             ys, xs = np.nonzero(first >= FIRST_PASS)
-            looked, grown_nears = [], None
-            if len(ys) and MATCH_SLACK:   # the strict check: edge pixels may find their colour a px away
-                grown_nears = []
+            if not len(ys):
+                continue
+            values = first[ys, xs]
+            if len(values) > 2000:
+                best = np.argpartition(-values, 2000)[:2000]
+                ys, xs, values = ys[best], xs[best], values[best]
+            order = np.argsort(-values)
+            ys, xs = ys[order], xs[order]
+            def grown_nears(parts=parts):   # the strict check's edge allowance, made only when a mob is partly covered
+                out = []
                 for rgb, _ in parts:
                     key = tuple(int(c) // 16 for c in rgb)
                     if key not in loose:
                         loose[key] = grown(np, near[key], MATCH_SLACK)
-                    grown_nears.append(loose[key])
-            values = first[ys, xs]
-            order = np.argpartition(-values, 2000)[:2000] if len(values) > 2000 else np.arange(len(values))
-            for k in order[np.argsort(-values[order])]:   # the 12 best distinct spots (a strong one's neighbours don't crowd out the rest)
-                cy, cx = int(ys[k]), int(xs[k])
-                if any(abs(cx - lx) < w // 2 and abs(cy - ly) < h // 2 for lx, ly in looked):
-                    continue
-                if len(looked) == 12:
+                    out.append(loose[key])
+                return out
+            for _ in range(12):   # the 12 best distinct spots (a strong one's neighbours don't crowd out the rest)
+                if not len(ys):
                     break
-                looked.append((cx, cy))
-                score = strict_score(np, nears, parts, cx, cy, h, w, hidden=hidden, loose=grown_nears, edges=edges)
+                cy, cx = int(ys[0]), int(xs[0])
+                apart = (np.abs(xs - cx) >= w // 2) | (np.abs(ys - cy) >= h // 2)
+                ys, xs = ys[apart], xs[apart]
+                score = strict_score(np, nears, parts, cx, cy, h, w, hidden=hidden,
+                                     loose=grown_nears if MATCH_SLACK else None, edges=edges)
                 if score >= need:
                     found.append((score, mob, left + cx, top + cy, w, h, i))
         found.sort(key=lambda f: -f[0])
@@ -956,9 +966,9 @@ class TagFinder:
     matched part by part, near where you were last (the whole screen when
     lost), so a tag half under your pet's still wins. Returns the tag's
     top-left and how sure (0-1)."""
-    def __init__(self, np, rgb, window=(260, 160)):
+    def __init__(self, np, rgb, window=(260, 160), near=(90, 80)):
         rgba = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255, rgb.dtype)], axis=2)
-        self.np, self.parts, self.window = np, colour_parts(np, rgba), window
+        self.np, self.parts, self.window, self.near, self.kernels = np, colour_parts(np, rgba), window, near, {}
         self.rfft, self.irfft = ffts(np)
         self.h, self.w = rgb.shape[:2]
         self.last = None
@@ -967,31 +977,36 @@ class TagFinder:
         np = self.np
         H, W = screen.shape[:2]
         spots = []
-        if self.last:
+        if self.last:   # close by first (it hardly moves between readings), then further, then everywhere
             lx, ly = self.last
-            spots.append((max(0, lx - self.window[0]), max(0, ly - self.window[1]),
-                          min(W, lx + self.w + self.window[0]), min(H - skip_bottom, ly + self.h + self.window[1])))
+            for wx, wy in (self.near, self.window):
+                spots.append((max(0, lx - wx), max(0, ly - wy), min(W, lx + self.w + wx), min(H - skip_bottom, ly + self.h + wy)))
         spots.append((0, 0, W, H - skip_bottom))   # lost: the whole screen but the HUD
+        total = sum(m.sum() for _, m in self.parts)
         for x0, y0, x1, y1 in spots:
             area = screen[y0:y1, x0:x1].astype(np.float32)
             if area.shape[0] < self.h or area.shape[1] < self.w:
                 continue
-            size = (fast_len(area.shape[0] + self.h), fast_len(area.shape[1] + self.w))
-            nears, F, total = [], None, sum(m.sum() for _, m in self.parts)
-            for rgb, m in self.parts:
+            size = (fast_len(area.shape[0]), fast_len(area.shape[1]))
+            if size not in self.kernels:
+                self.kernels = {size: [self.rfft(m[::-1, ::-1], size) for _, m in self.parts]}
+            nears, F = [], None
+            for (rgb, m), kernel in zip(self.parts, self.kernels[size]):
                 near = (((area - np.array(rgb, np.float32)) ** 2).sum(axis=2) <= 2500).astype(np.float32)
                 nears.append(near)
-                product = self.rfft(near, size) * self.rfft(m[::-1, ::-1], size)
+                product = self.rfft(near, size) * kernel
                 F = product if F is None else F + product
             first = self.irfft(F, size)[self.h - 1:area.shape[0], self.w - 1:area.shape[1]] / total
-            best, looked = (0.0, 0, 0), []
-            for k in np.argsort(-first, axis=None)[:400]:
-                y, x = divmod(int(k), first.shape[1])
-                if any(abs(x - lx) < self.w // 2 and abs(y - ly) < self.h // 2 for lx, ly in looked):
-                    continue
-                looked.append((x, y))
-                if len(looked) > 25:
+            flat = first.ravel()
+            top = np.argpartition(-flat, 400)[:400] if flat.size > 400 else np.arange(flat.size)
+            ys, xs = np.divmod(top[np.argsort(-flat[top])], first.shape[1])
+            best = (0.0, 0, 0)
+            for _ in range(25):   # the 25 best distinct spots
+                if not len(ys):
                     break
+                y, x = int(ys[0]), int(xs[0])
+                apart = (np.abs(xs - x) >= self.w // 2) | (np.abs(ys - y) >= self.h // 2)
+                ys, xs = ys[apart], xs[apart]
                 score = strict_score(np, nears, self.parts, x, y, self.h, self.w, floor=0.15)
                 if score > best[0]:
                     best = (score, x + x0, y + y0)
@@ -1045,6 +1060,46 @@ def tune_tolerance(config, name, step):
     target["tolerance"] = min(TOL_MAX, max(TOL_MIN, mob_tolerance(config, name) + step * TOL_STEP))
     return (name if found else "every map"), target["tolerance"]
 
+SETTLE_SECONDS = 5.0  # how long you must stand still somewhere new before you're looked for from there
+
+class Ground:
+    """The height you look for mobs at: your feet where you last stood. While
+    you jump, climb or fall the minimap dot moves up and down, so the field of
+    view stays on the platform you left (and follows you sideways); once the
+    dot has been still for `settle` seconds you've settled, and it moves to
+    wherever your feet are now (and follows them while you stay). A quick hop
+    onto a ledge and back doesn't move it. The dot shows where you really are,
+    whatever the camera does; without a dot, your name tag being still is
+    used instead."""
+    def __init__(self, settle=SETTLE_SECONDS, slack=1.0, tag_slack=4):
+        self.settle, self.slack, self.tag_slack = settle, slack, tag_slack
+        self.feet, self.last, self.since = None, None, None
+
+    def update(self, you, dot_y=None, now=0.0):
+        """`you`: (x, feet) from your name tag, or None; `dot_y`: the minimap
+        dot's height in minimap pixels, or None; `now`: seconds. Returns
+        (x, feet to look at), or None when you aren't found."""
+        if not you:
+            self.last = None
+            return None
+        x, feet = you
+        same = False
+        if self.last is not None:
+            last_dot, last_feet = self.last
+            if dot_y is not None and last_dot is not None:
+                same = abs(dot_y - last_dot) <= self.slack           # the camera may move; the dot only moves with you
+            else:
+                same = abs(feet - last_feet) <= self.tag_slack
+        if not same:
+            self.since = now                                          # moving: the clock starts again
+        self.last = (dot_y, feet)
+        if self.feet is None or now - self.since >= self.settle:
+            self.feet = feet
+        return x, self.feet
+
+    def reset(self):
+        self.feet, self.last, self.since = None, None, None
+
 class Screen:
     """Everything read each tick, plus what's learned at start (the map)."""
     def __init__(self, sct, config, sprites_dir=None):
@@ -1062,6 +1117,8 @@ class Screen:
         self.searches = {}    # {map: ShapeSearch}
         self.you = None       # (x, feet) where your name tag says you are, else None
         self.memory = MobMemory((config.get("mobs") or {}).get("hold", HOLD_SECONDS))
+        self.ground = Ground((config.get("mobs") or {}).get("settle", SETTLE_SECONDS))
+        self.seen = None   # where your name tag puts your feet right now
         self.clock = time.monotonic
         self.np, self.tag, self.pixels = numpy_or_none(), None, None
         tag = (config.get("mobs") or {}).get("tag")
@@ -1115,16 +1172,19 @@ class Screen:
             self.pixels = (self.np.frombuffer(shot, self.np.uint8).reshape(m["height"], m["width"], 3), m["left"], m["top"])
         return self.pixels
 
-    def find_you(self):
-        """Where you stand: your name tag's place on screen if found, else
-        where you stood at setup. Sets self.you (None when not tracked)."""
+    def find_you(self, dot_y=None):
+        """Where you are: your name tag's place on screen (self.seen), and the
+        field of view's place (self.you): that, but at the height of the
+        platform you last stood on while you jump or climb (Ground). Both None
+        when your tag isn't found (then the box from setup is used)."""
         mb = self.config.get("mobs") or {}
-        self.you = None
+        self.seen = None
         if self.tag:
             pixels, ox, oy = self.screen()
             found = self.tag.find(pixels)
             if found:
-                self.you = (found[0] + ox - mb["tag"]["x"], found[1] + oy - mb["tag"]["y"])
+                self.seen = (found[0] + ox - mb["tag"]["x"], found[1] + oy - mb["tag"]["y"])
+        self.you = self.ground.update(self.seen, dot_y, self.clock())
         return self.you
 
     def shape_search(self, name):
@@ -1133,6 +1193,7 @@ class Screen:
         if not self.np or not name or not self.sprites_dir or name not in self.map_mobs:
             return None
         if name not in self.searches:
+            self.searches = {}   # only this map's: each holds its frames' spectra, too much to keep for every map
             mb = self.config["mobs"]
             try:
                 from PIL import Image
@@ -1197,9 +1258,11 @@ class Screen:
         c = self.config
         self.pixels = None   # a fresh screen this reading
         out = read_bars(self.sct, c.get("bars", {}))
-        self.find_you()
-        name = self.current = self.map_name()   # first: the map decides the minimap's size
-        dot, world, mm = None, None, self.minimap_box(name)
+        name = self.map_name()   # first: the map decides the minimap's size
+        if name != self.current:
+            self.ground.reset()   # another map: no platform yet
+        self.current = name
+        dot, world, mm, dot_y = None, None, self.minimap_box(name), None
         if mm:
             if mm != self.box:   # another size: the slide so far doesn't carry over
                 self.box, self.minimap = mm, MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
@@ -1209,6 +1272,8 @@ class Screen:
             if dot:                      # a login or loading screen isn't the map
                 self.minimap.update(raw, w, h)
                 world = self.minimap.world(dot, w, h)
+                dot_y = dot[1] * (h - 1) / 100.0   # minimap px: is it still? (Ground)
+        self.find_you(dot_y)   # after the minimap: jumping, the field of view stays on your platform
         found = self.mobs(name)
         mobs = found.pop("mobs", None)   # None: no mob detector, so the pad doesn't wait for mobs
         watches = {}
@@ -2032,6 +2097,8 @@ def get_ready_in_game(sct, config, path):
         return True
     return False
 
+REST = 0.15   # s: at least this between readings, so the game keeps the CPU it needs
+
 def run(args):
     import mss
     sct, config = mss.mss(), load_config(args.config, required=False)
@@ -2094,7 +2161,7 @@ def run(args):
             tol = mob_tolerance(config, screen.current) if readings.get("mobs") is not None else None
             LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint, tol),
                        layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box, screen.you))
-        time.sleep(wait)
+        time.sleep(max(wait - (time.time() - started), REST))   # a slow reading isn't followed by a full wait
 
 # ---- the game layer -------------------------------------------------------------
 # An always-on-top strip across the top of the game: what's being read and
@@ -2813,6 +2880,26 @@ def selftest():
         shot[30:40, 200:230] = (90, 140, 60); shot[150:160, 100:130] = tag  # down in the HUD's strip: not looked at
         assert finder.find(shot) is None
 
+    # Jumping, the field of view stays on your platform until you've stood still somewhere new for 5 s.
+    g = Ground(settle=5)
+    assert g.update((700, 546), 120.0, 0) == (700, 546)                       # first sight: where you are
+    assert g.update((705, 546), 120.0, 0.5) == (705, 546)                     # walking: follows you sideways
+    assert g.update((710, 496), 116.0, 1.0) == (710, 546)                     # jumping: your tag rises, the view doesn't
+    assert g.update((715, 470), 113.5, 1.5) == (715, 546)
+    assert g.update((720, 546), 120.0, 2.0) == (720, 546)                     # landed where you were
+    assert g.update((730, 480), 114.0, 2.5)[1] == 546                         # up onto a ledge...
+    assert g.update((730, 480), 114.0, 5.0)[1] == 546                         # ...still there 2.5 s on: not yet
+    assert g.update((730, 546), 120.0, 6.0)[1] == 546                         # hopped back down: never moved
+    for t in (6.5, 8.0, 10.0):                                                # up again, and staying...
+        assert g.update((730, 480), 114.0, t)[1] == 546
+    assert g.update((730, 480), 114.0, 11.5) == (730, 480)                    # ...settled 5 s: looked for from there
+    assert g.update((730, 500), 114.0, 12.0) == (730, 500)                    # the camera moving: the dot's still, so the view follows your feet
+    assert g.update(None, 114.0, 12.5) is None and g.update((730, 500), 114.0, 13.0) == (730, 500)   # tag lost a moment: held
+    g = Ground(settle=5)                                                      # no minimap: your tag being still decides
+    assert [g.update((700, f), None, t)[1] for t, f in ((0, 546), (1, 500), (2, 546), (3, 480), (6, 480), (8.5, 480))] == \
+        [546, 546, 546, 546, 546, 480]
+    g.reset()
+    assert g.update((700, 300), 50.0, 20) == (700, 300)                       # another map: starts afresh
     # Mobs missed for a moment (hit effects, mist) are held where they were seen.
     memory, snail = MobMemory(0.6), (0.9, "snail", 100, 50, 40, 30)
     assert memory.update([snail], 0.0, "A") == [snail + (False,)]

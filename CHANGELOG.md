@@ -3,6 +3,22 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## Screen reader update (after 1.18.0, PC only)
+
+- 🦘 **Jumping keeps your field of view on your platform**: sight and reach
+  follow you sideways, but only move up or down once you've settled
+  somewhere new for 5 s (the minimap dot still; `"settle"` in `mobs`), so
+  mobs on your platform stay counted mid-jump and a quick hop onto a ledge
+  doesn't move it
+- ⚡ **About twice as fast, and far lighter on memory**: on 2 cores a reading
+  went from 0.74 s to about 0.38 s, the first on a new map from 3.4 s to
+  about 1.2 s. Only the current map's frames stay in memory (capped at
+  250 MB; before, every map visited added 350 MB or more), the name tag is
+  looked for close by first, and a slow reading isn't followed by a full
+  wait. Same results on the sample scenes (21 of 21)
+
+No pad update needed: get the new `tools/screen_stats.py`.
+
 ## 1.18.0
 
 - 🔍 **Mobs found by shape** (with numpy): every animation frame of the map's

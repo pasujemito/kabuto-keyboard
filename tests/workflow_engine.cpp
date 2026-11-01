@@ -293,7 +293,8 @@ int main() {
         q.skills[0].cooldown={0,0};ranged.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();
         run(engine,{ranged});assert(pressCount(21)==3);
     }
-    // HP/Mana potions fire on their own timers, before skills, never inside a chord.
+    // HP/Mana potions fire on their own timers, before skills, inside a jump-attack:
+    // down while the jump is held, up before the attack goes down.
     {
         DynamicPattern q=p;q.sets={3,3};q.attacksPerSet={1,1};
         DynamicSkill hp;hp.id="hp";hp.keycode=6;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={1000000,1000000};
@@ -304,7 +305,15 @@ int main() {
         assert(pressCount(6)==1&&pressCount(0x19)==3&&pressCount(11)==3);
         std::vector<uint8_t> order;for(auto e:hidEvents)if(e.down&&(e.key==6||e.key==0x19||e.key==11))order.push_back(e.key);
         assert(order.size()==7&&order[0]==6&&order[1]==0x19&&order[2]==11);
-        for(auto e:hidEvents)if(e.key==6||e.key==0x19)assert(!e.mods);
+        for(auto e:hidEvents)if(e.key==6||e.key==0x19)assert(e.mods==4);   // with the jump (Alt) held, the attack (Ctrl) not yet
+        // Drinking adds no time: the attacks land exactly when they would without potions.
+        uint32_t runStart=0;
+        auto lastAttack=[&]{uint32_t at=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)at=e.at-runStart;return at;};
+        testRandomHook=[](long){return 0L;};
+        engine.dynamicSkillTimers_.clear();hidEvents.clear();runStart=testClock;run(engine,{drinking});uint32_t with=lastAttack();
+        DynamicPattern dry=q;dry.potions.clear();Step plain=dynamic;plain.setPattern(dry);
+        engine.dynamicSkillTimers_.clear();hidEvents.clear();runStart=testClock;run(engine,{plain});testRandomHook={};
+        assert(with&&with==lastAttack());
         q.potions[0].enabled=false;drinking.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{drinking});
         assert(pressCount(6)==0&&pressCount(0x19)==3);
     }
@@ -321,7 +330,7 @@ int main() {
         assert(pressCount(6)>=2&&pressCount(0x19)==1);
         uint32_t firstHp=0,secondHp=0;for(auto e:hidEvents)if(e.down&&e.key==6){if(!firstHp)firstHp=e.at;else if(!secondHp)secondHp=e.at;}
         assert(secondHp-firstHp>=LIVE_POTION_GAP_MS);
-        for(auto e:hidEvents)if(e.key==6)assert(!e.mods);   // never inside the jump/attack chord
+        for(auto e:hidEvents)if(e.key==6)assert(e.mods==4);   // inside the jump-attack, before the attack goes down
         drink(800,900);     // both bars healthy: neither drinks, not even on the timer
         assert(pressCount(6)==0&&pressCount(0x19)==0);
         liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});

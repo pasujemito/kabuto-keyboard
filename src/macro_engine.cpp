@@ -563,6 +563,22 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 publish(SMART_ATTACK);
                 // Establish the actual initial facing before the first attack.
                 tap(facing(),pattern->directionHold,pattern->directionAfter);
+                // Potions due are pressed inside the next jump-attack (down with the jump, up as the
+                // attack goes down), so drinking never pauses the combo; a refill of several taps
+                // takes one per jump-attack. Their wait starts when they're decided on.
+                std::vector<uint32_t> potionTaps(pattern->potions.size(),0);
+                auto decidePotions=[&]{
+                    for(size_t k=0;k<pattern->potions.size()&&!stop;++k){
+                        const DynamicSkill& potion=pattern->potions[k];
+                        if(potionTaps[k]||!potionDue(potion))continue;
+                        int value;uint32_t taps=potionLive(potion,value)?livePotionTaps(value,potion.barMax,potion.perTap):0;
+                        potionTaps[k]=taps?taps:sample(potion.repeats);
+                        dynamicSkillTimers_[potionKey(potion)]={millis(),sample(potion.cooldown)};
+                        Step entry=s;entry.keycode=potion.keycode;
+                        char label[48];std::snprintf(label,sizeof(label),"%s: %lu tap(s) while attacking",potion.id.c_str(),(unsigned long)potionTaps[k]);
+                        logStep(entry,pc,millis(),0,true,label);
+                    }
+                };
                 for(uint32_t set=0;set<sets&&!stop;++set){
                     uint32_t count=sample(pattern->attacksPerSet),started=millis();
                     Step entry=s;entry.keycode=facing().keycode;entry.value=count;
@@ -570,21 +586,21 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
                         if(screenCheck())break;
-                        // Live potions can't wait for the end of the set: drink between attacks.
-                        int value;
-                        for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
+                        decidePotions();
                         if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
                         uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
-                        std::vector<Step> actions{
-                            edge(true,jump.keycode,jump.mods),delay(sample(pattern->jumpToAttack)),
+                        std::vector<Step> actions{edge(true,jump.keycode,jump.mods)};
+                        for(size_t k=0;k<potionTaps.size();++k)if(potionTaps[k]){DynamicKey key=dynamicKeycode(pattern->potions[k].keycode);actions.push_back(edge(true,key.keycode,key.mods));}
+                        actions.push_back(delay(sample(pattern->jumpToAttack)));
+                        for(size_t k=0;k<potionTaps.size();++k)if(potionTaps[k]){DynamicKey key=dynamicKeycode(pattern->potions[k].keycode);actions.push_back(edge(false,key.keycode,key.mods));--potionTaps[k];}
+                        for(const Step& step:std::vector<Step>{
                             edge(true,attack.keycode,attack.mods),delay(sample(pattern->attackToJumpUp)),
                             edge(false,jump.keycode,jump.mods),delay(sample(pattern->jumpUpToAttackUp)),
-                            edge(false,attack.keycode,attack.mods),delay(gap)};
+                            edge(false,attack.keycode,attack.mods),delay(gap)})actions.push_back(step);
                         executeSteps(actions,stop,state,depth+1);
                     }
                     updateLogDuration(setLog,millis()-started,true);
                     if(stop)break;
-                    for(const auto& potion:pattern->potions)if(!stop&&potionDue(potion))drink(potion);
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i)
                         if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))skills.push_back(i);
@@ -604,6 +620,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     tap(facing(),pattern->directionHold,pattern->directionAfter);
                     if(!stop)yieldTick();
                 }
+                // Taps still owed when the attacking ends (a refill of several): drunk now.
+                for(size_t k=0;k<potionTaps.size()&&!stop;++k)
+                    for(;potionTaps[k]&&!stop;--potionTaps[k])tap(dynamicKeycode(pattern->potions[k].keycode),pattern->potions[k].hold,pattern->potions[k].after);
                 patternViewSet(PatternView());
                 releaseTracked();
                 logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,stop?"dynamic: stopped":"dynamic: finished");

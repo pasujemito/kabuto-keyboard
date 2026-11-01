@@ -3,7 +3,15 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
-## Screen reader update (after 1.18.0, PC only)
+## 1.18.1
+
+- 🧪 **Potions don't pause the attacks**: a potion that's due is pressed
+  inside the next jump-attack (down with the jump, released as the attack
+  goes down) instead of stopping between attacks to drink; a refill of
+  several taps takes one jump-attack each. Live (screen-read) and timed
+  potions alike
+
+The rest is the screen reader (`tools/screen_stats.py`), already on `main`:
 
 - 🦘 **Jumping keeps your field of view on your platform**: sight and reach
   follow you sideways, but only move up or down once you've settled
@@ -77,7 +85,7 @@ and show up in the pad's **Updates** panel.
   and The Burnt Land III and V are told apart. Setups with a hand-marked
   name area are offered the switch once (maps are then taught again)
 
-No pad update needed: get the new `tools/screen_stats.py`.
+Update the pad (Recordings → Updates) and get the new `tools/screen_stats.py`.
 
 ## 1.18.0
 

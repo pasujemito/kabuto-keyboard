@@ -1374,14 +1374,19 @@ def pointer():
     from pynput import mouse
     return tuple(int(v) for v in mouse.Controller().position)
 
-def mark_points(prompt, count):
-    """Hover and press F8 to mark up to `count` points; Esc ends early (or skips)."""
+CANCELLED = [None]   # the key that ended the last mark_points early, if one did
+
+def mark_points(prompt, count, cancel=("esc",)):
+    """Hover and press F8 to mark up to `count` points; Esc (or any key in
+    `cancel`) ends early (or skips)."""
     points, done = [], threading.Event()
     say(prompt, sticky=True)
+    CANCELLED[0] = None
     def on_key(name):
         if done.is_set():
             return
-        if name == "esc":
+        if name in cancel:
+            CANCELLED[0] = name   # which key ended it (the one-time questions tell Esc from F9)
             done.set()
         elif name == "f8":
             points.append(pointer())
@@ -1451,11 +1456,11 @@ def setup_mobs(sct, config, sprites_dir):
         mobs.update(hitbox(*pts[:3]), colors=[pixel(sct, x, y) for x, y in pts[3:]])
     config["mobs"] = mobs
 
-def mark_tag(sct, mobs):
+def mark_tag(sct, mobs, skip="Esc skips", cancel=("esc",)):
     """Your name tag, so you're found wherever the camera puts you: its
     top-left and bottom-right corners, kept with where it sits from your feet."""
     pts = mark_points("Name tag: hover the TOP-LEFT corner of YOUR name tag (under your character), F8; "
-                      "then its BOTTOM-RIGHT corner, F8 (Esc skips)", 2)
+                      "then its BOTTOM-RIGHT corner, F8 (%s)" % skip, 2, cancel)
     if len(pts) < 2:
         say("  skipped: you're looked for where you stood at setup"); return
     (ax, ay), (bx, by) = pts
@@ -1493,9 +1498,9 @@ def learn_here(sct, mobs, sprites):
     return {"colors": learned["colors"], "step_x": learned["step"], "step_y": learned["step"], "cell": learned["cell"],
             "min_hits": learned["min_hits"], "names": learned["names"], "mob_w": learned["mob_w"], "sprites": sorted(sprites)}
 
-def mark_map_name(config):
+def mark_map_name(config, skip="Esc skips", cancel=("esc",)):
     pts = mark_points("Map name: hover the TOP-LEFT of the map's name, F8; then its BOTTOM-RIGHT, a bit past where "
-                      "the longest name would end, F8 (Esc skips)", 2)
+                      "the longest name would end, F8 (%s)" % skip, 2, cancel)
     if len(pts) < 2:
         say("  skipped"); return None
     (ax, ay), (bx, by) = pts
@@ -2067,25 +2072,32 @@ def get_ready(path, sprites_dir, ask=ask, install=pip_install, tool=frames_tool)
         save_config(path, config)
 
 def get_ready_in_game(sct, config, path):
-    """First thing in the game: anything new to mark (F8; Esc means not now,
-    remembered), and maps to teach again. Returns True if the setup changed."""
+    """First thing in the game: anything new to mark (F8), and maps to teach
+    again. Esc means not now (remembered, not asked again); F9 means later:
+    the map picker opens and the rest waits for the next start. Returns True
+    if the setup changed."""
     skip = set(config.get("not_now", []))
     before = json.dumps(config, sort_keys=True)
     mobs = config.get("mobs") or {}
+    later = ("Esc: not now, F9: later", ("esc", "f9"))   # F9 still picks a map: never stuck here
+    asked_later = lambda: CANCELLED[0] == "f9"
     if numpy_or_none() and "bottom" in mobs and not mobs.get("tag") and "tag" not in skip:
-        say("New: the mob search can follow you on screen by your name tag.")
-        mark_tag(sct, mobs)
-        if not mobs.get("tag"):
+        say("One-time setup for this version: the mob search can follow you by your name tag.")
+        mark_tag(sct, mobs, *later)
+        if not mobs.get("tag") and not asked_later():
             skip.add("tag")
             say("  (asked once; --tag to mark it later)")
     area = config.get("map_name")
-    if area and area["x2"] - area["x1"] + 1 < NAME_MIN_W and "map_name" not in skip:
-        say("The map name area is %d px wide: longer names get cut off and look alike (The Burnt Land III and V)."
-            % (area["x2"] - area["x1"] + 1))
-        if mark_map_name(config):
+    if area and area["x2"] - area["x1"] + 1 < NAME_MIN_W and "map_name" not in skip and not asked_later():
+        say("One-time setup for this version: the map name area is %d px wide, so longer names get cut off and look"
+            " alike (The Burnt Land III and V)." % (area["x2"] - area["x1"] + 1))
+        if mark_map_name(config, *later):
             for m in config.get("maps", {}).values():
                 m.pop("name_reading", None)   # names read from the new area: teach each again
-        skip.add("map_name")   # asked once either way
+        if not asked_later():
+            skip.add("map_name")   # asked once, marked or not
+    if asked_later():
+        say("  OK, asked again next start.")
     old = sorted(n for n, m in config.get("maps", {}).items() if m.get("rows") and not name_taught(m))
     if old:
         say("%d map(s) need teaching again (names are read a new way): on each, press F9: %s"
@@ -2097,6 +2109,10 @@ def get_ready_in_game(sct, config, path):
         return True
     return False
 
+def layer_maps(maps, config):
+    """For the F9 list: every map in map.json, and when each taught one was taught."""
+    return sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items() if name_taught(m)}
+
 REST = 0.15   # s: at least this between readings, so the game keeps the CPU it needs
 
 def run(args):
@@ -2106,18 +2122,21 @@ def run(args):
         say("First run: let's mark your bars, minimap and mobs (hover, then F8).")
         setup(args.config, args.sprites, args.game or "maplestory")
         config = load_config(args.config)
+    map_list = MapList(args.sprites)
+    if LAYER:   # F9 works from the start, the one-time questions below included (it's taught once readings begin)
+        LAYER.maps, LAYER.taught = layer_maps(map_list.get(), config)
     get_ready_in_game(sct, config, args.config)
     if args.game and config.get("game") != args.game:   # --game other: sampled colours again
         config["game"] = args.game
         save_config(args.config, config)
-    screen, pad, link, map_list = Screen(sct, config, args.sprites), None, None, MapList(args.sprites)
+    screen, pad, link = Screen(sct, config, args.sprites), None, None
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         maps = map_list.get()
         screen.sizes = map_sizes(maps)
         screen.map_mobs = {n: e.get("mobs") for n, e in maps.items()}
         if LAYER:
-            LAYER.maps, LAYER.taught = sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items() if name_taught(m)}
+            LAYER.maps, LAYER.taught = layer_maps(maps, config)
             LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
             while not LAYER.commands.empty():
                 kind, value = LAYER.commands.get()
@@ -3124,6 +3143,18 @@ def selftest():
     watch_pad_keys(Link(), every=0.02)
     assert mark_points("Hover the thing, F8 (or press Mark on the pad)", 2) == [(320, 240), (320, 240)]
     stop()
+    threading.Timer(0.05, press, ("f9",)).start()                            # a one-time question: F9 means not now
+    assert mark_points("Name tag... (Esc or F9: not now)", 2, ("esc", "f9")) == []
+    if numpy_or_none():   # F9 during the one-time questions: the rest wait for next start, nothing remembered
+        config = {"mobs": {"x": 400, "y": 300, "top": 260, "bottom": 340}, "map_name": {"x1": 0, "y1": 0, "x2": 50, "y2": 12}}
+        threading.Timer(0.05, press, ("f9",)).start()
+        rescue = threading.Timer(2.0, press, ("esc",)); rescue.start()      # a second question waiting would end here, and fail below
+        with tempfile.TemporaryDirectory() as d:
+            get_ready_in_game(None, config, os.path.join(d, "kabuto-bars.json"))
+        rescue.cancel()
+        assert "not_now" not in config and "tag" not in config["mobs"] and CANCELLED[0] == "f9", config
+    assert layer_maps({"B": {}, "A": {}}, {"maps": {"A": {"rows": ["1"], "name_reading": NAME_READING, "taught_at": 5},
+                                                    "B": {"rows": ["1"], "taught_at": 3}}}) == (["A", "B"], {"A": 5})
     pointer = real_pointer
     assert heard[:3] == ["f8", "f10", "f8"], heard
     print("selftest passed")

@@ -186,8 +186,10 @@ it needs each time it starts and offers it, so there's nothing else to run:
   name area again if it's too narrow for long names; and which maps need
   teaching again with F9.
 
-Each is asked once: a "no" is remembered (`not_now` in `kabuto-bars.json`;
-delete an entry to be asked again), and mobs maplestory.io doesn't have are
+In the game, Esc means not now (remembered, not asked again) and F9 means
+later: the map picker opens and the questions wait for the next start. F9
+works the whole time. In the terminal a "no" is remembered too (`not_now` in
+`kabuto-bars.json`; delete an entry to be asked again), and mobs maplestory.io doesn't have are
 kept in `mobs/frames-not-found.txt`.
 
 Over USB there's no Wi-Fi, `kabuto.local` or PIN involved: having the pad

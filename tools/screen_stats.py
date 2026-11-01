@@ -226,10 +226,45 @@ def overlap_mismatch(prev, cur, w, h, dx, dy, step=2):
         return float("inf")
     return diff / len(vals) / max(spread(vals), 45)   # 45 = 15 levels on each of R, G, B
 
+def find_slide_np(np, prev, cur, w, h, max_dx, max_dy):
+    """find_slide with numpy: the same sums, done at once (a few ms instead of
+    tens on a slow PC)."""
+    P, C = (np.frombuffer(r, np.uint8).reshape(h, w, 3).sum(axis=2, dtype=np.int64) for r in (prev, cur))
+    def cols(L, y0, y1):
+        rows = L[y0:y1:2]
+        return rows.sum(axis=0) / (3.0 * max(len(rows), 1))
+    def rows_(L, x0, x1):
+        cs = L[:, x0:x1:2]
+        return cs.sum(axis=1) / (3.0 * max(cs.shape[1], 1))
+    def shift(a, b, max_shift):
+        n, best = min(len(a), len(b)), None
+        for s in range(-max_shift, max_shift + 1):
+            lo, hi = max(0, -s), min(n, n - s)
+            if hi - lo < n // 2:
+                continue
+            diff = float(np.abs(a[lo + s:hi + s] - b[lo:hi]).mean())
+            score = diff + 0.01 * abs(s)
+            if best is None or score < best[0]:
+                best = (score, s)
+        return best[1] if best else 0
+    dx = dy = 0
+    for _ in range(2):
+        dx = shift(cols(P, max(0, dy), min(h, h + dy)), cols(C, max(0, -dy), min(h, h - dy)), max_dx)
+        dy = shift(rows_(P, max(0, dx), min(w, w + dx)), rows_(C, max(0, -dx), min(w, w - dx)), max_dy)
+    a = C[max(0, -dy):min(h, h - dy):2, max(0, -dx):min(w, w - dx):2]
+    b = P[max(0, -dy) + dy:min(h, h - dy) + dy:2, max(0, -dx) + dx:min(w, w - dx) + dx:2]
+    if not a.size:
+        return dx, dy, float("inf")
+    spread_ = float(np.abs(a - a.mean()).mean())
+    return dx, dy, float(np.abs(a - b).mean()) / max(spread_, 45)
+
 def find_slide(prev, cur, w, h, max_dx, max_dy):
     """(dx, dy, mismatch) between two minimap views. Sideways first from
     column brightness, then up and down over the columns both views share,
     then sideways again over the shared rows. Mismatch: see overlap_mismatch."""
+    np = numpy_or_none()
+    if np:
+        return find_slide_np(np, prev, cur, w, h, max_dx, max_dy)
     dx = dy = 0
     for _ in range(2):
         py, cy = (max(0, dy), min(h, h + dy)), (max(0, -dy), min(h, h - dy))
@@ -768,6 +803,7 @@ def read_bars(sct, bars):
 
 FEET_SLACK = 28       # px a mob's feet may be above or below yours and still count as on your platform
 FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
+FRAMES_PER_SPOT = 3   # a mob's frames looked at closely per spot: the ones the fast pass liked best there
 EFFECT_BRIGHT = 230   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
 VISIBLE_MIN = 0.6     # ...but at least this much of the mob must be seen
 KERNEL_MB = 250       # memory kept for a map's frames between readings (more is made afresh each reading)
@@ -838,7 +874,7 @@ def colour_parts(np, rgba):
             out.append((tuple(float(c) for c in a[..., :3][m].mean(axis=0)), m.astype(np.float32)))
     return out
 
-def strict_score(np, nears, parts, x, y, h, w, floor=0.08, hidden=None, loose=None, edges=None):
+def strict_score(np, nears, parts, x, y, h, w, floor=0.08, hidden=None, loose=None, edges=None, visible=None):
     """Every part must be there: a geometric mean of how much of each part
     matches, weighted by its size (but no part below `floor`), so a small
     flickering one (flames, sparkles) can't veto a match and scenery sharing
@@ -856,7 +892,7 @@ def strict_score(np, nears, parts, x, y, h, w, floor=0.08, hidden=None, loose=No
         b = hidden[y:y + h, x:x + w]
         covers = [m * b * (1 - hit) for hit, (_, m) in zip(hits, parts)]
         covered = sum(c.sum() for c in covers) / total
-        if covered > 1 - VISIBLE_MIN:
+        if covered > 1 - (VISIBLE_MIN if visible is None else visible):
             covers = [None] * len(parts)   # too little of it seen to say
         elif covered >= COVERED and loose is not None:   # outlines blur around effects
             hits = [hit + (grow[y:y + h, x:x + w] - hit) * edge for hit, grow, edge in zip(hits, loose(), edges)]
@@ -913,10 +949,13 @@ class ShapeSearch:
         self.bw = min(2 * sight, width or 2 * sight) + self.w
         self.fft = (fast_len(self.bh), fast_len(self.bw))   # wrap-around only reaches the edge rows/columns thrown away
 
-    def search(self, screen, x, feet, tolerance=50, need=SHAPE_MIN):
+    def search(self, screen, x, feet, tolerance=50, need=SHAPE_MIN, look=()):
         """Mobs level with you: [(score, mob, left, top, width, height)], best
         first, one per mob. `screen` is an (H, W, 3) array; x and feet are where
-        you stand on it."""
+        you stand on it. For each mob in `look` (as found before), self.traces
+        gets how much of it is still at its spot (its best strict score
+        there, 0-1): a mob under hit effects still shows, a dead one doesn't."""
+        self.traces = {}
         np = self.np
         H, W = screen.shape[:2]
         top = 0 if self.view == "screen" else feet + self.slack - self.bh
@@ -925,7 +964,7 @@ class ShapeSearch:
         y0, y1, x0, x1 = max(0, top), min(H, top + self.bh), max(0, left), min(W, left + self.bw)
         if y1 > y0 and x1 > x0:
             band[y0 - top:y1 - top, x0 - left:x1 - left] = screen[y0:y1, x0:x1]
-        t2, near, loose, spectra, found = float(tolerance) ** 2, {}, {}, {}, []
+        t2, near, loose, spectra, found, spots = float(tolerance) ** 2, {}, {}, {}, [], []
         hidden = np.ones((self.bh, self.bw), np.float32)   # off screen: not seen
         if y1 > y0 and x1 > x0:
             hidden[y0 - top:y1 - top, x0 - left:x1 - left] = (band[y0 - top:y1 - top, x0 - left:x1 - left].max(axis=2) >= EFFECT_BRIGHT) \
@@ -954,6 +993,19 @@ class ShapeSearch:
             if self.view != "screen":   # at your level: feet level with yours, or (flying) at your height
                 lowest = self.bh - h - 2 * self.slack - (self.body if mob in self.flyers else 0)
                 first[:max(0, lowest)] = 0
+            for k in look:   # a mob seen before: the best spot near where it was, checked closely
+                if k[1] != mob:
+                    continue
+                cx, cy, rx, ry = k[2] - left, k[3] - top, max(6, k[4] // 4), max(4, k[5] // 4)
+                win = first[max(0, cy - ry):max(0, cy + ry + 1), max(0, cx - rx):max(0, cx + rx + 1)]
+                if win.size:
+                    vy, vx = divmod(int(win.argmax()), win.shape[1])
+                    trace = strict_score(np, nears, parts, max(0, cx - rx) + vx, max(0, cy - ry) + vy, h, w, hidden=hidden,
+                                         visible=TRACE_VISIBLE)
+                    spot = hidden[max(0, cy):max(0, cy + k[5]), max(0, cx):max(0, cx + k[4])]
+                    if spot.size and spot.mean() >= 0.5:
+                        trace = 1.0   # mostly hit effects there: something is being hit, not gone
+                    self.traces[k] = max(self.traces.get(k, 0.0), trace)
             ys, xs = np.nonzero(first >= FIRST_PASS)
             if not len(ys):
                 continue
@@ -971,16 +1023,31 @@ class ShapeSearch:
                         loose[key] = grown(np, near[key], MATCH_SLACK)
                     out.append(loose[key])
                 return out
+            frame = (mob, parts, h, w, list(nears), edges, grown_nears)
             for _ in range(12):   # the 12 best distinct spots (a strong one's neighbours don't crowd out the rest)
                 if not len(ys):
                     break
                 cy, cx = int(ys[0]), int(xs[0])
                 apart = (np.abs(xs - cx) >= w // 2) | (np.abs(ys - cy) >= h // 2)
                 ys, xs = ys[apart], xs[apart]
-                score = strict_score(np, nears, parts, cx, cy, h, w, hidden=hidden,
-                                     loose=grown_nears if MATCH_SLACK else None, edges=edges)
-                if score >= need:
-                    found.append((score, mob, left + cx, top + cy, w, h, i))
+                spots.append((float(first[cy, cx]), i, cx, cy, frame))
+        # The strict check, per mob and spot, with just the frames the fast pass liked best there (several
+        # frames of a mob tend to point at the same spot; checking them all cost several times as much).
+        spots.sort(key=lambda c: -c[0])
+        places = []   # [mob, cx, cy, w, h, frames checked]
+        for value, i, cx, cy, (mob, parts, h, w, nears, edges, grown_nears) in spots:
+            place = next((p for p in places if p[0] == mob and abs(p[1] - cx) < max(w, p[3]) // 2
+                          and abs(p[2] - cy) < max(h, p[4]) // 2), None)
+            if place is None:
+                place = [mob, cx, cy, w, h, 0]
+                places.append(place)
+            if place[5] >= FRAMES_PER_SPOT:
+                continue
+            place[5] += 1
+            score = strict_score(np, nears, parts, cx, cy, h, w, hidden=hidden,
+                                 loose=grown_nears if MATCH_SLACK else None, edges=edges)
+            if score >= need:
+                found.append((score, mob, left + cx, top + cy, w, h, i))
         found.sort(key=lambda f: -f[0])
         kept = []
         for f in found:   # one per mob: overlapping finds are the same one
@@ -1065,25 +1132,34 @@ def halved(np, a):
     a = a[:h, :w].astype(np.float64)
     return (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2]) / 4
 
-HOLD_SECONDS = 0.6    # a mob missed this soon after it was seen still counts (one missed reading)
+HOLD_SECONDS = 0.6    # a mob missed this soon after it was seen still counts (one missed reading)...
+HOLD_TRACE = 0.35     # ...if this much of it still shows where it was (under hit effects); else it's gone at once
+TRACE_VISIBLE = 0.3   # (that check allows a mob mostly covered by an effect: 30% of it seen is enough)
 
 class MobMemory:
     """Mobs seen a moment ago still count when a reading misses them: hit
     effects, skills and mist cover a mob for a frame or two mid-fight, and
     attacking shouldn't stop and start. A mob is held where it was last seen
-    for `hold` seconds; a find of the same mob near there replaces it. A new
-    map forgets everything."""
+    for `hold` seconds, but only while something of it is still there (`still`
+    says so: a dead one is let go at once); a find of the same mob near there
+    replaces it. A new map forgets everything."""
     def __init__(self, hold=HOLD_SECONDS):
         self.hold, self.seen, self.place = hold, [], None
 
-    def update(self, found, now, place=None):
-        """`found`: this reading's [(score, mob, left, top, width, height)].
+    def recent(self, now, place=None):
+        """The mobs that could be held now: [(score, mob, left, top, width, height)]."""
+        return [k for t, k in self.seen if now - t <= self.hold] if place == self.place else []
+
+    def update(self, found, now, place=None, still=None):
+        """`found`: this reading's [(score, mob, left, top, width, height)];
+        `still(mob)`: whether a mob missed now is still partly there.
         Returns them plus the held ones, each with a last field: True if held."""
         if place != self.place:
             self.seen, self.place = [], place
         def same(f, k):
             return f[1] == k[1] and abs((f[2] + f[4] / 2.0) - (k[2] + k[4] / 2.0)) <= max(f[4], k[4], 40)
-        held = [k for t, k in self.seen if now - t <= self.hold and not any(same(f, k) for f in found)]
+        held = [k for t, k in self.seen if now - t <= self.hold and not any(same(f, k) for f in found)
+                and (still is None or still(k))]
         self.seen = [(now, f) for f in found] + [(t, k) for t, k in self.seen if k in held]
         return [tuple(f) + (False,) for f in found] + [tuple(k) + (True,) for k in held]
 
@@ -1276,10 +1352,15 @@ class Screen:
             pixels, ox, oy = self.screen()
             x, feet = (self.you or (mb["x"], mb.get("bottom", mb["y"])))
             entry = self.config.get("maps", {}).get(name) or {}
-            found = search.search(pixels, x - ox, feet - oy, mob_tolerance(self.config, name) + 10, entry.get("shape", SHAPE_MIN))
+            now = self.clock()
+            recent = self.memory.recent(now, name)
+            look = [(sc, mob, left - ox, top - oy, w, h) for sc, mob, left, top, w, h in recent]
+            found = search.search(pixels, x - ox, feet - oy, mob_tolerance(self.config, name) + 10, entry.get("shape", SHAPE_MIN), look)
             found = [(score, mob, left + ox, top + oy, w, h) for score, mob, left, top, w, h in found]
+            traces = {r: search.traces.get(k, 0.0) for r, k in zip(recent, look)}
+            still = lambda k: traces.get(k, 0.0) >= HOLD_TRACE   # partly covered, not gone
             view = {"L": [], "R": []}
-            for score, mob, left, top, w, h, held in self.memory.update(found, self.clock(), name):
+            for score, mob, left, top, w, h, held in self.memory.update(found, now, name, still):
                 near = 0 if left <= x <= left + w else min(abs(left - x), abs(left + w - x))
                 view["R" if left + w / 2.0 >= x else "L"].append((near, mob))
                 self.boxes.append((left, top, left + w, top + h, mob, 1, score, held))
@@ -2698,6 +2779,23 @@ def selftest():
         for y in range(y0, y1):
             for x in range(x0, x1):
                 raw[(y * w + x) * 3:(y * w + x) * 3 + 3] = bytes(color)
+    np_ = numpy_or_none()
+    if np_:   # the numpy slide finder agrees with the plain one
+        rnd = random.Random(5)
+        big = bytes(rnd.randrange(256) for _ in range(160 * 90 * 3))
+        def view(ox, oy, w=100, h=50):
+            return b"".join(big[((oy + y) * 160 + ox) * 3:((oy + y) * 160 + ox + w) * 3] for y in range(h))
+        for (ax, ay), (bx, by) in (((20, 10), (27, 14)), ((30, 20), (24, 17)), ((10, 5), (10, 5))):
+            p_, c_ = view(ax, ay), view(bx, by)
+            fast = find_slide_np(np_, p_, c_, 100, 50, 25, 12)
+            dx = dy = 0
+            for _ in range(2):
+                py, cy = (max(0, dy), min(50, 50 + dy)), (max(0, -dy), min(50, 50 - dy))
+                dx = best_shift(col_profile(p_, 100, 0, 100, *py), col_profile(c_, 100, 0, 100, *cy), 25)[0]
+                px, cx = (max(0, dx), min(100, 100 + dx)), (max(0, -dx), min(100, 100 - dx))
+                dy = best_shift(row_profile(p_, 100, px[0], px[1], 0, 50), row_profile(c_, 100, cx[0], cx[1], 0, 50), 12)[0]
+            plain = (dx, dy, overlap_mismatch(p_, c_, 100, 50, dx, dy))
+            assert fast[:2] == plain[:2] and abs(fast[2] - plain[2]) < 1e-6, (fast, plain)
     # Minimap dot: found at its centre, absent when gone.
     yellow = (250, 220, 40)
     mm = canvas(101, 51, grey); paint(mm, 101, 20, 30, 24, 34, yellow)
@@ -3094,6 +3192,11 @@ def selftest():
     assert memory.update([moved], 1.2, "A") == [moved + (False,)]                 # seen again nearby: not counted twice
     assert memory.update([(0.7, "slime", 110, 50, 40, 30)], 1.3, "A")[1] == moved + (True,)   # another mob there doesn't replace it
     assert memory.update([], 1.4, "B") == []                                       # another map forgets it
+    memory.update([snail], 2.0, "B")
+    assert memory.recent(2.3, "B") == [snail] and memory.recent(2.3, "C") == []
+    assert memory.update([], 2.3, "B", still=lambda k: False) == []               # nothing of it left where it was: gone at once
+    memory.update([snail], 3.0, "B")
+    assert memory.update([], 3.3, "B", still=lambda k: True) == [snail + (True,)]  # still partly there (under effects): held
     # Getting ready: packages and frames offered once; a no is remembered.
     with tempfile.TemporaryDirectory() as d:
         path, lib = os.path.join(d, "kabuto-bars.json"), os.path.join(d, "mobs")

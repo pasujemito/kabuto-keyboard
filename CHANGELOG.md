@@ -58,6 +58,14 @@ and show up in the pad's **Updates** panel.
   setups like that are right again with nothing to redo
 - 🎯 **Setup marks less**: no head or feet any more, just your name tag's
   two corners and your reach (every character is the same size)
+- ⏱️ **A killed mob stops counting at once**: a mob missed by a reading was
+  held for 0.6 s in case hit effects hid it, dead or not. Now it's held only
+  if something of it still shows where it was, or the spot is covered in hit
+  effects; a dead one leaves plain background and is let go in that reading
+- ⚡ **Readings about a quarter faster** (2 cores: about 312 ms to 210-270):
+  each spot is checked closely with the 3 frames the fast pass liked best
+  there, not every frame of the mob, and the minimap's slide is tracked with
+  numpy (37 ms to a few)
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

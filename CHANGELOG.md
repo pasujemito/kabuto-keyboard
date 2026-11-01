@@ -29,6 +29,11 @@ and show up in the pad's **Updates** panel.
   minimap's header shares your dot's colour and dragged it up and left (The
   Burnt Land V read 46% across with you at 98%). The dot is now looked for
   below the header; every sample screenshot reads within half a percent
+- 🐛 **"Firmware has no setup buttons" on up-to-date pads**: over USB, one
+  slow answer from the pad (busy playing, its log in the way) was taken for
+  old firmware, and the pad's setup buttons stopped for the session. The
+  pad's own version (1.17.0 or newer has them) now decides; a slow answer
+  just means no presses that time
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

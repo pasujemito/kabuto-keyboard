@@ -50,6 +50,12 @@ and show up in the pad's **Updates** panel.
   pattern of light and dark: on the sample scenes 0.71-1.00 at your tag and
   0.27 at most anywhere else, and still found with the box 45% lighter. Also
   faster: about 8 ms near where it was, 50 ms when lost (was 80 and 585)
+- 🐛 **Reach and sight at your head instead of your feet**: marking the
+  name tag on its own (`--tag`, or the one-time question) measured where it
+  sits from the feet marked at setup, but the camera has usually moved you
+  since, so the boxes ended up off by about your height. Marking the tag on
+  its own now asks for your feet first, and a tag stored in the wrong place
+  is offered for marking again at start
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

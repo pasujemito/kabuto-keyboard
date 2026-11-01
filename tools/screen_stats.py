@@ -1491,7 +1491,7 @@ def setup_mobs(sct, config, sprites_dir):
             say("  skipped"); return
         mobs.update(hitbox(*pts), sight=SIGHT)
         say("  Hitbox: %d px tall, %d px to each side." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
-        mark_tag(sct, mobs)
+        mark_tag(sct, mobs, feet=(mobs["x"], mobs["bottom"]))   # your feet were just marked
         learned = learn_here(sct, mobs, sprites) if sprites else None
         if learned:
             mobs.update(learned)
@@ -1508,11 +1508,19 @@ def setup_mobs(sct, config, sprites_dir):
         mobs.update(hitbox(*pts[:3]), colors=[pixel(sct, x, y) for x, y in pts[3:]])
     config["mobs"] = mobs
 
-def mark_tag(sct, mobs, skip="Esc skips", cancel=("esc",)):
+def mark_tag(sct, mobs, skip="Esc skips", cancel=("esc",), feet=None):
     """Your name tag, so you're found wherever the camera puts you: its
-    top-left and bottom-right corners, kept with where it sits from your feet."""
-    pts = mark_points("Name tag: hover the TOP-LEFT corner of YOUR name tag (under your character), F8; "
-                      "then its BOTTOM-RIGHT corner, F8 (%s)" % skip, 2, cancel)
+    top-left and bottom-right corners, kept with where it sits from your feet.
+    `feet`: where your feet are right now (setup has just marked them); else
+    they're marked first, as you're rarely where you stood at setup (the
+    camera moves) and the tag's place from your feet must be measured now."""
+    if feet:
+        pts = mark_points("Name tag: hover the TOP-LEFT corner of YOUR name tag (under your character), F8; "
+                          "then its BOTTOM-RIGHT corner, F8 (%s)" % skip, 2, cancel)
+    else:
+        pts = mark_points("Name tag: hover YOUR character's FEET (where it stands), F8; then the TOP-LEFT corner of your "
+                          "name tag, F8; then its BOTTOM-RIGHT corner, F8 (%s)" % skip, 3, cancel)
+        feet, pts = (pts[0], pts[1:]) if len(pts) == 3 else (None, [])
     if len(pts) < 2:
         say("  skipped: you're looked for where you stood at setup"); return
     (ax, ay), (bx, by) = pts
@@ -1520,8 +1528,16 @@ def mark_tag(sct, mobs, skip="Esc skips", cancel=("esc",)):
     if x2 - x1 < 10 or y2 - y1 < 6:
         say("  That's too small for a name tag: skipped"); return
     w, h = x2 - x1 + 1, y2 - y1 + 1
-    mobs["tag"] = {"x": x1 - mobs["x"], "y": y1 - mobs["bottom"], "w": w, "h": h, "rgb": grab(sct, x1, y1, w, h).hex()}
+    tag = {"x": x1 - feet[0], "y": y1 - feet[1], "w": w, "h": h}
+    if not tag_place_ok(tag):
+        say("  That tag isn't just under the feet you marked: skipped (mark your feet, then your own tag)"); return
+    mobs["tag"] = dict(tag, rgb=grab(sct, x1, y1, w, h).hex())
     say("  Name tag kept (%d x %d px): you'll be followed wherever the camera puts you." % (w, h))
+
+def tag_place_ok(tag):
+    """Whether a tag sits where MapleStory draws name tags: just under your
+    feet (its top 15 px above to 45 px below them), and under you sideways."""
+    return -15 <= tag["y"] <= 45 and -tag["w"] - 30 <= tag["x"] <= 30
 
 def retag(path):
     """--tag: mark just your name tag, keeping the rest of the setup."""
@@ -2170,7 +2186,16 @@ def get_ready_in_game(sct, config, path):
     mobs = config.get("mobs") or {}
     later = ("Esc: not now, F9: later", ("esc", "f9"))   # F9 still picks a map: never stuck here
     asked_later = lambda: CANCELLED[0] == "f9"
-    if numpy_or_none() and "bottom" in mobs and not mobs.get("tag") and "tag" not in skip:
+    if mobs.get("tag") and not tag_place_ok(mobs["tag"]) and "tag_place" not in skip:
+        say("Your name tag was marked while you stood elsewhere, so the reach and sight boxes sit at the wrong height.")
+        old = mobs.pop("tag")
+        mark_tag(sct, mobs, *later)
+        if not mobs.get("tag"):
+            mobs["tag"] = old   # kept as it was
+            if not asked_later():
+                skip.add("tag_place")
+                say("  (asked once; --tag to mark it later)")
+    if numpy_or_none() and "bottom" in mobs and not mobs.get("tag") and "tag" not in skip and not asked_later():
         say("One-time setup for this version: the mob search can follow you by your name tag.")
         mark_tag(sct, mobs, *later)
         if not mobs.get("tag") and not asked_later():
@@ -3108,6 +3133,10 @@ def selftest():
             assert get_ready_in_game(None, config, path) is False
         assert "1 map(s) need teaching again" in out.getvalue() and ": Old" in out.getvalue(), out.getvalue()
     assert ask("anything?") is False or sys.stdin.isatty()                   # no terminal: no
+    # The name tag's place from your feet: just under them in MapleStory.
+    assert tag_place_ok({"x": -29, "y": 7, "w": 80, "h": 18})                 # the sample scenes' tag
+    assert not tag_place_ok({"x": -29, "y": 120, "w": 80, "h": 18})           # marked while standing elsewhere: off by your height
+    assert not tag_place_ok({"x": 300, "y": 7, "w": 80, "h": 18})             # someone else's tag
     # MapleStory's bars where its status bar puts them: centred along the bottom.
     hud = hud_bars("maplestory", {"left": 0, "top": 0, "width": 1366, "height": 768})
     assert [(hud[n]["x1"], hud[n]["x2"], hud[n]["y"]) for n in ("hp", "mana", "xp")] == [(503, 605, 754), (611, 713, 754), (724, 836, 754)]

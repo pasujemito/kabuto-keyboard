@@ -243,9 +243,12 @@ terminal as administrator.
 
 **MapleStory** colours are built in: HP 248,10,0, MP 0,120,248, XP 206,243,0
 and your minimap dot 255,221,68. Setup uses them instead of sampling the
-screen, so bars may be empty while you mark them, and you mark only the
-minimap's corners, not your dot. For another game, `--setup --game other`
-samples the colours as before.
+screen, and you mark only the minimap's corners, not your dot. Its **HP, MP
+and XP bars are found for you**: MapleStory centres its status bar along the
+bottom of the screen, so setup puts the bars there and keeps them if the HP
+bar is really there (it says so, with each bar's fill). Only if it can't see
+it (the game windowed away from the screen's corner, say) do you mark them.
+For another game, `--setup --game other` samples the colours as before.
 
 ```bash
 python screen_stats.py                 # USB if plugged in, else kabuto.local
@@ -256,7 +259,8 @@ python screen_stats.py --dry-run       # check readings without sending
 
 Setup marks things by hovering and pressing **F8** (**Esc** skips):
 
-1. **Bars:** HP, then Mana, then XP; each bar's left end, then its right end.
+1. **Bars** (other games, or MapleStory when they aren't found): HP, then
+   Mana, then XP; each bar's left end, then its right end.
    Do it with every bar at least partly filled: it learns each colour from the
    bar's left end. Bars that fade along their length (e.g. dark to light blue
    Mana) are fine: it follows the fade to the bar's end. If a fading bar still

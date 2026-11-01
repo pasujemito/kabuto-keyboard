@@ -20,6 +20,9 @@ and show up in the pad's **Updates** panel.
   area) left F9 saying to list your maps until they were answered. The map
   list is now there from the start, and F9 during a question means "later":
   the picker opens, the map is taught, and the questions wait for next start
+- 📍 **MapleStory's HP, MP and XP bars are found for you** at setup: its
+  status bar is centred along the bottom, so they're placed there and kept
+  when the HP bar is really there (otherwise you mark them as before)
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

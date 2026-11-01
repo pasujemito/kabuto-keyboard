@@ -19,7 +19,7 @@ missing, once: Pillow, numpy and scipy (mobs by shape), mobs' animation
 frames, your name tag, maps to teach again. To redo setup:
     python screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
-    # right end; the minimap's top-left and bottom-right corners (and your dot
+    # right end (MapleStory's are found for you); the minimap's top-left and bottom-right corners (and your dot
     # with --game other); the map's name; your character's head, feet and
     # attack reach (the hitbox mobs are looked for in); your name tag (so
     # you're followed wherever the camera puts you; --tag to redo just that).
@@ -27,7 +27,7 @@ With numpy, mobs are found by shape: every animation frame of the map's mobs
 (mob.png plus mob.*.png; fetch them with mob_frames.py) matched along the band
 level with your feet. scipy makes it several times faster.
 MapleStory's bar and dot colours are built in (--game maplestory, the
-default), so bars can be empty during setup. --game other samples them.
+default), and so is where its bars are. --game other samples them.
 
 The game layer: a strip across the top of the game shows what's read and
 sent, the map and the mobs, and each setup step, so you needn't leave the
@@ -85,8 +85,21 @@ CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
 GAMES = {
     "maplestory": {"label": "MapleStory", "icon": "\U0001F341",
                    "bars": {"hp": [248, 10, 0], "mana": [0, 120, 248], "xp": [206, 243, 0]},
-                   "dot": [255, 221, 68]},
+                   "dot": [255, 221, 68],
+                   # Where its bars are: the status bar is centred along the bottom of the screen, so
+                   # (left, right) px from the middle and y px from the bottom (measured at 1366 x 768).
+                   "hud": {"hp": (-180, -78), "mana": (-72, 30), "xp": (41, 153), "y": -14}},
 }
+
+def hud_bars(game, monitor):
+    """The game's bars where its status bar puts them on this screen, or None
+    for a game without a known layout."""
+    hud = (GAMES.get(game) or {}).get("hud")
+    if not hud:
+        return None
+    mid, y = monitor["left"] + monitor["width"] // 2, monitor["top"] + monitor["height"] + hud["y"]
+    return {name: {"x1": mid + hud[name][0], "x2": mid + hud[name][1], "y": y, "color": list(GAMES[game]["bars"][name]),
+                   "tolerance": 60} for name in ("hp", "mana", "xp")}
 
 def apply_game(config):
     """The game's fixed colours over whatever setup sampled (in place)."""
@@ -1724,7 +1737,20 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
     if known:
         config["game"] = game
         say("Setting up for %s (its bar and dot colours are built in)." % known["label"])
+    monitors = sct.monitors
+    placed = hud_bars(game, monitors[1] if len(monitors) > 1 else monitors[0])
+    if placed:   # where the game puts them: kept if the HP bar is really there (it's only empty when you're dead)
+        fill = read_bars(sct, placed)
+        if fill.get("hp"):
+            config["bars"] = placed
+            say("Found the HP, MP and XP bars where %s puts them (HP %s%%, MP %s%%, XP %s%%): nothing to mark."
+                % (known["label"], fill["hp"], fill["mana"], fill["xp"]))
+        else:
+            say("Couldn't see %s's HP bar at the bottom of the screen (windowed, or another layout?): mark the bars."
+                % known["label"])
     for name, label in BARS:
+        if name in config["bars"]:
+            continue
         pts = mark_points("%s bar: hover its LEFT end, F8; then its RIGHT end, F8 (Esc skips)" % label, 2)
         if len(pts) < 2:
             say("  skipped"); continue
@@ -2977,6 +3003,12 @@ def selftest():
             assert get_ready_in_game(None, config, path) is False
         assert "1 map(s) need teaching again" in out.getvalue() and ": Old" in out.getvalue(), out.getvalue()
     assert ask("anything?") is False or sys.stdin.isatty()                   # no terminal: no
+    # MapleStory's bars where its status bar puts them: centred along the bottom.
+    hud = hud_bars("maplestory", {"left": 0, "top": 0, "width": 1366, "height": 768})
+    assert [(hud[n]["x1"], hud[n]["x2"], hud[n]["y"]) for n in ("hp", "mana", "xp")] == [(503, 605, 754), (611, 713, 754), (724, 836, 754)]
+    assert hud["xp"]["color"] == [206, 243, 0] and hud_bars("other", {"left": 0, "top": 0, "width": 800, "height": 600}) is None
+    wide = hud_bars("maplestory", {"left": 1920, "top": 0, "width": 1920, "height": 1080})   # a second monitor, full HD
+    assert (wide["hp"]["x1"], wide["hp"]["y"]) == (1920 + 960 - 180, 1066)
     # MapleStory's fixed colours replace sampled ones; other games keep theirs.
     ms = apply_game({"game": "maplestory", "bars": {"hp": {"color": [1, 2, 3]}, "xp": {"color": [1, 2, 3]}}, "minimap": {"dot": [9, 9, 9]}})
     assert ms["bars"]["hp"]["color"] == [248, 10, 0] and ms["bars"]["xp"]["color"] == [206, 243, 0] and ms["minimap"]["dot"] == [255, 221, 68]

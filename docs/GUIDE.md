@@ -283,9 +283,12 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
 4. **Name tag:** the top-left, then the bottom-right corner of **your name
    tag** under your character. MapleStory's camera lags behind you and stops
    at map edges, so you're rarely where the hitbox was marked: with numpy,
-   every reading finds your tag (part by part, so your pet's tag overlapping
-   it is fine) and the hitbox and mob search follow you. For a setup made
-   before 1.18, mark just the tag with `python screen_stats.py --tag`.
+   every reading finds your tag and the hitbox and mob search follow you.
+   It's matched by its pattern of light and dark (letters, outline, medal),
+   not its colours, because the tag's box is see-through and takes on the
+   colour of whatever is behind you. Mark it tightly, just the tag and any
+   medal, without the scenery around it. For a setup made before 1.18, or to
+   mark it again, `python screen_stats.py --tag`.
 
 **Mob sprites** pick far better colours than one hovered pixel. Put PNGs of the
 mobs you fight, with **transparent backgrounds** (a frame or two each, any

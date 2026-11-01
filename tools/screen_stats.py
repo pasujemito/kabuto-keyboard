@@ -2418,6 +2418,16 @@ class Layer:
         self.root.destroy()
 
     def _refresh(self):
+        try:
+            self._tick()
+        except Exception as e:   # never let one error stop the layer (and F9, F10, F11 with it)
+            if not getattr(self, "failed", None):
+                import traceback
+                traceback.print_exc()
+                self.failed = str(e)
+        self.root.after(150, self._refresh)
+
+    def _tick(self):
         while not self.keys.empty():
             key = self.keys.get()
             if key == "f9":
@@ -2437,7 +2447,6 @@ class Layer:
         if self.finished:
             self.root.after(4000 if message else 300, self.root.quit)
             self.finished = None
-        self.root.after(150, self._refresh)
 
     def _draw(self, status, shapes, message):
         c, ox, oy = self.canvas, self.monitor["left"], self.monitor["top"]
@@ -2470,7 +2479,13 @@ class Layer:
         narrow it, arrows to move, Enter or a double click to pick, Esc to close."""
         tk = self.tk
         if self.picker:
-            self.picker.destroy()
+            try:
+                if self.picker.winfo_exists():   # already open: to the front
+                    self.picker.deiconify(); self.picker.lift(); self.picker.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            self.picker = None
         if not self.maps:
             self.say('List your maps in mobs/%s, e.g. [{"name": "Henesys", "mobs": ["snail.png"]}], with the PNGs in mobs, then F9' % MAP_LIST)
             return
@@ -2541,6 +2556,7 @@ class Layer:
             widget.bind("<Return>", choose)
         rows.bind("<Double-Button-1>", choose)
         win.bind("<Escape>", close)
+        win.protocol("WM_DELETE_WINDOW", close)   # its X button (or Alt+F4) too, so F9 opens it again
         self.pick = {"query": query, "rows": shown, "choose": choose, "move": move, "list": rows}   # for the self-test
         refresh()
         win.after(50, entry.focus_force)

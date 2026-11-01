@@ -293,8 +293,8 @@ int main() {
         q.skills[0].cooldown={0,0};ranged.setPattern(q);engine.dynamicSkillTimers_.clear();hidEvents.clear();
         run(engine,{ranged});assert(pressCount(21)==3);
     }
-    // HP/Mana potions fire on their own timers, before skills, inside a jump-attack:
-    // down while the jump is held, up before the attack goes down.
+    // HP/Mana potions fire on their own timers, before skills: quick taps in the gap
+    // after an attack (jump and attack released), not adding to the gap.
     {
         DynamicPattern q=p;q.sets={3,3};q.attacksPerSet={1,1};
         DynamicSkill hp;hp.id="hp";hp.keycode=6;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={1000000,1000000};
@@ -305,7 +305,7 @@ int main() {
         assert(pressCount(6)==1&&pressCount(0x19)==3&&pressCount(11)==3);
         std::vector<uint8_t> order;for(auto e:hidEvents)if(e.down&&(e.key==6||e.key==0x19||e.key==11))order.push_back(e.key);
         assert(order.size()==7&&order[0]==6&&order[1]==0x19&&order[2]==11);
-        for(auto e:hidEvents)if(e.key==6||e.key==0x19)assert(e.mods==4);   // with the jump (Alt) held, the attack (Ctrl) not yet
+        for(auto e:hidEvents)if(e.key==6||e.key==0x19)assert(e.mods==0);   // after the attack: jump (Alt) and attack (Ctrl) both up
         // Drinking adds no time: the attacks land exactly when they would without potions.
         uint32_t runStart=0;
         auto lastAttack=[&]{uint32_t at=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)at=e.at-runStart;return at;};
@@ -330,7 +330,7 @@ int main() {
         assert(pressCount(6)>=2&&pressCount(0x19)==1);
         uint32_t firstHp=0,secondHp=0;for(auto e:hidEvents)if(e.down&&e.key==6){if(!firstHp)firstHp=e.at;else if(!secondHp)secondHp=e.at;}
         assert(secondHp-firstHp>=LIVE_POTION_GAP_MS);
-        for(auto e:hidEvents)if(e.key==6)assert(e.mods==4);   // inside the jump-attack, before the attack goes down
+        for(auto e:hidEvents)if(e.key==6)assert(e.mods==0);   // in the gap after an attack
         drink(800,900);     // both bars healthy: neither drinks, not even on the timer
         assert(pressCount(6)==0&&pressCount(0x19)==0);
         liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});
@@ -338,6 +338,17 @@ int main() {
         // Real amounts: HP 5000 at 30% is 3500 short; 800 a tap = 4 taps (a 5th would waste).
         q.potions[0].barMax=5000;q.potions[0].perTap=800;q.attacksPerSet={1,1};live.setPattern(q);drink(300,-1);
         assert(pressCount(6)==4);
+        // With attacks to follow, the 4 taps come together in the gap after an attack: as many as fit
+        // (2+, quick, jump and attack both up), the rest after the next attack, never inside a jump.
+        q.attacksPerSet={3,3};live.setPattern(q);testRandomHook=[](long){return 0L;};drink(300,-1);testRandomHook={};
+        assert(pressCount(6)==4);   // 3 attacks: within the 3 s before it may drink again
+        {int afterAttack=-1,inGap=0,firstGap=-1;uint8_t mods=0;
+         for(auto e:hidEvents){
+             if(e.key==0&&e.mods!=mods){if(!e.mods&&mods==1){afterAttack=0;}if(e.mods&4&&!(mods&4)){if(afterAttack>0&&firstGap<0)firstGap=inGap;afterAttack=-1;inGap=0;}mods=e.mods;}
+             if(e.down&&e.key==6){assert(afterAttack>=0&&e.mods==0);++afterAttack;++inGap;}
+         }
+         assert(firstGap>=2);}
+        q.attacksPerSet={1,1};live.setPattern(q);
         liveStatsUpdate(300,300,-1);testClock+=LIVE_STATS_STALE_MS;engine.dynamicSkillTimers_.clear();hidEvents.clear();run(engine,{live});
         assert(pressCount(6)==1);   // stale reading: its timer and taps range, not the amounts
         q.potions[0].barMax=q.potions[0].perTap=0;q.attacksPerSet={8,8};

@@ -288,7 +288,10 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    not its colours, because the tag's box is see-through and takes on the
    colour of whatever is behind you. Mark it tightly, just the tag and any
    medal, without the scenery around it. For a setup made before 1.18, or to
-   mark it again, `python screen_stats.py --tag`.
+   mark it again, `python screen_stats.py --tag`: it asks for your feet
+   first (wherever you stand now), then the tag, since what matters is where
+   the tag sits from your feet. A tag that isn't just under your feet is
+   offered for marking again at start.
 
 **Mob sprites** pick far better colours than one hovered pixel. Put PNGs of the
 mobs you fight, with **transparent backgrounds** (a frame or two each, any

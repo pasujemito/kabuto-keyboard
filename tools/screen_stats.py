@@ -18,12 +18,12 @@ cable and starts sending. No Wi-Fi or PIN over USB. Each start offers what's
 missing, once: Pillow, numpy and scipy (mobs by shape), mobs' animation
 frames, your name tag, maps to teach again. To redo setup:
     python screen_stats.py --setup
-    # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
-    # right end (MapleStory's are found for you); the minimap's bottom-right
-    # corner (and its top-left, and your dot, with --game other); the map's
-    # name; your name tag (your feet are just above it; you're followed
-    # wherever the camera puts you; --tag to redo just that) and your attack's
-    # reach (the hitbox mobs are looked for in).
+    # In MapleStory you mark just your name tag (hover, F8; Esc skips): the
+    # bars, the minimap (its size found on every map) and the map's name are
+    # found, your feet are just above the tag, and the hitbox is standard
+    # (your height + 40 px above and below, 300 px each way). Other games
+    # (--game other): each bar's ends, the minimap's corners and your dot, the
+    # map's name, then your name tag. --tag redoes just the tag.
 With numpy, mobs are found by shape: every animation frame of the map's mobs
 (mob.png plus mob.*.png; fetch them with mob_frames.py) matched along the band
 level with your feet. scipy makes it several times faster.
@@ -92,7 +92,10 @@ GAMES = {
                    "hud": {"hp": (-180, -78), "mana": (-72, 30), "xp": (41, 153), "y": -14},
                    # Its minimap's top-left corner, from the screen's (only its size changes with the map),
                    # and the header above the map picture (title, region icon, name) in px.
-                   "minimap_at": (0, 0), "minimap_header": 72},
+                   "minimap_at": (0, 0), "minimap_header": 72,
+                   # The map's name in the header (from the minimap's corner): the line under the region's,
+                   # from just past the region icon; read up to the minimap's right edge, wherever that is.
+                   "name_area": (47, 43, 246, 56)},
 }
 
 def minimap_corner(game, monitor):
@@ -122,6 +125,8 @@ def apply_game(config):
             mm["dot"] = list(game["dot"])
             if "header" not in mm and game.get("minimap_header") and mm.get("y1", 99) <= 2:
                 mm["header"] = game["minimap_header"]   # a box from the screen's top: the dot is looked for below the header
+            if "auto" not in mm and game.get("minimap_at") and mm.get("y1", 99) <= 2:
+                mm["auto"] = True   # its size found on screen each reading (map.json's size, if any, still wins)
     return config
 
 # Messages go to the console and, when it's up, the game layer's strip, so
@@ -160,6 +165,41 @@ def fill_percent(row, color, tolerance=60, min_run=3, step=30):
         else:
             run = 0
     return round(100.0 * end / len(row), 1)
+
+FRAME_SCAN = 400   # px right and down from the minimap's corner looked through for its frame
+
+def find_minimap_frame(raw, w, h, header=72):
+    """Where MapleStory's minimap ends, from a grab starting at its corner:
+    (right, bottom) of its frame's near-white edge line, in px from the
+    corner, or None. The line runs down the whole map picture, then across
+    it, which nothing in the picture or the scenery around it does."""
+    def white(x, y):
+        i = (y * w + x) * 3
+        return raw[i] >= 235 and raw[i + 1] >= 235 and raw[i + 2] >= 235
+    rows = range(header + 4, min(h, header + 60), 4)
+    right = next((x for x in range(40, w) if rows and sum(white(x, y) for y in rows) >= 0.9 * len(rows)), None)
+    if right is None:
+        return None
+    cols = range(8, right - 4, 4)
+    bottom = next((y for y in range(header + 20, h) if cols and sum(white(x, y) for x in cols) >= 0.9 * len(cols)), None)
+    return (right, bottom) if bottom else None
+
+def minimap_frame(sct, mm):
+    """The minimap's frame on screen now: (right, bottom) in screen px, or None."""
+    w, h = FRAME_SCAN, FRAME_SCAN
+    found = find_minimap_frame(grab(sct, mm["x1"], mm["y1"], w, h), w, h, mm.get("header", 72))
+    return (mm["x1"] + found[0], mm["y1"] + found[1]) if found else None
+
+def auto_name_area(game, mm):
+    """The game's map name area in an automatic minimap's header, or None."""
+    at = (GAMES.get(game) or {}).get("name_area")
+    if not at or not mm or not mm.get("auto"):
+        return None
+    return {"x1": mm["x1"] + at[0], "y1": mm["y1"] + at[1], "x2": mm["x1"] + at[2], "y2": mm["y1"] + at[3], "light": 170, "auto": True}
+
+def name_limit(area, frame):
+    """How many columns of the map name area are inside the minimap (None: all)."""
+    return frame[0] - 2 - area["x1"] if frame and area.get("auto") else None
 
 def find_dot(raw, w, h, color, tolerance=40, step=2, top=0):
     """Your dot on the minimap: the centre of the pixels matching its colour,
@@ -559,17 +599,20 @@ def mob_fields(view, reach):
 # pixels are kept as a fingerprint when you teach that map (--map) and
 # compared after. Small shifts are allowed; a mostly matching name wins.
 
-def text_rows(raw, w, h, light=170):
+def text_rows(raw, w, h, light=170, limit=None):
     """The map name area's light pixels (the name's letters), one int per row.
     Light means at least `light` and clearly brighter than the area itself
     (its middle brightness + 40), so a light title bar behind the name, as
-    MapleStory's minimap has, isn't taken for letters."""
+    MapleStory's minimap has, isn't taken for letters. Columns from `limit`
+    on (past the minimap's edge) are left out."""
+    limit = w if limit is None else max(0, min(w, limit))
     lum = [raw[i] * 3 + raw[i + 1] * 6 + raw[i + 2] for i in range(0, w * h * 3, 3)]
-    cut = min(2450, max(light * 10, sorted(lum)[len(lum) // 2] + 400)) if lum else light * 10
+    inside = [lum[y * w + x] for y in range(h) for x in range(limit)]
+    cut = min(2450, max(light * 10, sorted(inside)[len(inside) // 2] + 400)) if inside else light * 10
     rows = []
     for y in range(h):
         bits = 0
-        for x in range(w):
+        for x in range(limit):
             if lum[y * w + x] >= cut:
                 bits |= 1 << x
         rows.append(bits)
@@ -606,8 +649,8 @@ class MapReader:
         self.maps = {name: [int(r, 16) for r in m["rows"]] for name, m in maps.items() if name_taught(m)}
         self.light, self.min_score, self.last, self.name = light, min_score, None, ""
 
-    def read(self, raw, w, h):
-        rows = text_rows(raw, w, h, self.light)
+    def read(self, raw, w, h, limit=None):
+        rows = text_rows(raw, w, h, self.light, limit)
         if rows != self.last:
             self.last = rows
             score, name = max([(rows_score(rows, m), n) for n, m in sorted(self.maps.items())] or [(0, "")])
@@ -1246,12 +1289,22 @@ class Screen:
         self.ground = Ground((config.get("mobs") or {}).get("settle", SETTLE_SECONDS))
         self.seen = None   # where your name tag puts your feet right now
         self.clock = time.monotonic
-        self.np, self.tag, self.pixels = numpy_or_none(), None, None
+        self.np, self.tag, self.pixels, self.frame_now = numpy_or_none(), None, None, False
         tag = (config.get("mobs") or {}).get("tag")
         if self.np and tag:
             rgb = self.np.frombuffer(bytes.fromhex(tag["rgb"]), self.np.uint8).reshape(tag["h"], tag["w"], 3)
             self.tag = TagFinder(self.np, rgb)
         apply_game(config)
+
+    def frame(self):
+        """The minimap's frame this reading ((right, bottom) on screen), for an
+        automatic minimap; None otherwise or when it isn't on screen."""
+        mm = self.config.get("minimap")
+        if not mm or not mm.get("auto"):
+            return None
+        if self.frame_now is False:
+            self.frame_now = minimap_frame(self.sct, mm)
+        return self.frame_now
 
     def map_name(self):
         """The taught map you're on ("" for one you haven't taught), or None
@@ -1260,16 +1313,21 @@ class Screen:
             return None
         a = self.config["map_name"]
         w, h = a["x2"] - a["x1"] + 1, a["y2"] - a["y1"] + 1
-        return self.maps.read(grab(self.sct, a["x1"], a["y1"], w, h), w, h)
+        return self.maps.read(grab(self.sct, a["x1"], a["y1"], w, h), w, h, name_limit(a, self.frame()))
 
     def minimap_box(self, name):
-        """The minimap's box on this map: the setup's, or this map's own size
-        from map.json, from the same top-left corner (MapleStory's minimap
-        stays there and grows or shrinks with the map)."""
+        """The minimap's box on this map: this map's own size from map.json if
+        it has one (from the minimap's top-left corner), else the minimap's
+        frame as found on screen (automatic), else the setup's box."""
         mm, size = self.config.get("minimap"), self.sizes.get(name) if name else None
-        if not mm or not size:
+        if not mm:
             return mm
-        return dict(mm, x2=mm["x1"] + size["width"] - 1, y2=mm["y1"] + size["height"] - 1)
+        if size:
+            return dict(mm, x2=mm["x1"] + size["width"] - 1, y2=mm["y1"] + size["height"] - 1)
+        frame = self.frame()
+        if frame:
+            return dict(mm, x2=frame[0] - 1, y2=frame[1] - 1)
+        return mm
 
     def mob_shapes(self, name, found, tolerance):
         """The sprites to check clumps against on this map (sprite_shapes), from
@@ -1387,7 +1445,7 @@ class Screen:
 
     def read(self):
         c = self.config
-        self.pixels = None   # a fresh screen this reading
+        self.pixels, self.frame_now = None, False   # a fresh screen this reading
         out = read_bars(self.sct, c.get("bars", {}))
         name = self.map_name()   # first: the map decides the minimap's size
         if name != self.current:
@@ -1535,14 +1593,18 @@ def mark_points(prompt, count, cancel=("esc",)):
 def pixel(sct, x, y):
     return list(grab(sct, x, y, 1, 1)[:3])
 
+REACH = 300        # px your attack reaches each way, by default ("reach" in mobs)
+HITBOX_PAD = 40    # px the hitbox reaches above your head and below your feet ("pad" in mobs)
+
 def mob_area(mb, screen, sight=1.0):
     """The hitbox either side of your character, clipped to the screen: as
     tall as your character (head to feet, when marked; else `band` px above
     and below), `reach` px to each side (`sight` times that, to see mobs out of
     reach). Returns (left, top, width, height)."""
-    reach = int(mb.get("reach", 350) * sight)
-    top = mb["top"] if "top" in mb else mb["y"] - mb.get("band", 80)
-    bottom = mb["bottom"] if "bottom" in mb else mb["y"] + mb.get("band", 80)
+    reach = int(mb.get("reach", REACH) * sight)
+    pad = mb.get("pad", HITBOX_PAD) if "top" in mb else 0   # above your head and below your feet
+    top = mb["top"] - pad if "top" in mb else mb["y"] - mb.get("band", 80)
+    bottom = mb["bottom"] + pad if "bottom" in mb else mb["y"] + mb.get("band", 80)
     left, top = max(screen["left"], mb["x"] - reach), max(screen["top"], top)
     right = min(screen["left"] + screen["width"], mb["x"] + reach)
     bottom = min(screen["top"] + screen["height"], bottom)
@@ -1565,13 +1627,12 @@ def setup_mobs(sct, config, sprites_dir):
     # learns just its own (F9 / --map), so none are learned for every map here.
     sprites = {} if listed else load_sprites(sprites_dir)
     mobs = {"tolerance": 40}
-    box = ("Hitbox: hover the TOP-LEFT corner of YOUR name tag (its medal too), F8; its BOTTOM-RIGHT corner, F8; "
-           "then how far your attack reaches to one side, F8")
+    box = "Name tag: hover the TOP-LEFT corner of YOUR name tag (its medal too), F8; then its BOTTOM-RIGHT corner, F8"
     if sprites or listed:
         if sprites:
             say("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
-        pts = mark_points(box + " (Esc skips). Mobs nearby are fine.", 3)
-        if len(pts) < 3:
+        pts = mark_points(box + " (Esc skips). Mobs nearby are fine.", 2)
+        if len(pts) < 2:
             say("  skipped"); return
         if not set_hitbox(sct, mobs, *pts):
             return
@@ -1586,12 +1647,12 @@ def setup_mobs(sct, config, sprites_dir):
     else:
         if os.path.isdir(sprites_dir) and any(n.lower().endswith(SPRITE_TYPES) for n in os.listdir(sprites_dir)):
             say("No readable sprites in %s, so mark mobs on screen instead." % sprites_dir)
-        pts = mark_points(box + "; then up to 3 mobs (different kinds), F8 each; Esc when done", 6)
-        if len(pts) < 4:
+        pts = mark_points(box + "; then up to 3 mobs (different kinds), F8 each; Esc when done", 5)
+        if len(pts) < 3:
             say("  skipped"); return
-        if not set_hitbox(sct, mobs, *pts[:3]):
+        if not set_hitbox(sct, mobs, *pts[:2]):
             return
-        mobs["colors"] = [pixel(sct, x, y) for x, y in pts[3:]]
+        mobs["colors"] = [pixel(sct, x, y) for x, y in pts[2:]]
     config["mobs"] = mobs
 
 TAG_GAP = 7            # px from your feet down to the top of your name tag (MapleStory draws it there)
@@ -1615,14 +1676,15 @@ def keep_tag(sct, mobs, box):
     mobs["tag"] = {"x": x1 - fx, "y": y1 - fy, "w": w, "h": h, "rgb": grab(sct, x1, y1, w, h).hex()}
     say("  Name tag kept (%d x %d px): you'll be followed wherever the camera puts you." % (w, h))
 
-def set_hitbox(sct, mobs, corner_a, corner_b, reach_point):
-    """Your hitbox from your name tag's corners and how far your attack reaches
-    (False if the tag's too small to be one)."""
+def set_hitbox(sct, mobs, corner_a, corner_b, reach_point=None):
+    """Your hitbox from your name tag's corners: your character's height (plus
+    HITBOX_PAD above and below) and REACH px each way, or as far as
+    `reach_point` if given (False if the tag's too small to be one)."""
     box = tag_box(corner_a, corner_b)
     if not box:
         say("  That's too small for a name tag: skipped"); return False
     fx, fy = tag_feet(box[0], box[1], box[2] - box[0] + 1)
-    mobs.update(hitbox((fx, fy - CHARACTER_HEIGHT), (fx, fy), reach_point))
+    mobs.update(hitbox((fx, fy - CHARACTER_HEIGHT), (fx, fy), reach_point or (fx + REACH, fy)))
     keep_tag(sct, mobs, box)
     say("  Hitbox: your feet at %d,%d, %d px to each side." % (fx, fy, mobs["reach"]))
     return True
@@ -1817,9 +1879,10 @@ def mark_minimap_size(mm, name):
         say("  That's not below and right of the minimap's top-left corner: the setup's box is kept.")
     return size
 
-def name_rows(sct, area):
+def name_rows(sct, area, mm=None):
     w, h = area["x2"] - area["x1"] + 1, area["y2"] - area["y1"] + 1
-    return text_rows(grab(sct, area["x1"], area["y1"], w, h), w, h, area.get("light", 170))
+    frame = minimap_frame(sct, mm) if mm and mm.get("auto") and area.get("auto") else None
+    return text_rows(grab(sct, area["x1"], area["y1"], w, h), w, h, area.get("light", 170), name_limit(area, frame))
 
 def teach_map(sct, config, sprites_dir, name):
     """Teach the map you're standing on as `name`: its name's look, and its
@@ -1834,14 +1897,15 @@ def teach_map(sct, config, sprites_dir, name):
     area = config.get("map_name") or mark_map_name(config)
     if not area:
         return "A map is told apart by its name, so mark where the name is"
-    rows = name_rows(sct, area)
+    rows = name_rows(sct, area, config.get("minimap"))
     if ones(rows) < 15:
         say("  Can't see a light name there (%d px). If the name is darker, lower \"light\" in map_name." % ones(rows))
     for other, m in sorted(config.get("maps", {}).items()):
-        if other != name and name_taught(m) and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.8:
+        if other != name and name_taught(m) and rows_score(rows, [int(r, 16) for r in m["rows"]]) >= 0.97:   # the same as far as can be told
             say("  Careful: this name looks like %s's; mark just the name (--setup)." % other)
     entry = read_map_list(sprites_dir)[0].get(name) or {}
-    if config.get("minimap") and entry.get("mobs") is not None and not entry.get("minimap"):
+    mm = config.get("minimap")
+    if mm and entry.get("mobs") is not None and not entry.get("minimap") and not (mm.get("auto") and minimap_frame(sct, mm)):
         size = mark_minimap_size(config["minimap"], name)
         if size and save_map_size(sprites_dir, name, *size):
             say("  Saved %s's minimap size (%d x %d px) in %s." % ((name,) + size + (MAP_LIST,)))
@@ -1914,7 +1978,20 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
         color = list(known["bars"][name]) if known else pixel(sct, x1 + 2, y)
         config["bars"][name] = {"x1": x1, "x2": x2, "y": y, "color": color, "tolerance": 60}
     corner = minimap_corner(game, monitors[1] if len(monitors) > 1 else monitors[0])
-    if known and corner:   # its top-left is known: just the bottom-right, kept if your dot shows in the box
+    found = None
+    if known and corner:   # its corner is known: its frame is looked for on screen (and kept if your dot shows in it)
+        header = known.get("minimap_header", 0)
+        frame = minimap_frame(sct, {"x1": corner[0], "y1": corner[1], "header": header})
+        if frame:
+            w, h = frame[0] - corner[0], frame[1] - corner[1]
+            if find_dot(grab(sct, corner[0], corner[1], w, h), w, h, known["dot"], 40, top=header):
+                found = frame
+                config["minimap"] = {"x1": corner[0], "y1": corner[1], "x2": frame[0] - 1, "y2": frame[1] - 1, "dot": list(known["dot"]),
+                                     "tolerance": 40, "map_mismatch": 0.6, "header": header, "auto": True}
+                say("Found the minimap (%d x %d px here; its size is found again on every map): nothing to mark." % (w, h))
+    if found:
+        pts = []
+    elif known and corner:   # its top-left is known: just the bottom-right, kept if your dot shows in the box
         pts = mark_points("Minimap: hover its BOTTOM-RIGHT corner, F8 (its top-left is the screen's corner; Esc skips)", 1)
         if pts:
             (bx, by), (cx, cy) = pts[0], corner
@@ -1943,7 +2020,12 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
         LAYER.maps, LAYER.taught = layer_maps(maps, load_config(path, required=False))
     if names:
         say("%d maps in %s (%s%s)" % (len(names), MAP_LIST, ", ".join(names[:3]), ", ..." if len(names) > 3 else ""))
-        mark_map_name(config)
+        auto = auto_name_area(game, config.get("minimap"))
+        if auto:
+            config["map_name"] = auto
+            say("The map's name is read from the minimap's header, up to its edge: nothing to mark.")
+        else:
+            mark_map_name(config)
     setup_mobs(sct, config, sprites_dir)
     old = load_config(path, required=False)
     for keep in ("watch", "maps", "not_now"):   # death/login marks from --mark, maps taught with F9 / --map, offers declined
@@ -2296,7 +2378,15 @@ def get_ready_in_game(sct, config, path):
     if area and area["x2"] - area["x1"] + 1 < NAME_MIN_W and "map_name" not in skip and not asked_later():
         say("One-time setup for this version: the map name area is %d px wide, so longer names get cut off and look"
             " alike (The Burnt Land III and V)." % (area["x2"] - area["x1"] + 1))
-        if mark_map_name(config, *later):
+        auto = auto_name_area(config.get("game"), config.get("minimap"))
+        if auto:
+            if mark_points("F8: read it from the minimap's header up to its edge, automatically (then teach maps again with F9); "
+                           "Esc: keep yours, F9: later", 1, ("esc", "f9")):
+                config["map_name"] = auto
+                for m in config.get("maps", {}).values():
+                    m.pop("name_reading", None)   # names read from the new area: teach each again
+                say("  The map name is read automatically now: teach maps again with F9 as you get to them.")
+        elif mark_map_name(config, *later):
             for m in config.get("maps", {}).values():
                 m.pop("name_reading", None)   # names read from the new area: teach each again
         if not asked_later():
@@ -2796,6 +2886,21 @@ def selftest():
                 dy = best_shift(row_profile(p_, 100, px[0], px[1], 0, 50), row_profile(c_, 100, cx[0], cx[1], 0, 50), 12)[0]
             plain = (dx, dy, overlap_mismatch(p_, c_, 100, 50, dx, dy))
             assert fast[:2] == plain[:2] and abs(fast[2] - plain[2]) < 1e-6, (fast, plain)
+    # The minimap's frame: its near-white edge line, down the map picture and across it.
+    frame_raw = canvas(300, 300, (30, 40, 50))
+    paint(frame_raw, 300, 0, 0, 300, 72, (170, 190, 210))                       # the header
+    paint(frame_raw, 300, 180, 72, 181, 251, (250, 250, 250))                   # its right edge line...
+    paint(frame_raw, 300, 0, 250, 181, 251, (250, 250, 250))                    # ...and its bottom one
+    for x, y in ((60, 100), (61, 101), (120, 150), (220, 90)):
+        paint(frame_raw, 300, x, y, x + 1, y + 1, (255, 255, 255))              # white specks in the picture and around it
+    paint(frame_raw, 300, 200, 72, 300, 300, (240, 240, 240))                   # bright sky right of the minimap
+    assert find_minimap_frame(frame_raw, 300, 300) == (180, 250)
+    assert find_minimap_frame(canvas(300, 300, (30, 40, 50)), 300, 300) is None # no minimap on screen
+    area = {"x1": 47, "y1": 43, "x2": 246, "y2": 56, "auto": True}
+    assert name_limit(area, (190, 230)) == 141 and name_limit(dict(area, auto=False), (190, 230)) is None
+    assert auto_name_area("maplestory", {"x1": 0, "y1": 0, "auto": True})["x2"] == 246 and auto_name_area("maplestory", {"x1": 0, "y1": 0}) is None
+    letters = canvas(20, 3, (60, 70, 90)); paint(letters, 20, 2, 1, 4, 2, (250, 250, 250)); paint(letters, 20, 15, 1, 17, 2, (250, 250, 250))
+    assert text_rows(letters, 20, 3)[1] == 0b11 << 2 | 0b11 << 15 and text_rows(letters, 20, 3, limit=10)[1] == 0b11 << 2   # past the edge: left out
     # Minimap dot: found at its centre, absent when gone.
     yellow = (250, 220, 40)
     mm = canvas(101, 51, grey); paint(mm, 101, 20, 30, 24, 34, yellow)
@@ -2863,9 +2968,10 @@ def selftest():
     # Hitbox: head and feet set its height, the reach point how far it goes each side.
     hb = hitbox((402, 300), (398, 420), (800, 410))
     assert hb == {"x": 400, "y": 360, "top": 300, "bottom": 420, "reach": 400, "gap": 40}, hb
-    assert mob_area(hb, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 300, 800, 120)   # 800 x 120 px
-    assert mob_area(hb, {"left": 0, "top": 0, "width": 700, "height": 1080}) == (0, 300, 700, 120)    # clipped to the screen
-    assert mob_area({"x": 400, "y": 360}, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (50, 280, 700, 160)   # older setups
+    assert mob_area(hb, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 260, 800, 200)   # 40 px above and below: 800 x 200
+    assert mob_area(hb, {"left": 0, "top": 0, "width": 700, "height": 1080}) == (0, 260, 700, 200)    # clipped to the screen
+    assert mob_area(dict(hb, pad=0), {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 300, 800, 120)   # "pad": 0
+    assert mob_area({"x": 400, "y": 360}, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (100, 280, 600, 160)   # older setups: reach 300
     # Character near the screen edge: the area is clipped, so "you" aren't in its middle.
     clipped = canvas(450, 160, grey); paint(clipped, 450, 80, 40, 120, 120, green); paint(clipped, 450, 300, 50, 340, 110, green)
     assert mob_sides(clipped, 450, 160, [green], mid=100) == "R"
@@ -3342,7 +3448,7 @@ def selftest():
                           [(450, 310, 470, 330, "Blue_Snail", 2), (100, 310, 120, 330, "Blue_Snail", 1, 0.83), (200, 310, 220, 330, "Blue_Snail", 0, 0.31)],
                           {"x": 50.0, "y": 50.0})
     labels = {label: (x0, y0, x1, y1) for x0, y0, x1, y1, _, label in shapes}
-    assert labels["sight"] == (150, 300, 650, 340) and labels["reach"] == (300, 300, 500, 340) and labels["Blue Snail x2"] == (450, 310, 470, 330)
+    assert labels["sight"] == (150, 260, 650, 380) and labels["reach"] == (300, 260, 500, 380) and labels["Blue Snail x2"] == (450, 310, 470, 330)   # 40 px above and below
     assert labels["Blue Snail 83%"] == (100, 310, 120, 330) and labels["not a mob 31%"] == (200, 310, 220, 330)
     assert labels["minimap"] == (598, 8, 762, 92) and labels["you"] == (676, 46, 684, 54) and labels["map name"] == (598, 90, 661, 107), labels
     assert [c for *_, c, label in shapes if label == "you"] != ["#ffdd44"]   # never the dot's colour: the reader would see it

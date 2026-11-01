@@ -987,59 +987,82 @@ class ShapeSearch:
                 kept.append(f)
         return [f[:6] for f in kept]
 
+TAG_NEED = 0.5       # how alike (normalised correlation, 0-1) a spot must be to your name tag; elsewhere is ~0.3 at most
+
 class TagFinder:
-    """You, by your name tag (marked at setup): its leaf, letters and box
-    matched part by part, near where you were last (the whole screen when
-    lost), so a tag half under your pet's still wins. Returns the tag's
-    top-left and how sure (0-1)."""
-    def __init__(self, np, rgb, window=(260, 160), near=(90, 80)):
-        rgba = np.concatenate([rgb, np.full(rgb.shape[:2] + (1,), 255, rgb.dtype)], axis=2)
-        self.np, self.parts, self.window, self.near, self.kernels = np, colour_parts(np, rgba), window, near, {}
+    """You, by your name tag (marked at setup), matched by its pattern of
+    light and dark (letters, outline, medal) rather than its exact colours:
+    MapleStory's tag box is see-through, so its colour changes with whatever
+    is behind you, and a match on colours fails against a bright sky. Looked
+    for near where you were last (it hardly moves between readings), then
+    further, then on the whole screen but the HUD. Returns the tag's
+    top-left and how alike (0-1)."""
+    def __init__(self, np, rgb, window=(260, 160), near=(90, 80), coarse=True):
+        t = rgb.astype(np.float64)
+        self.np, self.window, self.near, self.kernels, self.last = np, window, near, {}, None
+        # Lost, the whole screen is searched at half size first (4x less work), then confirmed at full size.
+        self.half = TagFinder(np, halved(np, rgb), coarse=False) if coarse and min(rgb.shape[:2]) >= 12 else None
         self.rfft, self.irfft = ffts(np)
         self.h, self.w = rgb.shape[:2]
-        self.last = None
+        self.chans = []   # (channel, its zero-mean template, the template's norm), flat channels left out
+        for c in range(3):
+            t0 = t[..., c] - t[..., c].mean()
+            norm = float(np.sqrt((t0 * t0).sum()))
+            if norm > 1:
+                self.chans.append((c, t0, norm))
 
-    def find(self, screen, need=0.3, skip_bottom=80):
+    def likeness(self, area):
+        """How alike each spot of `area` (H, W, 3) is to the tag: (H-h+1, W-w+1), -1 to 1."""
+        np, h, w = self.np, self.h, self.w
+        size = (fast_len(area.shape[0]), fast_len(area.shape[1]))
+        if size not in self.kernels:
+            self.kernels = {size: [self.rfft(t0[::-1, ::-1], size) for _, t0, _ in self.chans]}
+        out = 0
+        for (c, _, norm), kernel in zip(self.chans, self.kernels[size]):
+            a = area[..., c].astype(np.float64)
+            corr = self.irfft(self.rfft(a, size) * kernel, size)[h - 1:a.shape[0], w - 1:a.shape[1]]
+            sums = [np.pad(v, ((1, 0), (1, 0))).cumsum(0).cumsum(1) for v in (a, a * a)]   # box sums from running totals
+            s1, s2 = [v[h:, w:] - v[:-h, w:] - v[h:, :-w] + v[:-h, :-w] for v in sums]
+            spread = np.sqrt(np.maximum(s2 - s1 * s1 / (h * w), h * w))   # flat areas: at least 1 level of spread
+            out = out + corr / (spread * norm)
+        return out / max(len(self.chans), 1)
+
+    def find(self, screen, need=TAG_NEED, skip_bottom=80):
         np = self.np
         H, W = screen.shape[:2]
-        spots = []
-        if self.last:   # close by first (it hardly moves between readings), then further, then everywhere
+        bottom = H - skip_bottom   # the HUD is left out (your name shows there too)
+        if self.last:   # close by first (it hardly moves between readings), then further
             lx, ly = self.last
             for wx, wy in (self.near, self.window):
-                spots.append((max(0, lx - wx), max(0, ly - wy), min(W, lx + self.w + wx), min(H - skip_bottom, ly + self.h + wy)))
-        spots.append((0, 0, W, H - skip_bottom))   # lost: the whole screen but the HUD
-        total = sum(m.sum() for _, m in self.parts)
-        for x0, y0, x1, y1 in spots:
-            area = screen[y0:y1, x0:x1].astype(np.float32)
-            if area.shape[0] < self.h or area.shape[1] < self.w:
-                continue
-            size = (fast_len(area.shape[0]), fast_len(area.shape[1]))
-            if size not in self.kernels:
-                self.kernels = {size: [self.rfft(m[::-1, ::-1], size) for _, m in self.parts]}
-            nears, F = [], None
-            for (rgb, m), kernel in zip(self.parts, self.kernels[size]):
-                near = (((area - np.array(rgb, np.float32)) ** 2).sum(axis=2) <= 2500).astype(np.float32)
-                nears.append(near)
-                product = self.rfft(near, size) * kernel
-                F = product if F is None else F + product
-            first = self.irfft(F, size)[self.h - 1:area.shape[0], self.w - 1:area.shape[1]] / total
-            flat = first.ravel()
-            top = np.argpartition(-flat, 400)[:400] if flat.size > 400 else np.arange(flat.size)
-            ys, xs = np.divmod(top[np.argsort(-flat[top])], first.shape[1])
-            best = (0.0, 0, 0)
-            for _ in range(25):   # the 25 best distinct spots
-                if not len(ys):
-                    break
-                y, x = int(ys[0]), int(xs[0])
-                apart = (np.abs(xs - x) >= self.w // 2) | (np.abs(ys - y) >= self.h // 2)
-                ys, xs = ys[apart], xs[apart]
-                score = strict_score(np, nears, self.parts, x, y, self.h, self.w, floor=0.15)
-                if score > best[0]:
-                    best = (score, x + x0, y + y0)
-            if best[0] >= need:
-                self.last = (best[1], best[2])
-                return best[1], best[2], best[0]
-        return None
+                found = self._best(screen, (lx - wx, ly - wy, lx + self.w + wx, ly + self.h + wy), bottom, need)
+                if found:
+                    return found
+        if not self.half:   # lost: the whole screen
+            return self._best(screen, (0, 0, W, bottom), bottom, need)
+        alike = self.half.likeness(halved(np, screen[:bottom]))   # lost: the best spot at half size...
+        y, x = divmod(int(alike.argmax()), alike.shape[1])
+        if alike[y, x] < need * 0.8:
+            return None
+        return self._best(screen, (2 * x - 8, 2 * y - 8, 2 * x + self.w + 8, 2 * y + self.h + 8), bottom, need)   # ...looked at closely
+
+    def _best(self, screen, box, bottom, need):
+        """The most alike spot in `box` (clipped to the screen above `bottom`), if alike enough."""
+        x0, y0 = max(0, box[0]), max(0, box[1])
+        area = screen[y0:min(bottom, box[3]), x0:min(screen.shape[1], box[2])]
+        if area.shape[0] < self.h or area.shape[1] < self.w or not self.chans:
+            return None
+        alike = self.likeness(area)
+        y, x = divmod(int(alike.argmax()), alike.shape[1])
+        if alike[y, x] < need:
+            return None
+        self.last = (x + x0, y + y0)
+        return x + x0, y + y0, round(float(alike[y, x]), 3)
+
+def halved(np, a):
+    """`a` at half size, each pixel the mean of four."""
+    h, w = a.shape[0] // 2 * 2, a.shape[1] // 2 * 2
+    a = a[:h, :w].astype(np.float64)
+    return (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2]) / 4
 
 HOLD_SECONDS = 0.6    # a mob missed this soon after it was seen still counts (one missed reading)
 
@@ -3001,6 +3024,11 @@ def selftest():
         assert finder.find(shot)[:2] == (200, 30)
         shot[30:40, 200:230] = (90, 140, 60); shot[150:160, 100:130] = tag  # down in the HUD's strip: not looked at
         assert finder.find(shot) is None
+        shot[150:160, 100:130] = (90, 140, 60)
+        seen = tag.astype(np.float64); box = seen.mean(axis=2) < 100
+        seen[box] = seen[box] * 0.6 + 255 * 0.4                            # bright sky through the see-through box
+        shot[80:90, 120:150] = seen.astype(np.uint8); finder.last = None
+        assert finder.find(shot)[:2] == (120, 80)                          # still found: its pattern, not its colours
 
     # Jumping, the field of view stays on your platform until you've stood still somewhere new for 5 s.
     g = Ground(settle=5)

@@ -44,6 +44,12 @@ and show up in the pad's **Updates** panel.
 - 🧯 **Errors are kept**: anything that goes wrong is written to
   `kabuto-error.txt` next to the setup file (and shown on the strip), and an
   error while handling a key no longer stops F8-F11 from working
+- 🏷️ **Your name tag is found against any background**: its box is
+  see-through, so its colour changes with whatever is behind you and the
+  colour match lost it (against a bright sky, say). It's now matched by its
+  pattern of light and dark: on the sample scenes 0.71-1.00 at your tag and
+  0.27 at most anywhere else, and still found with the box 45% lighter. Also
+  faster: about 8 ms near where it was, 50 ms when lost (was 80 and 585)
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

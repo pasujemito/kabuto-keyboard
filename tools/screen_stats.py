@@ -19,10 +19,11 @@ missing, once: Pillow, numpy and scipy (mobs by shape), mobs' animation
 frames, your name tag, maps to teach again. To redo setup:
     python screen_stats.py --setup
     # Mark things by hovering and pressing F8 (Esc skips): each bar's left and
-    # right end (MapleStory's are found for you); the minimap's top-left and bottom-right corners (and your dot
-    # with --game other); the map's name; your character's head, feet and
-    # attack reach (the hitbox mobs are looked for in); your name tag (so
-    # you're followed wherever the camera puts you; --tag to redo just that).
+    # right end (MapleStory's are found for you); the minimap's bottom-right
+    # corner (and its top-left, and your dot, with --game other); the map's
+    # name; your name tag (your feet are just above it; you're followed
+    # wherever the camera puts you; --tag to redo just that) and your attack's
+    # reach (the hitbox mobs are looked for in).
 With numpy, mobs are found by shape: every animation frame of the map's mobs
 (mob.png plus mob.*.png; fetch them with mob_frames.py) matched along the band
 level with your feet. scipy makes it several times faster.
@@ -1232,7 +1233,7 @@ class Screen:
             pixels, ox, oy = self.screen()
             found = self.tag.find(pixels)
             if found:
-                self.seen = (found[0] + ox - mb["tag"]["x"], found[1] + oy - mb["tag"]["y"])
+                self.seen = tag_feet(found[0] + ox, found[1] + oy, mb["tag"]["w"])   # from the tag itself
         self.you = self.ground.update(self.seen, dot_y, self.clock())
         return self.you
 
@@ -1476,22 +1477,24 @@ def hitbox(head, feet, reach_point):
 def setup_mobs(sct, config, sprites_dir):
     """The mob detector: from sprite PNGs in `sprites_dir` if there are any,
     else from up to 3 mobs marked on screen. Either way it starts with your
-    hitbox: your character's head and feet, and how far your attack reaches."""
+    name tag (your feet are just above its middle, your head a character's
+    height above them) and how far your attack reaches."""
     listed = map_names(sprites_dir)
     # With maps listed, the PNGs in mobs are their shared library: each map
     # learns just its own (F9 / --map), so none are learned for every map here.
     sprites = {} if listed else load_sprites(sprites_dir)
     mobs = {"tolerance": 40}
-    box = "Hitbox: hover YOUR character's HEAD, F8; its FEET, F8; then how far your attack reaches to one side, F8"
+    box = ("Hitbox: hover the TOP-LEFT corner of YOUR name tag (its medal too), F8; its BOTTOM-RIGHT corner, F8; "
+           "then how far your attack reaches to one side, F8")
     if sprites or listed:
         if sprites:
             say("Found %d mob sprite(s) in %s." % (len(sprites), sprites_dir))
         pts = mark_points(box + " (Esc skips). Mobs nearby are fine.", 3)
         if len(pts) < 3:
             say("  skipped"); return
-        mobs.update(hitbox(*pts), sight=SIGHT)
-        say("  Hitbox: %d px tall, %d px to each side." % (mobs["bottom"] - mobs["top"], mobs["reach"]))
-        mark_tag(sct, mobs, feet=(mobs["x"], mobs["bottom"]))   # your feet were just marked
+        if not set_hitbox(sct, mobs, *pts):
+            return
+        mobs["sight"] = SIGHT
         learned = learn_here(sct, mobs, sprites) if sprites else None
         if learned:
             mobs.update(learned)
@@ -1505,39 +1508,55 @@ def setup_mobs(sct, config, sprites_dir):
         pts = mark_points(box + "; then up to 3 mobs (different kinds), F8 each; Esc when done", 6)
         if len(pts) < 4:
             say("  skipped"); return
-        mobs.update(hitbox(*pts[:3]), colors=[pixel(sct, x, y) for x, y in pts[3:]])
+        if not set_hitbox(sct, mobs, *pts[:3]):
+            return
+        mobs["colors"] = [pixel(sct, x, y) for x, y in pts[3:]]
     config["mobs"] = mobs
 
-def mark_tag(sct, mobs, skip="Esc skips", cancel=("esc",), feet=None):
-    """Your name tag, so you're found wherever the camera puts you: its
-    top-left and bottom-right corners, kept with where it sits from your feet.
-    `feet`: where your feet are right now (setup has just marked them); else
-    they're marked first, as you're rarely where you stood at setup (the
-    camera moves) and the tag's place from your feet must be measured now."""
-    if feet:
-        pts = mark_points("Name tag: hover the TOP-LEFT corner of YOUR name tag (under your character), F8; "
-                          "then its BOTTOM-RIGHT corner, F8 (%s)" % skip, 2, cancel)
-    else:
-        pts = mark_points("Name tag: hover YOUR character's FEET (where it stands), F8; then the TOP-LEFT corner of your "
-                          "name tag, F8; then its BOTTOM-RIGHT corner, F8 (%s)" % skip, 3, cancel)
-        feet, pts = (pts[0], pts[1:]) if len(pts) == 3 else (None, [])
-    if len(pts) < 2:
-        say("  skipped: you're looked for where you stood at setup"); return
-    (ax, ay), (bx, by) = pts
-    x1, y1, x2, y2 = min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)
-    if x2 - x1 < 10 or y2 - y1 < 6:
-        say("  That's too small for a name tag: skipped"); return
+TAG_GAP = 7            # px from your feet down to the top of your name tag (MapleStory draws it there)
+CHARACTER_HEIGHT = 73  # px from your feet to the top of your head: every character is the same size
+
+def tag_feet(x1, y1, w):
+    """Where your feet are, from your name tag's top-left and width: just above
+    its middle (a medal beside the name is part of the tag, centred with it)."""
+    return x1 + w // 2, y1 - TAG_GAP
+
+def tag_box(a, b):
+    """The tag's (x1, y1, x2, y2) from two corners, or None if too small for one."""
+    x1, y1, x2, y2 = min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])
+    return (x1, y1, x2, y2) if x2 - x1 >= 10 and y2 - y1 >= 6 else None
+
+def keep_tag(sct, mobs, box):
+    """Keeps the tag in `box` as your marker on screen."""
+    x1, y1, x2, y2 = box
     w, h = x2 - x1 + 1, y2 - y1 + 1
-    tag = {"x": x1 - feet[0], "y": y1 - feet[1], "w": w, "h": h}
-    if not tag_place_ok(tag):
-        say("  That tag isn't just under the feet you marked: skipped (mark your feet, then your own tag)"); return
-    mobs["tag"] = dict(tag, rgb=grab(sct, x1, y1, w, h).hex())
+    fx, fy = tag_feet(x1, y1, w)
+    mobs["tag"] = {"x": x1 - fx, "y": y1 - fy, "w": w, "h": h, "rgb": grab(sct, x1, y1, w, h).hex()}
     say("  Name tag kept (%d x %d px): you'll be followed wherever the camera puts you." % (w, h))
 
-def tag_place_ok(tag):
-    """Whether a tag sits where MapleStory draws name tags: just under your
-    feet (its top 15 px above to 45 px below them), and under you sideways."""
-    return -15 <= tag["y"] <= 45 and -tag["w"] - 30 <= tag["x"] <= 30
+def set_hitbox(sct, mobs, corner_a, corner_b, reach_point):
+    """Your hitbox from your name tag's corners and how far your attack reaches
+    (False if the tag's too small to be one)."""
+    box = tag_box(corner_a, corner_b)
+    if not box:
+        say("  That's too small for a name tag: skipped"); return False
+    fx, fy = tag_feet(box[0], box[1], box[2] - box[0] + 1)
+    mobs.update(hitbox((fx, fy - CHARACTER_HEIGHT), (fx, fy), reach_point))
+    keep_tag(sct, mobs, box)
+    say("  Hitbox: your feet at %d,%d, %d px to each side." % (fx, fy, mobs["reach"]))
+    return True
+
+def mark_tag(sct, mobs, skip="Esc skips", cancel=("esc",)):
+    """Your name tag, so you're found wherever the camera puts you (your feet
+    are just above its middle, so they needn't be marked)."""
+    pts = mark_points("Name tag: hover the TOP-LEFT corner of YOUR name tag (its medal too), F8; "
+                      "then its BOTTOM-RIGHT corner, F8 (%s)" % skip, 2, cancel)
+    if len(pts) < 2:
+        say("  skipped: you're looked for where you stood at setup"); return
+    box = tag_box(*pts)
+    if not box:
+        say("  That's too small for a name tag: skipped"); return
+    keep_tag(sct, mobs, box)
 
 def retag(path):
     """--tag: mark just your name tag, keeping the rest of the setup."""
@@ -2186,15 +2205,6 @@ def get_ready_in_game(sct, config, path):
     mobs = config.get("mobs") or {}
     later = ("Esc: not now, F9: later", ("esc", "f9"))   # F9 still picks a map: never stuck here
     asked_later = lambda: CANCELLED[0] == "f9"
-    if mobs.get("tag") and not tag_place_ok(mobs["tag"]) and "tag_place" not in skip:
-        say("Your name tag was marked while you stood elsewhere, so the reach and sight boxes sit at the wrong height.")
-        old = mobs.pop("tag")
-        mark_tag(sct, mobs, *later)
-        if not mobs.get("tag"):
-            mobs["tag"] = old   # kept as it was
-            if not asked_later():
-                skip.add("tag_place")
-                say("  (asked once; --tag to mark it later)")
     if numpy_or_none() and "bottom" in mobs and not mobs.get("tag") and "tag" not in skip and not asked_later():
         say("One-time setup for this version: the mob search can follow you by your name tag.")
         mark_tag(sct, mobs, *later)
@@ -3133,10 +3143,14 @@ def selftest():
             assert get_ready_in_game(None, config, path) is False
         assert "1 map(s) need teaching again" in out.getvalue() and ": Old" in out.getvalue(), out.getvalue()
     assert ask("anything?") is False or sys.stdin.isatty()                   # no terminal: no
-    # The name tag's place from your feet: just under them in MapleStory.
-    assert tag_place_ok({"x": -29, "y": 7, "w": 80, "h": 18})                 # the sample scenes' tag
-    assert not tag_place_ok({"x": -29, "y": 120, "w": 80, "h": 18})           # marked while standing elsewhere: off by your height
-    assert not tag_place_ok({"x": 300, "y": 7, "w": 80, "h": 18})             # someone else's tag
+    # Your feet from your name tag: just above its middle; the hitbox from the tag and your reach.
+    assert tag_feet(745, 553, 80) == (785, 546)                               # the sample scenes' tag (medal and name)
+    assert tag_box((824, 570), (745, 553)) == (745, 553, 824, 570) and tag_box((10, 10), (15, 12)) is None
+    marked = {}
+    set_hitbox(type("Sct", (), {"grab": lambda self, r: type("S", (), {"rgb": b"\0" * r["width"] * r["height"] * 3})()})(),
+               marked, (745, 553), (824, 570), (1163, 520))
+    assert (marked["x"], marked["bottom"], marked["top"], marked["reach"]) == (785, 546, 546 - CHARACTER_HEIGHT, 378), marked
+    assert (marked["tag"]["x"], marked["tag"]["y"], marked["tag"]["w"]) == (-40, 7, 80)
     # MapleStory's bars where its status bar puts them: centred along the bottom.
     hud = hud_bars("maplestory", {"left": 0, "top": 0, "width": 1366, "height": 768})
     assert [(hud[n]["x1"], hud[n]["x2"], hud[n]["y"]) for n in ("hp", "mana", "xp")] == [(503, 605, 754), (611, 713, 754), (724, 836, 754)]

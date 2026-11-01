@@ -3,6 +3,16 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## Screen reader update (after 1.18.2, PC only)
+
+- ⚡ **`"frames"`: how many of each mob's animation frames are searched**
+  (in `mobs`; 5 by default, the mob's own PNG then the poses least like it;
+  `0` = all). A reading drops from about 270 ms to 200 ms on 2 cores with the
+  same results on the sample scenes; fewer frames are faster still but miss
+  poses. Together with `"sight"` (how far either side is searched) it sets
+  the speed: 5 frames at sight 1.5 is about 145 ms. See the guide's
+  "Speed vs. what it sees"
+
 ## 1.18.2
 
 - 🧪 **Potions tapped after the attack, like you would**: a potion that's

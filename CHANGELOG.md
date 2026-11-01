@@ -38,6 +38,12 @@ and show up in the pad's **Updates** panel.
   (or Alt+F4) left the game layer stuck, and F9, F10 and F11 did nothing
   after. Its X now closes it properly, F9 brings an open picker to the
   front, and an error in the layer is printed once instead of stopping it
+- 🐛 **`--setup` ended the script**, so "press F9 to teach each map" did
+  nothing (F9 only said to list your maps). It now carries on into readings,
+  and F9 works during setup too
+- 🧯 **Errors are kept**: anything that goes wrong is written to
+  `kabuto-error.txt` next to the setup file (and shown on the strip), and an
+  error while handling a key no longer stops F8-F11 from working
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

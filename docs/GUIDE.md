@@ -257,7 +257,7 @@ For another game, `--setup --game other` samples the colours as before.
 ```bash
 python screen_stats.py                 # USB if plugged in, else kabuto.local
 python screen_stats.py --pin 123456    # Wi-Fi with the PIN (or set KABUTO_PIN)
-python screen_stats.py --setup         # redo setup
+python screen_stats.py --setup         # redo setup (then carries on reading, so F9 teaches maps)
 python screen_stats.py --dry-run       # check readings without sending
 ```
 

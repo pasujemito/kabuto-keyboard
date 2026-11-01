@@ -1383,7 +1383,10 @@ def listen(fn):
 
 def press(key):
     for fn in list(_listeners):
-        fn(key)
+        try:
+            fn(key)
+        except Exception as e:   # one listener's error mustn't stop the keys (their thread would die with it)
+            report_error(e)
 
 # The pad's setup layer buttons ("tool" steps) and the keys they stand for.
 PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11", "looser": "f6", "stricter": "f7"}
@@ -1797,6 +1800,8 @@ def setup(path, sprites_dir="mobs", game="maplestory"):
     for problem in problems:
         say(problem)
     names = sorted(maps)
+    if LAYER:   # F9 works during setup too (the map is taught once readings start)
+        LAYER.maps, LAYER.taught = layer_maps(maps, load_config(path, required=False))
     if names:
         say("%d maps in %s (%s%s)" % (len(names), MAP_LIST, ", ".join(names[:3]), ", ..." if len(names) > 3 else ""))
         mark_map_name(config)
@@ -2561,6 +2566,21 @@ class Layer:
         refresh()
         win.after(50, entry.focus_force)
 
+ERROR_LOG = "kabuto-error.txt"   # next to the setup file: the details of anything that went wrong
+
+def report_error(e):
+    """An error's details into ERROR_LOG and the console, and a line on the strip."""
+    import traceback
+    details = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+    try:
+        with open(ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + details + "\n")
+        where = " (details in %s)" % os.path.abspath(ERROR_LOG)
+    except OSError:
+        where = " (details in the console)"
+    print(details, file=sys.stderr)
+    say("Error: %s%s" % (e, where))
+
 def with_layer(job, enabled=True):
     """Runs `job` with the game layer up (the job on its own thread; the
     window needs the main one). Without tkinter or a screen, just the job."""
@@ -2585,7 +2605,7 @@ def with_layer(job, enabled=True):
                 say(str(e.code))
         except Exception as e:
             ended["error"] = e
-            say("Stopped: %s" % e)
+            report_error(e)
         finally:
             LAYER.finish()
     threading.Thread(target=work, daemon=True).start()
@@ -3238,6 +3258,15 @@ def selftest():
     watch_pad_keys(Link(), every=0.02)
     assert mark_points("Hover the thing, F8 (or press Mark on the pad)", 2) == [(320, 240), (320, 240)]
     stop()
+    global ERROR_LOG
+    saved_log, ERROR_LOG = ERROR_LOG, os.path.join(tempfile.mkdtemp(), "kabuto-error.txt")
+    def broken(key): raise ValueError("a broken listener")
+    stop_broken, heard_after = listen(broken), []
+    stop_after = listen(heard_after.append)
+    press("f10")                                                              # the error is caught and logged...
+    assert heard_after == ["f10"] and "a broken listener" in open(ERROR_LOG).read()   # ...and the next listener still hears it
+    stop_broken(); stop_after()
+    ERROR_LOG = saved_log
     threading.Timer(0.05, press, ("f9",)).start()                            # a one-time question: F9 means not now
     assert mark_points("Name tag... (Esc or F9: not now)", 2, ("esc", "f9")) == []
     if numpy_or_none():   # F9 during the one-time questions: the rest wait for next start, nothing remembered
@@ -3275,6 +3304,8 @@ def main():
     ap.add_argument("--no-layer", action="store_true", help="no game layer over the game; the terminal only")
     ap.add_argument("--selftest", action="store_true", help="run built-in tests and exit")
     a = ap.parse_args()
+    global ERROR_LOG
+    ERROR_LOG = os.path.join(os.path.dirname(os.path.abspath(a.config)), ERROR_LOG)   # next to the setup file
     if a.selftest:
         selftest()
     elif a.map is not None:
@@ -3286,8 +3317,8 @@ def main():
         a.pads = None if a.dry_run else PadLink(a)
         if a.pads:
             watch_pad_keys(a.pads)
-        if a.setup:
-            job = lambda: setup(a.config, a.sprites, a.game or "maplestory")
+        if a.setup:   # then straight on to readings, so F9 can teach maps right away
+            job = lambda: (setup(a.config, a.sprites, a.game or "maplestory"), run(a))
         elif a.mobs:
             job = lambda: relearn_mobs(a.config, a.sprites)
         elif a.mark:

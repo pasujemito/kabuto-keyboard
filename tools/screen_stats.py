@@ -2271,8 +2271,10 @@ def connect(args):
     pad.where = "Wi-Fi " + args.host
     return pad
 
-def describe(r):
+def describe(r, xp=""):
     parts = ["%s %5.1f%%" % (label, r[name]) for name, label in BARS if r.get(name) is not None]
+    if xp:
+        parts.append("XP " + xp)
     if r.get("x") is not None:
         parts.append("map %4.1f,%4.1f" % (r["x"], r["y"]))
     if r.get("mobs") is not None:
@@ -2445,7 +2447,7 @@ def run(args):
     if args.game and config.get("game") != args.game:   # --game other: sampled colours again
         config["game"] = args.game
         save_config(args.config, config)
-    screen, pad, link = Screen(sct, config, args.sprites), None, None
+    screen, pad, link, xp_rate = Screen(sct, config, args.sprites), None, None, XpRate()
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         maps = map_list.get()
@@ -2475,7 +2477,9 @@ def run(args):
                         say("No mob colours here to tune: teach this map first (F9)")
         started = time.time()
         readings = screen.read()
-        line = describe(readings) + "  %d ms" % ((time.time() - started) * 1000)   # how long a reading takes here
+        if readings.get("state", "ok") == "ok":   # a death or login screen isn't XP news
+            xp_rate.add(readings.get("xp"), started)
+        line = describe(readings, xp_text(xp_rate)) + "  %d ms" % ((time.time() - started) * 1000)   # how long a reading takes here
         try:
             pad = pads.get() if pads else None
             link = pad.where if pad else "dry run"
@@ -2494,7 +2498,7 @@ def run(args):
             if screen.tag and not screen.you:
                 hint = (hint + " \u00b7 " if hint else "") + "can't see your name tag"
             tol = mob_tolerance(config, screen.current) if readings.get("mobs") is not None else None
-            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint, tol),
+            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint, tol, xp_text(xp_rate)),
                        layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box, screen.you))
         time.sleep(max(wait - (time.time() - started), REST))   # a slow reading isn't followed by a full wait
 
@@ -2537,7 +2541,46 @@ def pick_list(names, query="", taught=None, changed=()):
     hits.sort(key=lambda n: (not " ".join(search_words(n)).startswith(" ".join(words)), n not in recent, n.lower()))
     return [(n, note(n)) for n in hits]
 
-def layer_status(r, link, game=None, maps=(), hint=None, tol=None):
+class XpRate:
+    """XP per hour from the XP bar (% of a level per hour), as the pad works it
+    out: shown after a minute of readings; a level-up (the bar dropping from
+    high to near empty) starts it afresh for the new level and is counted;
+    smaller drops (death, a misread) are ignored."""
+    MIN_S = 60
+
+    def __init__(self):
+        self.last, self.start, self.at, self.gained, self.levels = None, 0.0, 0.0, 0.0, 0
+
+    def add(self, xp, now):
+        if xp is None or not 0 <= xp <= 100:
+            return
+        if self.last is None or xp - self.last < -50:   # first reading, or a level up: afresh
+            self.levels += self.last is not None
+            self.last, self.start, self.at, self.gained = xp, now, now, 0.0
+            return
+        self.gained += max(0.0, xp - self.last)
+        self.last, self.at = xp, now
+
+    def per_hour(self):
+        """% of a level per hour, or None until a minute of readings."""
+        spent = self.at - self.start
+        return self.gained * 3600.0 / spent if self.last is not None and spent >= self.MIN_S else None
+
+    def to_level(self):
+        """Hours to the next level at this rate, or None."""
+        rate = self.per_hour()
+        return (100 - self.last) / rate if rate else None
+
+def xp_text(rate):
+    """"+3.2%/h, level in 25h" for the strip and console ("" until there's a rate)."""
+    per = rate.per_hour() if rate else None
+    if per is None:
+        return ""
+    left = rate.to_level()
+    when = "" if left is None else (", level in %dm" % round(left * 60) if left < 1 else ", level in %.1fh" % left)
+    return "+%.1f%%/h%s" % (per, when)
+
+def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp=""):
     """The strip's first line from a reading: [(text, colour), ...]."""
     known = GAMES.get(game)
     out = [("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER),
@@ -2545,6 +2588,8 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None):
     for name, label in BARS:
         if r.get(name) is not None:
             out.append(("%s %.0f%%" % ("MP" if name == "mana" else label, r[name]), BAR_COLORS[name]))
+            if name == "xp" and xp:
+                out.append((xp, BAR_COLORS["xp"]))
     if r.get("state", "ok") != "ok":
         out.append((r["state"].upper(), RED))
     if r.get("map") == "-":
@@ -3332,6 +3377,19 @@ def selftest():
     assert memory.update([], 2.3, "B", still=lambda k: False) == []               # nothing of it left where it was: gone at once
     memory.update([snail], 3.0, "B")
     assert memory.update([], 3.3, "B", still=lambda k: True) == [snail + (True,)]  # still partly there (under effects): held
+    # XP per hour on the strip: after a minute; a level up starts it afresh for the new level.
+    rate = XpRate()
+    rate.add(20.0, 0); rate.add(25.0, 30)
+    assert rate.per_hour() is None and xp_text(rate) == ""
+    rate.add(30.0, 60)
+    assert abs(rate.per_hour() - 600) < 1e-9 and xp_text(rate) == "+600.0%/h, level in 7m"   # 70% left at 600%/h
+    rate.add(28.0, 70); assert rate.levels == 0 and abs(rate.gained - 10) < 1e-9             # a small drop: ignored
+    rate.add(98.0, 80); rate.add(2.0, 90)
+    assert rate.levels == 1 and rate.per_hour() is None and rate.last == 2.0 and rate.gained == 0   # level up (98% -> 2%): afresh
+    rate.add(3.0, 150); assert abs(rate.per_hour() - 60) < 1e-9 and "level in" in xp_text(rate)
+    rate.add(None, 160); rate.add(140.0, 160); assert rate.last == 3.0                       # unread or impossible: ignored
+    assert ("+60.0%/h, level in 1.6h", BAR_COLORS["xp"]) in layer_status({"xp": 3.0}, "USB", xp=xp_text(rate))
+    assert "XP +60.0%/h" in describe({"xp": 3.0}, xp_text(rate))
     # Getting ready: packages and frames offered once; a no is remembered.
     with tempfile.TemporaryDirectory() as d:
         path, lib = os.path.join(d, "kabuto-bars.json"), os.path.join(d, "mobs")

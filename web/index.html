@@ -1990,7 +1990,7 @@ function renderLiveStats(live,pattern=status.pattern){
   const foot=el('div','live-foot'),info=el('span');
   const hours=m=>m<60?m+' min':Math.floor(m/60)+' h '+(m%60)+' min';
   info.textContent=!live.fresh?`Screen reader stopped ${Math.round(live.ageMs/1000)} s ago; potions use their timers.`:
-    live.xpPerHour<0?(live.xp>=0?'XP rate after a minute of reading…':'Live from your PC.'):
+    live.xpPerHour<0?(live.xp>=0?(live.levels?`Level up! (${live.levels}) XP rate starts again a minute into the new level…`:'XP rate after a minute of reading…'):'Live from your PC.'):
     `+${(live.xpPerHour/10).toFixed(1)}%/h · ${(live.xpPerHour/600).toFixed(2)}%/min`+(live.minutesToLevel>=0?` · level in ${hours(live.minutesToLevel)}`:'')+(live.levels?` · ${live.levels} level${live.levels>1?'s':''} up`:'');
   foot.appendChild(info);
   if(live.xp>=0){const reset=el('button','btn sm');reset.type='button';reset.textContent='Reset XP rate';reset.onclick=()=>api('/api/stats/reset',{method:'POST'}).catch(()=>{});foot.appendChild(reset);}

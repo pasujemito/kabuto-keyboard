@@ -10,9 +10,10 @@ const uint32_t LIVE_STATS_STALE_MS = 5000;   // older readings fall back to poti
 const uint32_t LIVE_POTION_GAP_MS = 3000;    // let a potion land before drinking again
 const uint32_t XP_RATE_MIN_MS = 60000;       // a minute of readings before showing a rate
 
-// XP gained from the XP bar, counting through level-ups (the bar wraps from
-// near full to near empty). Smaller drops (death penalty, a misread) are
-// ignored rather than subtracted.
+// XP gained from the XP bar. A level-up (the bar dropping from high to near
+// empty) starts the rate afresh, for the new level (its % are of a bigger
+// level), and is counted in `levels`. Smaller drops (death penalty, a
+// misread) are ignored rather than subtracted.
 struct XpTracker {
     uint32_t startMs = 0, lastMs = 0, levels = 0;
     uint64_t gained = 0;   // tenths of a percent of a level
@@ -22,8 +23,8 @@ struct XpTracker {
         if (xp < 0 || xp > 1000) return;
         if (lastXp < 0) { lastXp = xp; startMs = lastMs = nowMs; return; }
         int delta = xp - lastXp;
-        if (delta < -500) { delta += 1000; ++levels; }
-        else if (delta < 0) delta = 0;
+        if (delta < -500) { ++levels; gained = 0; lastXp = xp; startMs = lastMs = nowMs; return; }   // level up: afresh
+        if (delta < 0) delta = 0;
         gained += (uint64_t)delta; lastXp = xp; lastMs = nowMs;
     }
     // Tenths of a percent of a level per hour, or -1 until there's a minute of data.

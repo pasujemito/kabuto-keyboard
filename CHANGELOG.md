@@ -53,9 +53,11 @@ and show up in the pad's **Updates** panel.
 - 🐛 **Reach and sight at your head instead of your feet**: marking the
   name tag on its own (`--tag`, or the one-time question) measured where it
   sits from the feet marked at setup, but the camera has usually moved you
-  since, so the boxes ended up off by about your height. Marking the tag on
-  its own now asks for your feet first, and a tag stored in the wrong place
-  is offered for marking again at start
+  since, so the boxes ended up off by about your height. Your feet now come
+  from the tag itself (MapleStory draws it centred just under them), so
+  setups like that are right again with nothing to redo
+- 🎯 **Setup marks less**: no head or feet any more, just your name tag's
+  two corners and your reach (every character is the same size)
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

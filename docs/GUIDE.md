@@ -274,29 +274,26 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    With maps in `mobs/map.json` (see **Mobs per map**), it also asks for the
    **map's name**: its top-left, then its bottom-right a bit past where the
    longest name would end.
-3. **Mobs:** your **hitbox** first: your character's head, then its feet,
-   then how far your attack reaches to one side. Mobs are looked for in that
-   box either side of you (e.g. 120 px tall, 400 px each way), skipping your
-   own character in the middle. Then up to 3 mobs of different kinds (it learns
-   their colours); **Esc** when done. With mob sprites (below), you only mark
-   the hitbox.
-4. **Name tag:** the top-left, then the bottom-right corner of **your name
-   tag** under your character. MapleStory's camera lags behind you and stops
-   at map edges, so you're rarely where the hitbox was marked: with numpy,
-   every reading finds your tag and the hitbox and mob search follow you.
-   It's matched by its pattern of light and dark (letters, outline, medal),
-   not its colours, because the tag's box is see-through and takes on the
-   colour of whatever is behind you. Mark it tightly, just the tag and any
-   medal, without the scenery around it. For a setup made before 1.18, or to
-   mark it again, `python screen_stats.py --tag`: it asks for your feet
-   first (wherever you stand now), then the tag, since what matters is where
-   the tag sits from your feet. A tag that isn't just under your feet is
-   offered for marking again at start.
+3. **Hitbox and name tag:** the top-left, then the bottom-right corner of
+   **your name tag** (its medal too, if you have one), then how far your
+   attack reaches to one side. MapleStory draws the tag centred just under
+   your feet and every character is the same size, so your feet (7 px above
+   the tag's middle) and head (73 px above them) needn't be marked. Mobs are
+   looked for in that box either side of you, skipping your own character in
+   the middle. Without mob sprites (below), then up to 3 mobs of different
+   kinds (it learns their colours); **Esc** when done.
+   MapleStory's camera lags behind you and stops at map edges, so you're
+   rarely where you stood at setup: with numpy, every reading finds your tag
+   and the hitbox and mob search follow you. It's matched by its pattern of
+   light and dark (letters, outline, medal), not its colours, because the
+   tag's box is see-through and takes on the colour of whatever is behind
+   you. Mark it tightly, without the scenery around it. To mark it again
+   (another medal, say): `python screen_stats.py --tag`.
 
 **Mob sprites** pick far better colours than one hovered pixel. Put PNGs of the
 mobs you fight, with **transparent backgrounds** (a frame or two each, any
 size), in a `mobs` folder next to the script and `pip install pillow`. Setup
-asks for your hitbox, then watches the map for 4 s (mobs walking about are
+asks for your name tag and reach, then watches the map for 4 s (mobs walking about are
 fine: it goes by the quietest moment). It takes each sprite's main colours (up
 to 5), leaves out the black outline, white and greys every sprite has, and
 keeps colours that are much commoner on the mob than on the map. Detection

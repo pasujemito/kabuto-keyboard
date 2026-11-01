@@ -385,7 +385,22 @@ printed in the console: about 0.4 s on a 2-core laptop (scipy helps more
 with more cores), and the first reading on a new map takes a second or two
 while its frames are prepared. Only the current map's frames are kept in
 memory (about 200 MB at most), so low-memory PCs don't slow down as you
-travel. Looser/Stricter (F6/F7) move the colour tolerance here too, and a
+travel.
+
+**Speed vs. what it sees.** Nearly all of a reading is the mob search, and
+two settings in your setup's `mobs` decide its cost:
+
+- `"frames"`: how many of each mob's animation frames are searched for (5
+  by default: its own PNG, then the poses least like it; `0` = all). Each
+  frame costs time; fewer frames miss more poses.
+- `"sight"`: how far either side mobs are looked for, in times your reach
+  (2.5 by default, the whole screen width at 300 px reach). The search
+  covers a strip at your level that wide; narrower is faster, but mobs out
+  of it aren't counted or walked to.
+
+On a 2-core laptop (Deep Valley II): all frames, sight 2.5: about 270 ms a
+reading; 5 frames: about 200 ms; 5 frames, sight 1.5: about 145 ms; 3
+frames, sight 1.5: about 100 ms. Looser/Stricter (F6/F7) move the colour tolerance here too, and a
 map's `shape` (0.6 by default) sets how well a frame must match.
 
 **Mobs per map:** keep every mob's PNG once, in `mobs`, and describe each map

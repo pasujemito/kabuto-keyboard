@@ -892,6 +892,25 @@ def frame_files(sprites_dir, files):
             out[mob] = found
     return out
 
+FRAMES_PER_MOB = 5   # animation frames of each mob searched for ("frames" in mobs; 0 = all of them)
+
+def pick_frames(np, images, n):
+    """Up to `n` of a mob's frames (0: all), the first (its own PNG) then each
+    time the one least like those kept (by its outline; another size counts as
+    unlike): the poses that matter most, as each frame costs search time."""
+    if not n or len(images) <= n:
+        return list(images)
+    masks = [img[..., 3] >= 200 for img in images]
+    def unlike(i, j):
+        a, b = masks[i], masks[j]
+        return float((a != b).sum()) / max(int(a.sum()), 1) if a.shape == b.shape else 1.0
+    kept, rest = [0], list(range(1, len(images)))
+    while rest and len(kept) < n:
+        far = max(rest, key=lambda i: min(unlike(i, k) for k in kept))
+        kept.append(far)
+        rest.remove(far)
+    return [images[i] for i in kept]
+
 def fast_len(n):
     """The next size FFTs are quick at (2, 3 and 5 only)."""
     while True:
@@ -1383,7 +1402,9 @@ class Screen:
                 from PIL import Image
                 frames = {}
                 for mob, files in frame_files(self.sprites_dir, self.map_mobs[name] or []).items():
-                    frames[mob] = [self.np.asarray(Image.open(os.path.join(self.sprites_dir, f)).convert("RGBA")) for f in files]
+                    files = sorted(files, key=lambda f: f != mob + ".png")   # your own PNG first
+                    images = [self.np.asarray(Image.open(os.path.join(self.sprites_dir, f)).convert("RGBA")) for f in files]
+                    frames[mob] = pick_frames(self.np, images, mb.get("frames", FRAMES_PER_MOB))
             except Exception:   # no Pillow, unreadable files
                 frames = {}
             sight = int(mb.get("reach", 350) * mb.get("sight", SIGHT))
@@ -3224,6 +3245,14 @@ def selftest():
         assert frame_files(lib, ["snail.png", "slime.png", "gone.png"]) == {"snail": ["snail.hit10.png", "snail.move0.png", "snail.png"],
                                                                          "slime": ["slime.png"]}
     assert [fast_len(n) for n in (1, 7, 97, 243, 1601)] == [1, 8, 100, 243, 1620]
+    np_ = numpy_or_none()
+    if np_:   # a mob's most different frames: its own PNG, then the least alike each time
+        def pose(w, h, cut):
+            img = np_.zeros((h, w, 4), np_.uint8); img[:, :, 3] = 255; img[:cut, :, 3] = 0; return img
+        poses = [pose(10, 10, 0), pose(10, 10, 1), pose(10, 10, 5), pose(12, 10, 0), pose(10, 10, 2)]
+        picked = pick_frames(np_, poses, 3)
+        assert picked[0] is poses[0] and any(p is poses[3] for p in picked) and any(p is poses[2] for p in picked) and len(picked) == 3
+        assert len(pick_frames(np_, poses, 0)) == 5 and len(pick_frames(np_, poses, 9)) == 5
     np = numpy_or_none()
     if np:   # the shape search and name tag themselves (numpy isn't needed to run this file)
         rgba = np.array(sprite, np.uint8).reshape(20, 20, 4)

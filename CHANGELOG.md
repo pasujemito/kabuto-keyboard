@@ -34,6 +34,10 @@ and show up in the pad's **Updates** panel.
   old firmware, and the pad's setup buttons stopped for the session. The
   pad's own version (1.17.0 or newer has them) now decides; a slow answer
   just means no presses that time
+- 🐛 **F9's map picker could stop opening**: closing it with its X button
+  (or Alt+F4) left the game layer stuck, and F9, F10 and F11 did nothing
+  after. Its X now closes it properly, F9 brings an open picker to the
+  front, and an error in the layer is printed once instead of stopping it
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

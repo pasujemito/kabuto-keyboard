@@ -3543,7 +3543,9 @@ def selftest():
     def broken(key): raise ValueError("a broken listener")
     stop_broken, heard_after = listen(broken), []
     stop_after = listen(heard_after.append)
-    press("f10")                                                              # the error is caught and logged...
+    import contextlib, io
+    with contextlib.redirect_stderr(io.StringIO()):
+        press("f10")                                                          # the error is caught and logged...
     assert heard_after == ["f10"] and "a broken listener" in open(ERROR_LOG).read()   # ...and the next listener still hears it
     stop_broken(); stop_after()
     ERROR_LOG = saved_log

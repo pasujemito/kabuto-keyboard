@@ -484,7 +484,8 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   counts through level-ups; small XP drops (death, a misread) are ignored.
 - Each HP/Mana potion has **Drink below (%)**: HP defaults to 50%, Mana to
   30%. While fresh readings arrive, a potion drinks as soon as its bar is under
-  that, even between attacks in a set, at most every 3 s. With no reading for
+  that, at most every 3 s, without pausing the attacks: it's pressed inside
+  the next jump-attack (with the jump, released as the attack goes down). With no reading for
   5 s, a bar that isn't read, or 0%, the potion uses its timer as before.
 - **Bar total** and **per tap** make it drink just enough: enter your real
   max (e.g. HP 5000) and what one potion restores (e.g. 800). Below the
@@ -828,10 +829,13 @@ were configurable keep Alt, Ctrl and the arrows.
 **HP & Mana.** New patterns drink **HP on C every 40–70 s** and **Mana on V
 every 25–45 s**, one tap each (hold 85–110 ms, then 400–700 ms). Each potion
 has its own key, on/off switch, **every X–Y seconds** range, number of taps
-and tap timing. A potion fires at the first gap between sets once its timer is
-up, before any skills, and the next wait is drawn fresh each time. The first
-drink comes after the first set. Kabuto can't see your health or mana bars, so
-potions run on time, not when you're low. Patterns saved before potions
+and tap timing. Once its timer is up, a potion is pressed inside the next
+jump-attack (down with the jump, released as the attack goes down), so
+attacking never pauses for it; several taps take one jump-attack each. Its
+own tap timing is used only when it's drunk while not attacking (waiting for
+mobs, or taps still owed when the pattern ends). The next wait is drawn fresh
+each time. Without the screen reader Kabuto can't see your health or mana
+bars, so potions run on time, not when you're low. Patterns saved before potions
 existed have both switched off.
 
 **Skills.** Add up to eight independent skills; configure their key, chance

@@ -23,6 +23,12 @@ and show up in the pad's **Updates** panel.
 - 📍 **MapleStory's HP, MP and XP bars are found for you** at setup: its
   status bar is centred along the bottom, so they're placed there and kept
   when the HP bar is really there (otherwise you mark them as before)
+- 🗺️ **Minimap: just its bottom-right corner to mark** (its top-left is
+  the screen's corner in MapleStory; kept if your dot shows in the box)
+- 🐛 **Your position on Perion maps was wrong**: the golden sun in the
+  minimap's header shares your dot's colour and dragged it up and left (The
+  Burnt Land V read 46% across with you at 98%). The dot is now looked for
+  below the header; every sample screenshot reads within half a percent
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

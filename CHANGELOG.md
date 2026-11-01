@@ -3,6 +3,15 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.2
+
+- 🧪 **Potions tapped after the attack, like you would**: a potion that's
+  due is tapped in the gap right after the next attack, before jumping
+  again: quick taps (its hold, then 50-110 ms) that use up the gap's own
+  time, as many as fit (at least one), the rest after the next attack. The
+  attacks land exactly when they would without potions. (1.18.1 pressed it
+  inside the jump instead.)
+
 ## 1.18.1
 
 - 🧪 **Potions don't pause the attacks**: a potion that's due is pressed

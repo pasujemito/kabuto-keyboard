@@ -354,7 +354,9 @@ back doesn't move it; stay on a higher platform and it moves up after 5 s.
 The game layer's cyan marker shows where it's looking from. A mob missed for a moment (hit effects, skills, mist
 drifting over it) is **held** where it was last seen for 0.6 s (`"hold"` in
 `mobs`), so attacking doesn't stop and start mid-fight; the game layer marks
-it `(held)`.
+it `(held)`. Only while something of it still shows there, or the spot is
+covered in hit effects: a killed mob leaves plain background and stops
+counting in the very next reading.
 
 A mob **partly covered** still counts: where its pixels don't match but the
 screen there is near white, yellow or orange (hit effects, damage numbers),

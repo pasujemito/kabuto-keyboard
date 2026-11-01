@@ -269,18 +269,23 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    bar's left end. Bars that fade along their length (e.g. dark to light blue
    Mana) are fine: it follows the fade to the bar's end. If a fading bar still
    reads short, raise its `fade` (default 30) in `kabuto-bars.json`.
-2. **Minimap:** its top-left corner, then its bottom-right corner (with
-   `--game other`, then your own dot on it, to learn its colour).
-   With maps in `mobs/map.json` (see **Mobs per map**), it also asks for the
-   **map's name**: its top-left, then its bottom-right a bit past where the
-   longest name would end.
-3. **Hitbox and name tag:** the top-left, then the bottom-right corner of
-   **your name tag** (its medal too, if you have one), then how far your
-   attack reaches to one side. MapleStory draws the tag centred just under
-   your feet and every character is the same size, so your feet (7 px above
-   the tag's middle) and head (73 px above them) needn't be marked. Mobs are
-   looked for in that box either side of you, skipping your own character in
-   the middle. Without mob sprites (below), then up to 3 mobs of different
+2. **Minimap** (MapleStory: found for you): it sits at the screen's top-left
+   corner, and its frame's near-white edge line is found on every map, so
+   each map's minimap size is known without marking it. Your position is
+   read from the map picture under the header (72 px down) to that edge. The
+   **map's name** is read from the header too, from just past the region icon
+   to the minimap's edge, so long names aren't cut off. Only if the minimap
+   isn't found (the game windowed away from the corner) are you asked for its
+   corners and the name's area. Other games (`--game other`): its corners,
+   your dot on it, and the name's area.
+3. **Name tag:** the top-left, then the bottom-right corner of **your name
+   tag** (its medal too, if you have one). That's all setup asks in
+   MapleStory. The tag is drawn centred just under your feet and every
+   character is the same size, so your feet (7 px above the tag's middle) and
+   head (73 px above them) needn't be marked, and the hitbox is standard: your
+   character's height plus 40 px above and below (`"pad"` in `mobs`), 300 px
+   each way (`"reach"`). Mobs are looked for in that box either side of you,
+   skipping your own character in the middle. Without mob sprites (below), then up to 3 mobs of different
    kinds (it learns their colours); **Esc** when done.
    MapleStory's camera lags behind you and stops at map edges, so you're
    rarely where you stood at setup: with numpy, every reading finds your tag
@@ -408,13 +413,13 @@ mobs/map.json
 ]
 ```
 
-**`minimap`** is that map's minimap size in pixels. MapleStory's minimap
-stays at the same top-left corner but is wider or narrower from map to map,
-so with it your position (and the edge margins and home range that use it)
-is measured on that map's real minimap rather than the box marked at setup.
-You don't type it: the first time you teach a map (F9 below) it asks you to
-Mark the minimap's bottom-right corner and writes the size in (Skip keeps
-the setup's box). Delete a map's `minimap` to mark it again. Other keys are
+**`minimap`** is that map's minimap size in pixels, and it's optional:
+MapleStory's minimap stays at the same top-left corner and is wider or
+narrower from map to map, and its size is found on screen every reading. Set
+it only for a map where that goes wrong (the size you give always wins), or
+when the minimap isn't found at all, in which case teaching a map (F9 below)
+asks you to mark its bottom-right corner and writes the size in. Delete a
+map's `minimap` to go back to the size found on screen. Other keys are
 kept as they are, for later settings. The older form,
 `{"Ellinia": ["slime.png", ...]}`, still reads, and is rewritten in this form
 the first time a size is saved.

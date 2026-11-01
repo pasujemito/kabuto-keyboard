@@ -66,6 +66,16 @@ and show up in the pad's **Updates** panel.
   each spot is checked closely with the 3 frames the fast pass liked best
   there, not every frame of the mob, and the minimap's slide is tracked with
   numpy (37 ms to a few)
+- 🧭 **Setup is just your name tag** in MapleStory: the bars, the minimap
+  and the map's name are all found for you, and the hitbox is standard
+  (your height plus 40 px above and below, 300 px each way; `"pad"` and
+  `"reach"` to change it)
+- 🗺️ **The minimap's size is found on every map** from its frame's edge
+  line (about 2 ms), so F9 no longer asks for its corner; a size in
+  `map.json` still wins, for maps where that goes wrong. The map's name is
+  read from the header up to the minimap's edge: long names aren't cut off,
+  and The Burnt Land III and V are told apart. Setups with a hand-marked
+  name area are offered the switch once (maps are then taught again)
 
 No pad update needed: get the new `tools/screen_stats.py`.
 

@@ -48,6 +48,7 @@ struct DynamicPattern {
     bool faceMobs = false;            // turn towards mobs (the nearer side when both)
     bool smart = false;               // no mobs: wait for them; drifted: walk back home
     uint16_t homeRangePermille = 0;   // smart: how far from home you may drift (0 = no home)
+    int16_t homeAtPermille = -1;      // smart: home this far across the minimap (-1: where you start); a map's own (F12) wins
     uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
     bool approach = false;            // smart: walk to mobs you can see but not reach
     DynamicRange walkHold{280,650};   // smart: each stride when walking (home or to mobs), then dir_after

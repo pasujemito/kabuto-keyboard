@@ -3,8 +3,19 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
-## Screen reader (with the next release)
+## 1.18.6
 
+- 🏠 **Set where home is, and hunt around it**: a smart pattern's home can
+  be set as **Home at (% across the minimap)** in the pattern (for every
+  map), or per map with **F12** in the game (or the pad's **Set home**
+  button, on the Tune layer in place of Outlines): it saves your dot's place
+  on that map's minimap as `"home"` in `mobs/map.json`, and the screen reader
+  sends it with each reading (`hx`). A map's own home wins, then the
+  pattern's, else where you started (as before). With a home, once there's
+  nothing to fight it walks back there (when over 6% of the minimap away,
+  until within 3%) instead of waiting where the last mob was, and
+  auto-pause waits there too; mobs in reach on the way are still fought. A
+  set home it can't reach in 10 s isn't moved: it tries again 10 s later
 - 💀 **No more false deaths on changing maps**: dead used to mean the HP bar
   read 0% twice in a row (half a second), and a map's fade to black does just
   that, so the pad stopped and notified a death. Now dead means HP under 5%

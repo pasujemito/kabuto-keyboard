@@ -286,15 +286,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.deepEqual(await layerKeys(layersBefore),{name:'MS🍁 Setup',keys:[['Mark (F8)',{type:'tool',key:'mark'}],['Skip (Esc)',{type:'tool',key:'skip'}],
     ['Which map (F9)',{type:'tool',key:'map'}],['Outlines (F10)',{type:'tool',key:'outlines'}],['Tune ▸',{type:'layer',layer:layersBefore+1}],['Back',{type:'layer',layer:0}]]});
   assert.deepEqual(await layerKeys(layersBefore+1),{name:'MS🍁 Tune',keys:[['Looser (F6)',{type:'tool',key:'looser'}],['Stricter (F7)',{type:'tool',key:'stricter'}],
-    ['Outlines (F10)',{type:'tool',key:'outlines'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['◂ Setup',{type:'layer',layer:layersBefore}],['Back',{type:'layer',layer:0}]]});
+    ['Set home (F12)',{type:'tool',key:'home'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['◂ Setup',{type:'layer',layer:layersBefore}],['Back',{type:'layer',layer:0}]]});
   assert.deepEqual(await page.evaluate(n=>cfg.layers[0].keys.filter(k=>k.name==='🍁 Setup').map(k=>cfg.workflows.find(w=>w.id===k.steps[0].workflow).steps[0]),layersBefore),[{type:'layer',layer:layersBefore}]);
   assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Mark \(F8\)/);
   assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Looser \(F6\)/);
   const toolCount=await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length);
-  assert.equal(toolCount,7);
+  assert.equal(toolCount,8);   // mark, skip, map, outlines, looser, stricter, home, hide
   if(await page.evaluate(()=>cfg.layers.length+2<=meta.maxLayers)){
     await page.locator('#newSetupLayer').click();   // again: the same recordings are reused
-    assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),7);
+    assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),8);
   }
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();

@@ -32,13 +32,14 @@ default), and so is where its bars are. --game other samples them.
 
 The game layer: a strip across the top of the game shows what's read and
 sent, the map and the mobs, and each setup step, so you needn't leave the
-game. F6-F11 work while the game has focus:
+game. F6-F12 work while the game has focus:
     F8   mark (during setup)     F9   which map is this? (pick it from map.json)
     F10  outlines on the game    F11  hide or show the layer
     F6   looser mob colours      F7   stricter mob colours (this map, saved)
+    F12  this map's home is where you stand (map.json "home"; the pad hunts around it)
 Or press them on the pad: the editor's "Setup layer" (Recordings) gives two
 pad layers: Setup (Mark, Skip, Which map, Outlines) and Tune (Looser,
-Stricter, Outlines, Hide).
+Stricter, Set home, Hide).
 Each clump of mob colour is checked against your PNGs (MapleStory draws
 sprites pixel for pixel), so scenery sharing a colour isn't counted.
 The game must be windowed or borderless. --no-layer for the terminal only.
@@ -1403,6 +1404,7 @@ class Screen:
         self.sizes = {}       # {map: its minimap size}, from map.json
         self.box = None       # the minimap box last read
         self.map_mobs = {}    # {map: its mob PNGs}, from map.json
+        self.homes = {}       # {map: its home, % across its minimap}, from map.json (F12)
         self.searches = {}    # {map: ShapeSearch}
         self.you = None       # (x, feet) where your name tag says you are, else None
         self.memory = MobMemory((config.get("mobs") or {}).get("hold", HOLD_SECONDS))
@@ -1605,8 +1607,8 @@ class Screen:
         found = self.mobs(name)
         mobs = found.pop("mobs", None)   # None: no mob detector, so the pad doesn't wait for mobs
         watches = {}
-        for name, mark in c.get("watch", {}).items():
-            watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
+        for what, mark in c.get("watch", {}).items():   # (not `name`: that's the map's)
+            watches[what] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
         self.popup = self.test_popup()
         out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, self.popup is not None,
                                          self.clock())
@@ -1618,6 +1620,8 @@ class Screen:
             out["mn"] = safe_name(found["mn"])
         if name is not None:
             out["map"] = safe_name(name) if name else "-"   # "-": a map you haven't taught
+        if name and self.homes.get(name) is not None:
+            out["hx"] = self.homes[name]   # where the pad hunts around on this map
         return out
 
 # ---- setup --------------------------------------------------------------------
@@ -1628,7 +1632,7 @@ class Screen:
 # it, so F8 only worked with the terminal in front. On Windows the keys' state
 # is read directly instead (GetAsyncKeyState), which needs no hook.
 
-KEYS = {"f6": 0x75, "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "esc": 0x1B}   # Windows key codes
+KEYS = {"f6": 0x75, "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B, "esc": 0x1B}   # Windows key codes
 
 class KeyEdges:
     """Which keys went down since the last look, from the keys down now."""
@@ -1693,7 +1697,8 @@ def press(key):
             report_error(e)
 
 # The pad's setup layer buttons ("tool" steps) and the keys they stand for.
-PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11", "looser": "f6", "stricter": "f7"}
+PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11", "looser": "f6", "stricter": "f7",
+            "home": "f12"}
 
 def pointer():
     """Where the mouse pointer is on the screen."""
@@ -1898,7 +1903,8 @@ def read_map_list(sprites_dir):
           "minimap": {"width": 178, "height": 96}}, ...]
 
     "minimap" is that map's minimap size in px (from the setup's top-left
-    corner; F9 fills it in). Other keys are kept for later. The 1.17.1 form,
+    corner; F9 fills it in). "home" is where to hunt around, % across its
+    minimap (F12 fills it in; the pad walks back there). Other keys are kept. The 1.17.1 form,
     {"Rocky Road II": ["red-snail.png", ...]}, still reads.
     Returns ({map: {"mobs": [file, ...], "minimap": {...} or None}}, [problem,
     ...]); listed files that aren't there and bad entries are problems, not
@@ -1908,7 +1914,7 @@ def read_map_list(sprites_dir):
     if not os.path.isfile(path):
         if not os.path.isdir(sprites_dir):
             return {}, []
-        return {d: {"mobs": None, "minimap": None} for d in sorted(os.listdir(sprites_dir))
+        return {d: {"mobs": None, "minimap": None, "home": None} for d in sorted(os.listdir(sprites_dir))
                 if os.path.isdir(os.path.join(sprites_dir, d))}, []
     try:
         with open(path, encoding="utf-8") as f:
@@ -1935,7 +1941,11 @@ def read_map_list(sprites_dir):
                                                                    for k in ("width", "height"))):
             problems.append('%s: %s\'s "minimap" should be {"width": px, "height": px}; the setup\'s is used' % (MAP_LIST, name))
             size = None
-        maps[name] = {"mobs": files, "minimap": size and {"width": size["width"], "height": size["height"]}}
+        home = entry.get("home")
+        if home is not None and not (isinstance(home, (int, float)) and not isinstance(home, bool) and 0 <= home <= 100):
+            problems.append('%s: %s\'s "home" should be a %% across its minimap, 0-100 (F12 sets it); not used' % (MAP_LIST, name))
+            home = None
+        maps[name] = {"mobs": files, "minimap": size and {"width": size["width"], "height": size["height"]}, "home": home}
     return maps, problems
 
 def format_map_list(entries):
@@ -1950,6 +1960,15 @@ def format_map_list(entries):
 def save_map_size(sprites_dir, name, width, height):
     """Writes map `name`'s minimap size into map.json (in the current form,
     keeping everything else). False without map.json or that map in it."""
+    return save_map_value(sprites_dir, name, "minimap", {"width": width, "height": height})
+
+def save_map_home(sprites_dir, name, percent):
+    """Writes map `name`'s home (% across its minimap) into map.json."""
+    return save_map_value(sprites_dir, name, "home", round(percent, 1))
+
+def save_map_value(sprites_dir, name, key, value):
+    """Sets `key` of map `name` in map.json (in the current form, keeping
+    everything else). False without map.json or that map in it."""
     path = os.path.join(sprites_dir, MAP_LIST)
     try:
         with open(path, encoding="utf-8") as f:
@@ -1958,7 +1977,7 @@ def save_map_size(sprites_dir, name, width, height):
         return False
     for entry in entries or []:
         if isinstance(entry, dict) and entry.get("name") == name:
-            entry["minimap"] = {"width": width, "height": height}
+            entry[key] = value
             with open(path + ".tmp", "w", encoding="utf-8") as f:
                 f.write(format_map_list(entries))
             os.replace(path + ".tmp", path)
@@ -2634,6 +2653,19 @@ def get_ready_in_game(sct, config, path):
         return True
     return False
 
+def set_home(sprites_dir, screen, x):
+    """F12: the map you're on gets its home where you stand (your dot across
+    the minimap), kept in map.json. Returns what to say."""
+    name = screen.current
+    if not name:
+        return "Set home: " + ("this map isn't taught yet: F9 first, then F12" if name == "" else "no maps listed in mobs/%s" % MAP_LIST)
+    if x is None:
+        return "Set home: can't see your dot on the minimap"
+    if not save_map_home(sprites_dir, name, x):
+        return "Set home: %s isn't in mobs/%s" % (name, MAP_LIST)
+    screen.homes[name] = round(x, 1)
+    return "Home on %s: %.0f%% across the minimap. The pad hunts around it (F12 again moves it)" % (name, x)
+
 def layer_maps(maps, config):
     """For the F9 list: every map in map.json, and when each taught one was taught."""
     return sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items() if name_taught(m)}
@@ -2656,11 +2688,13 @@ def run(args):
         save_config(args.config, config)
     screen, pad, link, xp_rate = Screen(sct, config, args.sprites), None, None, XpRate()
     alarm = Alarm() if not getattr(args, "quiet", False) and config.get("sound", True) else None
+    last_x = None   # your dot across the minimap, last reading (F12 makes it home)
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         maps = map_list.get()
         screen.sizes = map_sizes(maps)
         screen.map_mobs = {n: e.get("mobs") for n, e in maps.items()}
+        screen.homes = {n: e.get("home") for n, e in maps.items()}
         if LAYER:
             LAYER.maps, LAYER.taught = layer_maps(maps, config)
             LAYER.changed = {n for n in LAYER.taught if map_changed(args.sprites, maps, n, config["maps"][n])}
@@ -2674,6 +2708,7 @@ def run(args):
                         save_config(args.config, config)
                         screen = Screen(sct, config, args.sprites)
                         screen.sizes, screen.map_mobs = map_sizes(maps), {n: e.get("mobs") for n, e in maps.items()}
+                        screen.homes = {n: e.get("home") for n, e in maps.items()}
                         say("Taught %s: its mobs are looked for whenever this name shows." % value)
                 elif kind == "tune":   # F6 / F7: value is +1 (looser) or -1 (stricter)
                     tuned = tune_tolerance(config, screen.current, value)
@@ -2683,8 +2718,11 @@ def run(args):
                             % ("Looser" if value > 0 else "Stricter", tuned[1], tuned[0]))
                     else:
                         say("No mob colours here to tune: teach this map first (F9)")
+                elif kind == "home":   # F12: this map's home is where you stand
+                    say(set_home(args.sprites, screen, last_x))
         started = time.time()
         readings = screen.read()
+        last_x = readings.get("x")
         if alarm and alarm.update(readings.get("state", "ok"), started):
             play_alert(readings.get("state"), os.path.dirname(os.path.abspath(args.config)))
         if readings.get("state", "ok") == "ok":   # a death or login screen isn't XP news
@@ -3047,7 +3085,7 @@ class Layer:
         root.report_callback_exception = self._error
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
         self.status, self.shapes = [("Kabuto", AMBER), ("starting", DIM)], []
-        self.message, self.until = "F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", time.time() + 20
+        self.message, self.until = "F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide \u00b7 F12 home", time.time() + 20
         self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], {}, None
         self.changed = set()
         self.unlisten = listen(self.keys.put)
@@ -3112,6 +3150,8 @@ class Layer:
                 self.hidden = not self.hidden
             elif key in ("f6", "f7"):   # looser / stricter mob colours, done by the reading loop
                 self.commands.put(("tune", 1 if key == "f6" else -1))
+            elif key == "f12":   # this map's home is where you stand, done by the reading loop
+                self.commands.put(("home", None))
         with self.lock:
             status, shapes = list(self.status), list(self.shapes)
             message = self.message if time.time() < self.until else ""
@@ -3701,6 +3741,12 @@ def selftest():
     assert [ms.read()["state"] for _ in range(2)] == ["ok", "test"] and ms.popup, ms.popup
     assert screen.read()["state"] == "ok" and screen.popup is None
     assert Screen(fake, {"game": "maplestory", "test_popup": False}).test_popup() is None
+    assert "hx" not in screen.read()   # no map library: no home sent
+    screen.map_name, screen.homes = (lambda: "Ellinia"), {"Ellinia": 61.3, "Henesys": 20.0}
+    homed = screen.read()
+    assert homed["map"] == "Ellinia" and homed["hx"] == 61.3 and form_fields(homed)["hx"] == 61.3, homed   # this map's home goes to the pad
+    screen.homes = {"Henesys": 20.0}; assert "hx" not in screen.read()                       # none set here: the pattern's
+    del screen.map_name; screen.homes = {}
     paint(fake.px, 800, 520, 380, 782, 568, grey)
     assert ms.read()["state"] == "ok" and ms.popup is None
     # Alert sounds: the test popup as it shows and every 5 s while it stays; a death once.
@@ -3770,8 +3816,8 @@ def selftest():
                 f.write(text)
         write('{"Henesys Hunting Ground": ["snail.png", "blue_snail.png"], "Ellinia": ["slime.png", "snail.png", "gone.png"]}')
         maps, problems = read_map_list(lib)   # the 1.17.1 form still reads
-        assert maps == {"Henesys Hunting Ground": {"mobs": ["snail.png", "blue_snail.png"], "minimap": None},
-                        "Ellinia": {"mobs": ["slime.png", "snail.png", "gone.png"], "minimap": None}}, maps
+        assert maps == {"Henesys Hunting Ground": {"mobs": ["snail.png", "blue_snail.png"], "minimap": None, "home": None},
+                        "Ellinia": {"mobs": ["slime.png", "snail.png", "gone.png"], "minimap": None, "home": None}}, maps
         assert problems == ["map.json: Ellinia lists gone.png, not in %s" % lib], problems
         assert map_names(lib) == ["Ellinia", "Henesys Hunting Ground"]
         # Taught with what's there; a changed list asks to teach again (a missing file alone doesn't).
@@ -3789,14 +3835,15 @@ def selftest():
         assert read_map_list(lib)[0] == {} and "isn't valid JSON" in read_map_list(lib)[1][0]
         write('"slime.png"')
         assert "should be a list of maps" in read_map_list(lib)[1][0]
-        # The current form: an object per map, with its minimap size; other keys are kept for later.
-        write('[{"name": "Rocky Road II", "mobs": ["snail.png"], "minimap": {"width": 178, "height": 96}, "home": 0.3},'
-              ' {"name": "Ellinia", "mobs": ["slime.png"], "minimap": {"width": 4}}, {"mobs": ["slime.png"]},'
+        # The current form: an object per map, with its minimap size and home (% across it); other keys are kept.
+        write('[{"name": "Rocky Road II", "mobs": ["snail.png"], "minimap": {"width": 178, "height": 96}, "home": 42.5, "note": 1},'
+              ' {"name": "Ellinia", "mobs": ["slime.png"], "minimap": {"width": 4}, "home": 140}, {"mobs": ["slime.png"]},'
               ' {"name": "Ellinia", "mobs": []}, "stray"]')
         maps, problems = read_map_list(lib)
-        assert maps == {"Rocky Road II": {"mobs": ["snail.png"], "minimap": {"width": 178, "height": 96}},
-                        "Ellinia": {"mobs": ["slime.png"], "minimap": None}}, maps
+        assert maps == {"Rocky Road II": {"mobs": ["snail.png"], "minimap": {"width": 178, "height": 96}, "home": 42.5},
+                        "Ellinia": {"mobs": ["slime.png"], "minimap": None, "home": None}}, maps
         assert problems == ['map.json: Ellinia\'s "minimap" should be {"width": px, "height": px}; the setup\'s is used',
+                            'map.json: Ellinia\'s "home" should be a % across its minimap, 0-100 (F12 sets it); not used',
                             'map.json: map 3 needs a "name"', "map.json: Ellinia is listed twice; the first counts",
                             'map.json: map 5 needs a "name"'], problems
         assert map_sizes(maps) == {"Rocky Road II": {"width": 178, "height": 96}}
@@ -3809,10 +3856,17 @@ def selftest():
                         '  {\n    "name": "Ellinia",\n    "mobs": ["slime.png"],\n    "home": 0.3,\n'
                         '    "minimap": {"width": 180, "height": 90}\n  }\n]\n'), text
         assert read_map_list(lib)[0]["Ellinia"]["minimap"] == {"width": 180, "height": 90}
+        # F12: this map's home where you stand, written in too; said back, or why not.
+        class Here: current, homes = "Ellinia", {}
+        assert set_home(lib, Here, 61.27).startswith("Home on Ellinia: 61%") and Here.homes == {"Ellinia": 61.3}
+        assert read_map_list(lib)[0]["Ellinia"]["home"] == 61.3 and read_map_list(lib)[0]["Ellinia"]["minimap"]["width"] == 180
+        assert "can't see your dot" in set_home(lib, Here, None)
+        Here.current = ""; assert "F9 first" in set_home(lib, Here, 50.0)
+        Here.current = "Perion"; assert "isn't in mobs/map.json" in set_home(lib, Here, 50.0)
         assert minimap_size({"x1": 20, "y1": 60}, (199, 155)) == (180, 96) and minimap_size({"x1": 20, "y1": 60}, (10, 155)) is None
         # No map.json: older folders per map still work, each meaning the whole folder.
         os.remove(os.path.join(lib, MAP_LIST)); os.mkdir(os.path.join(lib, "Perion"))
-        assert read_map_list(lib) == ({"Perion": {"mobs": None, "minimap": None}}, []) and map_names(os.path.join(lib, "nowhere")) == []
+        assert read_map_list(lib) == ({"Perion": {"mobs": None, "minimap": None, "home": None}}, []) and map_names(os.path.join(lib, "nowhere")) == []
         assert not save_map_size(lib, "Perion", 180, 90)   # no map.json to write to
         assert load_sprites(lib, []) == {} and load_sprites(lib, ["gone.png"]) == {}   # nothing listed there: no Pillow needed
     try:

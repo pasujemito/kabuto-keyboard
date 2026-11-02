@@ -396,7 +396,7 @@
     <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
     <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
-    <button class="btn sm" id="newSetupLayer" title="Two layers of buttons for the PC screen reader: setup (mark, skip, which map, outlines) and tuning (looser, stricter, outlines, hide)">🍁 Setup layer</button>
+    <button class="btn sm" id="newSetupLayer" title="Two layers of buttons for the PC screen reader: setup (mark, skip, which map, outlines) and tuning (looser, stricter, set home, hide)">🍁 Setup layer</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
   </section>
@@ -751,8 +751,8 @@ function showTab(t){
 /* layers */
 // Two layers whose buttons are the PC screen reader's keys, so setup, tuning
 // and the game layer work from the pad: MS🍁 Setup (mark, skip, which map,
-// outlines, on to Tune, back) and MS🍁 Tune (looser, stricter, outlines,
-// hide, to Setup, back). An empty button on the current layer, if any,
+// outlines, on to Tune, back) and MS🍁 Tune (looser, stricter, set this
+// map's home, hide, to Setup, back). An empty button on the current layer, if any,
 // switches to Setup.
 function addSetupLayer(){
   if(cfg.layers.length+2>meta.maxLayers)throw new Error('No room for two more layers (at most '+meta.maxLayers+').');
@@ -760,7 +760,7 @@ function addSetupLayer(){
   const tool=k=>{const [name,hotkey]=TOOL_KEYS[k],label=name+' ('+hotkey+')';return [label,label,[{type:'tool',key:k}]];};
   const go=(label,name,layer)=>[label,name,[{type:'layer',layer}]];
   const layouts=[['MS🍁 Setup',[tool('mark'),tool('skip'),tool('map'),tool('outlines'),go('Tune ▸','Go to MS🍁 Tune',tune),go('Back','Back to '+fromName,from)]],
-                 ['MS🍁 Tune',[tool('looser'),tool('stricter'),tool('outlines'),tool('hide'),go('◂ Setup','Go to MS🍁 Setup',setup),go('Back','Back to '+fromName,from)]]];
+                 ['MS🍁 Tune',[tool('looser'),tool('stricter'),tool('home'),tool('hide'),go('◂ Setup','Go to MS🍁 Setup',setup),go('Back','Back to '+fromName,from)]]];
   const same=(w,steps)=>w.steps.length===1&&JSON.stringify(w.steps)===JSON.stringify(steps);
   const wanted=[...new Set(layouts.flatMap(([,items])=>items.slice(0,meta.keyCount).map(([, ,steps])=>JSON.stringify(steps))).concat(JSON.stringify([{type:'layer',layer:setup}])))];
   if(cfg.workflows.length+wanted.filter(j=>!cfg.workflows.some(w=>same(w,JSON.parse(j)))).length>64)throw new Error('Recording storage is full.');
@@ -890,7 +890,7 @@ const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
   return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[280,650],skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,home_at:null,auto_pause:.3,approach:true,walk_hold:[280,650],skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -909,6 +909,7 @@ function normalizeDynamicPattern(p){
   if(p.face_mobs===undefined)p.face_mobs=false;
   if(p.smart===undefined)p.smart=false;
   if(p.home_range===undefined)p.home_range=0;
+  if(p.home_at===undefined)p.home_at=null;   // where the pattern starts (saved before home_at)
   if(p.auto_pause===undefined)p.auto_pause=0;   // saved before auto-pause / walking to mobs
   if(p.approach===undefined)p.approach=false;
   if(p.walk_hold===undefined)p.walk_hold=[280,650];
@@ -937,6 +938,7 @@ function validateDynamicPattern(p){
   if(typeof p.face_mobs!=='boolean')throw new Error('Choose whether to face mobs.');
   if(typeof p.smart!=='boolean')throw new Error('Choose whether to use smart mode.');
   if(typeof p.home_range!=='number'||!(p.home_range>=0&&p.home_range<=.5))throw new Error('Home range: enter a percentage from 0 to 50.');
+  if(p.home_at!==null&&(typeof p.home_at!=='number'||!(p.home_at>=0&&p.home_at<=1)))throw new Error('Home at: enter a percentage from 0 to 100 across the minimap, or leave it empty for where the pattern starts.');
   if(typeof p.auto_pause!=='number'||!(p.auto_pause>=0&&p.auto_pause<=.9))throw new Error('Auto-pause: enter a percentage from 0 to 90.');
   if(typeof p.approach!=='boolean')throw new Error('Choose whether to walk to mobs.');
   range(p.walk_hold,'Walking strides',50,5000);
@@ -1008,6 +1010,10 @@ function renderDynamicAware(){
   const smart=el('label','dynamic-field'),smartCheck=el('input');smartCheck.type='checkbox';smartCheck.checked=p.smart;smartCheck.setAttribute('aria-label','Smart mode');
   smartCheck.onchange=()=>{p.smart=smartCheck.checked;dynamicDirty=true;};smart.append(smartCheck,' Smart: face mobs, wait when there are none, walk back home');box.appendChild(smart);
   box.appendChild(dynamicNumber('Home range (%)',Math.round(p.home_range*1000)/10,0,50,1,n=>p.home_range=n/100,'Home range (% of minimap) · 0 = no home'));
+  // Where home is: across the minimap (0 = left edge), or empty for where the pattern starts. A map's own home (F12 on the PC) wins.
+  const homeAt=dynamicNumber('Home at (%)',p.home_at===null?'':Math.round(p.home_at*1000)/10,0,100,.5,n=>p.home_at=Number.isNaN(n)?null:n/100,
+    'Home at (% across minimap) · empty = where it starts · F12 sets one per map');
+  homeAt.querySelector('input').placeholder='where it starts';box.appendChild(homeAt);
   box.appendChild(dynamicNumber('Auto-pause (%)',Math.round(p.auto_pause*1000)/10,0,90,1,n=>p.auto_pause=n/100,'Auto-pause below (% of most mobs seen) · 0 = off'));
   const approach=el('label','dynamic-field'),approachCheck=el('input');approachCheck.type='checkbox';approachCheck.checked=p.approach;approachCheck.setAttribute('aria-label','Walk to mobs');
   approachCheck.onchange=()=>{p.approach=approachCheck.checked;dynamicDirty=true;};approach.append(approachCheck,' Walk to mobs you can see but not reach');box.appendChild(approach);
@@ -1120,7 +1126,7 @@ function recordingSteps(recording,seen=new Set()){
   });
 }
 // Buttons for tools/screen_stats.py ("tool" steps): its keys, pressed on the pad.
-const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11'],looser:['Looser','F6'],stricter:['Stricter','F7']};
+const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11'],looser:['Looser','F6'],stricter:['Stricter','F7'],home:['Set home','F12']};
 function isToolRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='tool';}
 function recordingSummary(recording){
   if(isToolRecording(recording)){const k=TOOL_KEYS[recording.steps[0].key];return `Screen reader key · ${k?k[0]+' ('+k[1]+')':recording.steps[0].key}`;}

@@ -2224,7 +2224,7 @@ class Pad:
             if not self.pin:
                 raise SystemExit("Kabuto wants its access PIN: pass --pin or set KABUTO_PIN")
             try:
-                self._post("/api/login", {"pin": self.pin})   # sets the session cookie
+                self._post("/api/login", {"pin": self.pin, "who": "script"})   # sets the session cookie (a script's: never logs a browser out)
             except urllib.error.HTTPError as login:
                 raise SystemExit("Login failed: %s" % json.loads(login.read() or b"{}").get("error", login.code))
             return self._post(path, fields)
@@ -4116,7 +4116,7 @@ def selftest():
             body = self.rfile.read(int(self.headers["Content-Length"])).decode()
             authed = "kabuto_session=ok" in (self.headers.get("Cookie") or "")
             if self.path == "/api/login":
-                good = body == "pin=246810"
+                good = body == "pin=246810&who=script"
                 self.send_response(200 if good else 401)
                 if good:
                     self.send_header("Set-Cookie", "kabuto_session=ok; Path=/; HttpOnly; SameSite=Strict")

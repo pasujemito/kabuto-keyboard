@@ -3,15 +3,16 @@
 #include <Preferences.h>
 #include <mbedtls/md.h>
 
-// Sessions live in RAM, so a restart logs every browser out. All callers run
-// on the web server's task, so no lock is needed.
+// Sessions are kept in flash (only their hashes, written at each login), so
+// restarts and firmware updates keep you logged in. All callers run on the
+// web server's task, so no lock is needed.
 
 namespace {
 
 const char* PREFS = "access";
-const size_t MAX_SESSIONS = 4;     // a few phones/laptops; the oldest is dropped
-std::string sessions_[MAX_SESSIONS];
-size_t nextSession_ = 0;
+SessionSlots<8> browsers_;   // phones and laptops; the one unused longest makes room
+SessionSlots<2> scripts_;    // the PC screen reader (each run logs in afresh)
+bool loaded_ = false;
 uint32_t failures_ = 0, lockedUntil_ = 0;
 
 std::string randomHex(size_t bytes) {
@@ -34,6 +35,24 @@ std::string hashPin(const std::string& salt, const String& pin) {
     return out;
 }
 
+std::string tokenHash(const std::string& token) { return hashPin("kabuto-session:", token.c_str()); }
+
+void loadSessions() {
+    if (loaded_) return;
+    loaded_ = true;
+    Preferences p; p.begin(PREFS, true);
+    browsers_.load(p.getString("web", "").c_str());
+    scripts_.load(p.getString("tools", "").c_str());
+    p.end();
+}
+
+void saveSessions() {
+    Preferences p; p.begin(PREFS, false);
+    p.putString("web", browsers_.save().c_str());
+    p.putString("tools", scripts_.save().c_str());
+    p.end();
+}
+
 }  // namespace
 
 bool accessPinSet() {
@@ -50,11 +69,13 @@ bool accessSetPin(const String& pin) {
     p.putString("salt", salt.c_str());
     p.putString("hash", hashPin(salt, pin).c_str());
     p.end();
-    for (auto& s : sessions_) s.clear();
+    loaded_ = true;
+    browsers_.clear(); scripts_.clear();
+    saveSessions();   // a new PIN logs every browser out
     return true;
 }
 
-String accessLogin(const String& pin, String& err) {
+String accessLogin(const String& pin, String& err, bool script) {
     uint32_t now = millis();
     if (lockedUntil_ && (int32_t)(lockedUntil_ - now) > 0) {
         err = "Too many wrong PINs - try again in " + String((lockedUntil_ - now + 999) / 1000) + " s";
@@ -72,13 +93,16 @@ String accessLogin(const String& pin, String& err) {
     }
     failures_ = 0; lockedUntil_ = 0;
     std::string token = randomHex(16);
-    sessions_[nextSession_++ % MAX_SESSIONS] = token;
+    loadSessions();
+    if (script) scripts_.add(tokenHash(token)); else browsers_.add(tokenHash(token));
+    saveSessions();
     return token.c_str();
 }
 
 bool accessSessionValid(const String& cookieHeader) {
     std::string token = cookieValue(cookieHeader.c_str(), ACCESS_COOKIE);
     if (token.empty()) return false;
-    for (const auto& s : sessions_) if (!s.empty() && constantTimeEquals(s, token)) return true;
-    return false;
+    loadSessions();
+    std::string h = tokenHash(token);
+    return browsers_.touch(h) || scripts_.touch(h);
 }

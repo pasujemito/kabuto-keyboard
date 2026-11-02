@@ -137,14 +137,19 @@ the address shown in the panel) from any device on that Wi-Fi:
 - It needs an **access PIN** (6+ characters), asked for once per browser over
   your home network. The Kabuto-Setup hotspot never asks: it has its own Wi-Fi
   password. Forgot the PIN? Set a new one from the hotspot.
-- Changing the PIN or restarting the pad logs every browser out. After 5 wrong
-  PINs, logins pause for 30 s, doubling up to 15 minutes.
+- Once logged in, a browser **stays logged in** for a year: closing it,
+  restarting the pad and firmware updates don't ask again. The pad keeps 8
+  browsers; a ninth login drops the one unused the longest. The PC screen
+  reader has 2 slots of its own, so it never logs your phone out. Changing the
+  PIN logs everyone out. After 5 wrong PINs, logins pause for 30 s, doubling
+  up to 15 minutes.
 - `kabuto.local` works on macOS, iOS, Windows 10+ and most Linux; if a browser
   (some Android ones) can't find it, use the IP address instead.
 - Wi-Fi and Bluetooth share one radio, so staying connected can add a little
   timing jitter. Turn it off for the most precise playback.
 - The hotspot stays on as a fallback, on your router's channel.
-- The Wi-Fi password and a salted hash of the PIN are kept in the pad's
+- The Wi-Fi password, a salted hash of the PIN and hashes of the logged-in
+  sessions (not the sessions themselves) are kept in the pad's
   settings storage, never in `macros.json` or exports, and never sent back to
   the browser.
 

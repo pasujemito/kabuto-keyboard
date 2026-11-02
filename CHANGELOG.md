@@ -3,6 +3,16 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.5
+
+- 🔑 **Stay logged in at `kabuto.local`**: once you've typed the PIN, the
+  browser keeps the login for a year (it used to be lost when the browser
+  closed), and the pad keeps logins across restarts and firmware updates
+  (only their hashes, in its settings storage). It keeps 8 browsers, dropping
+  the one unused the longest (it used to drop the oldest of 4), and the PC
+  screen reader logs in to 2 slots of its own, so its reconnects no longer
+  log your phone out. A new PIN still logs everyone out
+
 ## 1.18.4
 
 - 🧩 **The game's test popup stops the pad**: the screen reader spots

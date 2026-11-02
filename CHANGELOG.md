@@ -3,6 +3,19 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.4
+
+- 🧩 **The game's test popup stops the pad**: the screen reader spots
+  MapleStory's test window (the question only you can answer, bottom right:
+  its teal panel in a dark window with a light rim) and sends `state=test`;
+  the pad stops playing, as for a death, and the strip says **TEST POPUP:
+  answer it**. Nothing answers it for you. `--mark test` watches another
+  game's test window; `"test_popup": false` turns the check off
+- 🔔 **Notifications** on the Buttons screen: each test popup, death and
+  disconnect, newest first with how long ago, the one still on screen in red.
+  A new one shows a message and buzzes the phone. The pad keeps the last 8;
+  **Clear** empties them
+
 ## 1.18.3
 
 - 📈 **XP per hour starts afresh at each level-up**: when the XP bar drops

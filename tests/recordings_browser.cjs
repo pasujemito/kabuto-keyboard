@@ -12,7 +12,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Home Wi-Fi and PIN mocks; pinRequired acts like a page opened over the home network.
   const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true};
   const networkRequests=[];let pinRequired=false,loggedIn=false;
-  let liveState=null,patternState=null;const statsRequests=[];   // live bars, as the status poll reports them
+  let liveState=null,patternState=null,noticeState=null;const statsRequests=[],noticeRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
@@ -27,7 +27,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    if(url.pathname.startsWith('/api/')&&pinRequired&&!loggedIn)return route.fulfill({status:401,contentType:'application/json',body:'{"ok":false,"error":"PIN required"}'});
    if(url.pathname==='/api/network'&&route.request().method()==='POST'){networkRequests.push(route.request().postData());return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/stats/reset'){statsRequests.push(url.pathname);return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
-   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{}),...(patternState?{pattern:patternState}:{})})});
+   if(url.pathname==='/api/notices/clear'){noticeRequests.push(url.pathname);noticeState=null;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{}),...(patternState?{pattern:patternState}:{}),...(noticeState?{notices:noticeState}:{})})});
    if(url.pathname==='/api/network')return route.fulfill({contentType:'application/json',body:JSON.stringify(networkState)});
    if(url.pathname.startsWith('/api/update/')){
     updateRequests.push({path:url.pathname,version:url.searchParams.get('version'),body:route.request().postData()});
@@ -252,6 +253,24 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.waitForFunction(()=>/Smart off/.test(document.querySelector('#liveStats').textContent));
   assert.doesNotMatch(await page.locator('#liveStats').textContent(),/Can't see mobs/);
   patternState=null;
+  // Notifications: the game's test popup (still on screen: highlighted, with a
+  // toast) above an older death; Clear empties them on the pad.
+  assert(await page.locator('#notices').isHidden());
+  noticeState=[{id:1,kind:'dead',text:'you died',agoMs:185000},{id:2,kind:'test',text:'a test popup is on screen: answer it in the game',agoMs:4000}];
+  liveState={hp:723,mana:400,xp:632,state:'test',stopped:'a test popup is on screen: answer it in the game',ageMs:300,fresh:true,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  await page.waitForFunction(()=>!document.querySelector('#notices').hidden);
+  await page.locator('#toast.show.err').waitFor();assert.match(await page.locator('#toast').textContent(),/🧩 Test popup in the game/);
+  assert.match(await page.locator('#notices').textContent(),/🔔 Notifications.*🧩Test popup in the game · on screen nowAnswer it yourself.*4 s ago💀You died.*3 min ago/s);
+  assert(await page.locator('#notices').evaluate(e=>e.classList.contains('alert')));
+  assert.deepEqual(await page.locator('#notices .notice').evaluateAll(ns=>ns.map(n=>n.classList.contains('now'))),[true,false]);
+  assert.match(await page.locator('#liveStats').textContent(),/⛔ Stopped: a test popup is on screen/);
+  await page.locator('#notices').screenshot({path:'/tmp/kabuto-notices.png'});
+  liveState={...liveState,state:undefined,stopped:undefined};   // answered: kept in the list, no longer "now"
+  await page.waitForFunction(()=>!document.querySelector('#notices').classList.contains('alert'));
+  assert.doesNotMatch(await page.locator('#notices').textContent(),/on screen now/);
+  await page.locator('#notices').getByRole('button',{name:'Clear'}).click();
+  await page.waitForFunction(()=>document.querySelector('#notices').hidden);
+  assert.deepEqual(noticeRequests,['/api/notices/clear']);
   liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
   await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
   assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);

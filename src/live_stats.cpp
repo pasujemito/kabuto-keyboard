@@ -11,12 +11,14 @@ ToolKeys toolKeys_;
 uint32_t at_ = 0;
 bool any_ = false;
 XpTracker xpTracker_;
+Notices notices_;
 }
 
 bool liveStatsUpdate(const StatsReading& r) {
     uint32_t now = millis();
     portENTER_CRITICAL(&mux_);
     bool wasOk = state_ == LIVE_OK || !any_ || now - at_ >= LIVE_STATS_STALE_MS;
+    notices_.note(r.state, wasOk ? (uint8_t)LIVE_OK : state_, now);
     hp_ = r.hp; mana_ = r.mana; xp_ = r.xp; state_ = r.state; x_ = r.x; y_ = r.y; mobs_ = r.mobs; wx_ = r.wx; wy_ = r.wy;
     ml_ = r.ml; mr_ = r.mr; dl_ = r.dl; dr_ = r.dr;
     memcpy(mob_, r.mob, LIVE_NAME_LEN); memcpy(map_, r.map, LIVE_NAME_LEN);
@@ -54,6 +56,19 @@ LiveStats liveStatsSnapshot() {
 void liveStatsReset() {
     portENTER_CRITICAL(&mux_);
     xpTracker_ = XpTracker();
+    portEXIT_CRITICAL(&mux_);
+}
+
+Notices noticesSnapshot() {
+    portENTER_CRITICAL(&mux_);
+    Notices n = notices_;
+    portEXIT_CRITICAL(&mux_);
+    return n;
+}
+
+void noticesClear() {
+    portENTER_CRITICAL(&mux_);
+    notices_.clear();
     portEXIT_CRITICAL(&mux_);
 }
 

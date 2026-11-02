@@ -57,14 +57,44 @@ inline bool liveWantsPotion(uint8_t belowPercent, int valueTenths, bool drunkBef
 }
 
 // Game state reported by the screen reader. Anything but OK stops playback.
-enum LiveState : uint8_t { LIVE_OK = 0, LIVE_DEAD = 1, LIVE_OFFLINE = 2 };
+// TEST: the game's test popup is on screen (a quiz only you can answer).
+enum LiveState : uint8_t { LIVE_OK = 0, LIVE_DEAD = 1, LIVE_OFFLINE = 2, LIVE_TEST = 3 };
 inline const char* liveStopReason(uint8_t state) {
     switch (state) {
         case LIVE_DEAD: return "you died";
         case LIVE_OFFLINE: return "the game is disconnected or at the login screen";
+        case LIVE_TEST: return "a test popup is on screen: answer it in the game";
         default: return nullptr;
     }
 }
+// The state as the screen reader spells it ("ok", "dead", "offline", "test").
+inline const char* liveStateName(uint8_t state) {
+    static const char* const names[] = {"ok", "dead", "offline", "test"};
+    return state <= LIVE_TEST ? names[state] : "ok";
+}
+
+// ---- notifications ------------------------------------------------------------
+// What the pad's page lists under Notifications: each time the game turns to
+// a stop state it wasn't in (a test popup, death, a disconnect), with when.
+// The newest CAP are kept (the oldest goes); ids count up from 1 and survive
+// clear(), so the page can tell a new one (buzz the phone) from one it showed.
+struct Notices {
+    static const uint8_t CAP = 8;
+    uint8_t kind[CAP] = {};     // LiveState
+    uint32_t at[CAP] = {};
+    uint8_t count = 0;
+    uint32_t last = 0;          // the newest one's id (0: none yet)
+    // A reading's state, after `before` (LIVE_OK when there was no fresh one).
+    // True when it was noted.
+    bool note(uint8_t state, uint8_t before, uint32_t now) {
+        if (state == LIVE_OK || state == before || !liveStopReason(state)) return false;
+        if (count == CAP) { memmove(kind, kind + 1, CAP - 1); memmove(at, at + 1, (CAP - 1) * sizeof(uint32_t)); --count; }
+        kind[count] = state; at[count++] = now; ++last;
+        return true;
+    }
+    uint32_t id(uint8_t i) const { return last - (count - 1 - i); }   // i: 0 = the oldest kept
+    void clear() { count = 0; }
+};
 
 // Mob sides from the screen reader: bit 0 = left of you, bit 1 = right,
 // bit 2 = with both, the right one is nearer (sent as "RL"; "LR" = left
@@ -233,7 +263,8 @@ struct ToolKeys {
 // &ml=1&mr=3&dl=192&dr=52&mn=Slime&map=Henesys") comes over Wi-Fi (POST
 // /api/stats) or the USB cable ("KABUTO stats <form>"). ml/mr: mobs seen each
 // side; dl/dr: the nearest each side in % of your reach; mn: its name; map:
-// the map's name ("-" for one the script wasn't taught).
+// the map's name ("-" for one the script wasn't taught). state: ok, dead,
+// offline or test (the game's test popup).
 
 // "72.5" -> 725 tenths. Empty, not a number or outside 0-100 -> -1 (not read):
 // a blank must never look like an empty HP bar, which would trigger a potion.
@@ -256,6 +287,7 @@ inline uint8_t statsState(const char* text) {
     if (!text) return LIVE_OK;
     if (!strcmp(text, "dead")) return LIVE_DEAD;
     if (!strcmp(text, "offline")) return LIVE_OFFLINE;
+    if (!strcmp(text, "test")) return LIVE_TEST;
     return LIVE_OK;
 }
 // A count or distance: a whole number 0-9999, else -1 (not read).

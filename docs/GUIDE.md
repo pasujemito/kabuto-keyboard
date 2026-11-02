@@ -197,7 +197,7 @@ plugged in is the permission. Without a cable, it uses Wi-Fi instead.
 
 **The game layer** keeps you in the game. While the script runs, a strip
 across the top of the screen shows what it reads and sends (USB or Wi-Fi, HP,
-MP, XP, dead or offline), the map ("new map: F9" for one you haven't taught),
+MP, XP, dead, offline or a test popup), the map ("new map: F9" for one you haven't taught),
 the mobs (◀ left · right ▶ counts) and the target: the nearest mob, named,
 with its distance in % of your reach (red when in reach). Setup steps show on
 it too, so you can set up without leaving the game. Keys, which work while
@@ -475,6 +475,8 @@ on its own and use **Save image as**).
 
 Optionally, while that screen is showing, run `--mark death` (hover e.g. the
 respawn button) or `--mark login` (e.g. the login box) for exact detection.
+MapleStory's test popup is found without marking anything (see below); for
+another game's test window, `--mark test` while it shows.
 Everything goes in `kabuto-bars.json` (gitignored). If something reads wrong,
 raise its `tolerance` there, or check Windows display scaling. `--dry-run`
 prints readings without sending.
@@ -520,6 +522,20 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   `--mark death` spot shows); disconnected means the bars and the minimap have
   gone (or the `--mark login` spot shows). The Buttons screen says why it
   stopped. Without a minimap set up, disconnects show up as death.
+- **The game's test popup stops playback too.** Now and then MapleStory asks
+  a question only a person can answer ("Please find the beautiful Violetta
+  wearing make-up. A correct answer will pass the test.", with a mushroom,
+  bottom right). The screen reader spots its window (the teal panel framed in
+  the dark window with a light rim, anywhere on screen) in two readings in a
+  row, the pad stops, and the strip says **TEST POPUP: answer it**. Nothing
+  answers it for you. Once you have, start the pattern again. `"test_popup":
+  false` in `kabuto-bars.json` turns the check off.
+- **🔔 Notifications**, above the dashboard, list each time the game turned
+  to one of those: 🧩 test popup, 💀 death, 🔌 disconnect, newest first with
+  how long ago (hover for the time). One still on screen is red ("on screen
+  now"). A new one shows a message and buzzes the phone (Android; the page
+  must be open). The pad keeps the last 8 until it restarts; **Clear** empties
+  them.
 - Under the buttons, a **dashboard** shows what's going on:
   - what the playing pattern is doing (⚔ attacking, ⏳ waiting for mobs,
     ⏸ auto-pause, 🏠 walking home, 🚶 walking to mobs), which way it faces,

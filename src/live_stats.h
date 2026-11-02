@@ -31,6 +31,11 @@ bool liveStatsUpdate(int hp, int mana, int xp, uint8_t state = LIVE_OK, int x = 
 LiveStats liveStatsSnapshot();
 void liveStatsReset();   // start the XP rate afresh
 
+// Notifications for the page (Notices, stats_logic.h): noted by
+// liveStatsUpdate when the game turns to a stop state.
+Notices noticesSnapshot();
+void noticesClear();
+
 // What a playing dynamic pattern is doing, for the dashboard. Written by the
 // engine, read by the status API.
 struct PatternView {

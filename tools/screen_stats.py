@@ -61,6 +61,9 @@ map's mobs are looked for. Changed a map's list? Teach it again.
 Optional, while that screen is showing, for exact detection:
     python screen_stats.py --mark death    # e.g. hover the respawn button
     python screen_stats.py --mark login    # e.g. hover the login box
+    python screen_stats.py --mark test     # another game's test window
+MapleStory's test popup (a question only you can answer, bottom right) is
+found by itself: the pad stops playing and lists it under Notifications.
 
 Run: it finds the pad on the USB cable by itself. Without a cable it uses
 Wi-Fi: the pad on your home Wi-Fi with "Stay connected" (PIN needed), or this
@@ -95,7 +98,10 @@ GAMES = {
                    "minimap_at": (0, 0), "minimap_header": 72,
                    # The map's name in the header (from the minimap's corner): the line under the region's,
                    # from just past the region icon; read up to the minimap's right edge, wherever that is.
-                   "name_area": (47, 43, 246, 56)},
+                   "name_area": (47, 43, 246, 56),
+                   # Its test popup (find_test_popup) is looked for each reading ("test_popup": false in the
+                   # setup file turns that off).
+                   "test_popup": True},
 }
 
 def minimap_corner(game, monitor):
@@ -802,15 +808,98 @@ def patch_matches(raw, reference, tolerance=30):
     total = sum(abs(a - b) for a, b in zip(raw, reference))
     return total / len(raw) <= tolerance
 
+# ---- the game's test popup ----------------------------------------------------
+# Now and then MapleStory stops you with a test, a question only a person can
+# answer ("Please find the beautiful Violetta wearing make-up. A correct answer
+# will pass the test.", a mushroom beside it, bottom right). Its window is
+# dark with a light rim and a teal panel at the top, and that panel framed so
+# is what's looked for, anywhere on screen. Seen twice in a row the state is
+# "test": the pad stops playing and lists it under Notifications. Nothing here
+# answers it; that's for you. --mark test captures a spot of another test
+# window to watch for instead (any game).
+TEST_STEP = 6            # px between the samples looking for the teal panel
+TEST_PANEL = (150, 40)   # px: the least width and height of the panel
+TEST_FILL = 0.5          # share of the panel's box that must be teal (its text is the rest)
+TEST_FRAME = 24          # px out from the panel's edge the window's dark band and light rim must be
+
+def test_teal(r, g, b):
+    """The test panel's teal (dark blue-green at the top, lighter lower down)."""
+    return r < 70 and 90 <= g <= 190 and 115 <= b <= 205 and b >= g - 15 and g - r >= 60
+
+def test_frame(raw, w, h, x, y, dx, dy, reach=TEST_FRAME):
+    """From a spot just inside the panel's edge, going out (dx, dy): the panel
+    ends, then the window's dark grey band, then its light rim."""
+    px = lambda x, y: raw[(y * w + x) * 3:(y * w + x) * 3 + 3]
+    while 0 <= x < w and 0 <= y < h and test_teal(*px(x, y)):
+        x, y = x + dx, y + dy
+    dark = False
+    for _ in range(reach):
+        if not (0 <= x < w and 0 <= y < h):
+            return False
+        r, g, b = px(x, y)
+        hi, lo = max(r, g, b), min(r, g, b)
+        if hi - lo <= 40 and lo >= 150:
+            return dark
+        dark = dark or (hi < 100 and hi - lo <= 30)
+        x, y = x + dx, y + dy
+    return False
+
+def find_test_popup(raw, w, h, step=TEST_STEP, least=TEST_PANEL):
+    """The test popup's teal panel on screen, (x0, y0, x1, y1), or None."""
+    teal, stride = set(), 3 * step
+    for gy in range(h // step):
+        row = raw[gy * step * w * 3:(gy * step + 1) * w * 3]
+        for gx, rgb in enumerate(zip(row[0::stride], row[1::stride], row[2::stride])):
+            if test_teal(*rgb):
+                teal.add((gx, gy))
+    while teal:   # each clump of teal samples (gaps of a sample allowed: the text)
+        todo, cells = [teal.pop()], []
+        while todo:
+            cx, cy = todo.pop()
+            cells.append((cx, cy))
+            for nx in range(cx - 2, cx + 3):
+                for ny in range(cy - 2, cy + 3):
+                    if (nx, ny) in teal:
+                        teal.remove((nx, ny))
+                        todo.append((nx, ny))
+        xs, ys = [c[0] for c in cells], [c[1] for c in cells]
+        gx0, gx1, gy0, gy1 = min(xs), max(xs), min(ys), max(ys)
+        if (gx1 - gx0) * step < least[0] or (gy1 - gy0) * step < least[1]:
+            continue
+        if len(cells) < TEST_FILL * (gx1 - gx0 + 1) * (gy1 - gy0 + 1):
+            continue
+        # The window around it, from the rows (columns) whose teal reaches the
+        # panel's edge (text can cut others short): two each side and the top.
+        by_row, by_col = {}, {}
+        for cx, cy in cells:
+            by_row.setdefault(cy, []).append(cx)
+            by_col.setdefault(cx, []).append(cy)
+        def framed(lines, edge, start, dx, dy):
+            found = 0
+            for line, at in sorted(lines.items()):
+                end = edge(at)
+                if abs(end - start) <= 1:
+                    x, y = (end, line) if dx else (line, end)
+                    found += test_frame(raw, w, h, x * step, y * step, dx, dy)
+                    if found >= 2:
+                        return True
+            return False
+        if framed(by_row, min, gx0, -1, 0) and framed(by_row, max, gx1, 1, 0) and framed(by_col, min, gy0, 0, -1):
+            return (gx0 * step, gy0 * step, gx1 * step, gy1 * step)
+    return None
+
 class GameState:
-    """ok / dead / offline from the readings, needing a couple of
+    """ok / dead / offline / test from the readings, needing a couple of
     agreeing readings so one odd frame doesn't stop the pad."""
     def __init__(self):
-        self.zero_hp = self.gone = 0
+        self.zero_hp = self.gone = self.tests = 0
 
-    def update(self, hp, mana, dot_seen, minimap_used, watches):
+    def update(self, hp, mana, dot_seen, minimap_used, watches, popup=False):
         if watches.get("login"):
             return "offline"
+        self.tests = self.tests + 1 if popup else 0
+        if watches.get("test") or self.tests >= 2:
+            return "test"
         if watches.get("death"):
             return "dead"
         no_bars = (hp in (None, 0)) and (mana in (None, 0))
@@ -1308,7 +1397,8 @@ class Screen:
         self.ground = Ground((config.get("mobs") or {}).get("settle", SETTLE_SECONDS))
         self.seen = None   # where your name tag puts your feet right now
         self.clock = time.monotonic
-        self.np, self.tag, self.pixels, self.frame_now = numpy_or_none(), None, None, False
+        self.np, self.tag, self.pixels, self.frame_now, self.raw = numpy_or_none(), None, None, False, None
+        self.popup = None     # the test popup's panel on screen last reading, else None
         tag = (config.get("mobs") or {}).get("tag")
         if self.np and tag:
             rgb = self.np.frombuffer(bytes.fromhex(tag["rgb"]), self.np.uint8).reshape(tag["h"], tag["w"], 3)
@@ -1365,15 +1455,31 @@ class Screen:
             self.shapes[key] = sprite_shapes(sprites, color_table(found["colors"], tolerance)) or None
         return self.shapes[key]
 
+    def shot(self):
+        """The whole (primary) screen's pixels, grabbed once per reading:
+        (rgb bytes, its monitor)."""
+        if self.raw is None:
+            monitors = self.sct.monitors
+            m = monitors[1] if len(monitors) > 1 else monitors[0]
+            self.raw = (grab(self.sct, m["left"], m["top"], m["width"], m["height"]), m)
+        return self.raw
+
     def screen(self):
         """The whole (primary) screen as an array, once per reading, for the
         name tag and the shape search; (array, left, top)."""
         if self.pixels is None:
-            monitors = self.sct.monitors
-            m = monitors[1] if len(monitors) > 1 else monitors[0]
-            shot = grab(self.sct, m["left"], m["top"], m["width"], m["height"])
+            shot, m = self.shot()
             self.pixels = (self.np.frombuffer(shot, self.np.uint8).reshape(m["height"], m["width"], 3), m["left"], m["top"])
         return self.pixels
+
+    def test_popup(self):
+        """The game's test popup's panel on screen (x0, y0, x1, y1), or None;
+        only for a game whose popup is known, unless the setup turns it off."""
+        if not (GAMES.get(self.config.get("game")) or {}).get("test_popup") or not self.config.get("test_popup", True):
+            return None
+        shot, m = self.shot()
+        box = find_test_popup(shot, m["width"], m["height"])
+        return box and (box[0] + m["left"], box[1] + m["top"], box[2] + m["left"], box[3] + m["top"])
 
     def find_you(self, dot_y=None):
         """Where you are: your name tag's place on screen (self.seen), and the
@@ -1466,7 +1572,7 @@ class Screen:
 
     def read(self):
         c = self.config
-        self.pixels, self.frame_now = None, False   # a fresh screen this reading
+        self.pixels, self.frame_now, self.raw = None, False, None   # a fresh screen this reading
         out = read_bars(self.sct, c.get("bars", {}))
         name = self.map_name()   # first: the map decides the minimap's size
         if name != self.current:
@@ -1489,7 +1595,8 @@ class Screen:
         watches = {}
         for name, mark in c.get("watch", {}).items():
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
-        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches)
+        self.popup = self.test_popup()
+        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, self.popup is not None)
         out["x"], out["y"] = dot if dot else (None, None)
         out["wx"], out["wy"] = world if world else (None, None)   # for stuck: moves even when the dot doesn't
         out["mobs"] = mobs
@@ -2271,6 +2378,8 @@ def connect(args):
     pad.where = "Wi-Fi " + args.host
     return pad
 
+STATE_TEXT = {"dead": "DEAD", "offline": "OFFLINE", "test": "TEST POPUP: answer it"}   # anything but ok
+
 def describe(r, xp=""):
     parts = ["%s %5.1f%%" % (label, r[name]) for name, label in BARS if r.get(name) is not None]
     if xp:
@@ -2287,7 +2396,7 @@ def describe(r, xp=""):
     if r.get("map") is not None:
         parts.append("map " + (r["map"] if r["map"] != "-" else "not taught"))
     if r.get("state", "ok") != "ok":
-        parts.append("!! " + r["state"].upper())
+        parts.append("!! " + STATE_TEXT.get(r["state"], r["state"].upper()))
     return "  ".join(parts)
 
 # ---- getting ready: what this version needs, offered once at start ----------
@@ -2591,7 +2700,7 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp=""):
             if name == "xp" and xp:
                 out.append((xp, BAR_COLORS["xp"]))
     if r.get("state", "ok") != "ok":
-        out.append((r["state"].upper(), RED))
+        out.append((STATE_TEXT.get(r["state"], r["state"].upper()), RED))
     if r.get("map") == "-":
         out.append(("new map, mobs not seen: F9" if maps else "map not taught", RED))
     elif r.get("map"):
@@ -3135,6 +3244,37 @@ def selftest():
     assert GameState().update(80, 50, True, True, {"death": True}) == "dead"
     assert GameState().update(80, 50, True, True, {"login": True, "death": True}) == "offline"
     assert GameState().update(None, None, False, False, {}) == "ok"   # nothing set up: no false alarms
+    g = GameState()   # the test popup: two readings in a row; a mark at once; the login screen still wins
+    assert [g.update(80, 50, True, True, {}, p) for p in (True, False, True, True, True)] == ["ok", "ok", "ok", "test", "test"]
+    assert g.update(0, 50, True, True, {}) == "ok" and GameState().update(80, 50, True, True, {"test": True}) == "test"
+    assert GameState().update(80, 50, True, True, {"login": True, "test": True}) == "offline"
+    # The test popup: a teal panel (with text) in a dark window with a light rim.
+    def popup(raw, w, x, y, rim=(220, 220, 222), band=(48, 48, 48)):
+        paint(raw, w, x, y, x + 262, y + 188, rim)
+        paint(raw, w, x + 4, y + 4, x + 258, y + 184, band)
+        for k in range(17):   # the panel darkens to the top, as the game's does
+            paint(raw, w, x + 12, y + 13 + k * 4, x + 252, y + 17 + k * 4, (30, 112 + k * 3, 142 + k * 2))
+        for line in (24, 40, 56):   # its words
+            for word in range(14, 230, 26):
+                paint(raw, w, x + word, y + line, x + word + 20, y + line + 9, (250, 250, 250))
+        paint(raw, w, x + 12, y + 90, x + 150, y + 175, (120, 120, 120))   # the box under it
+    scene = canvas(800, 600, (150, 110, 60))
+    assert find_test_popup(bytes(scene), 800, 600) is None
+    popup(scene, 800, 520, 380)
+    box = find_test_popup(bytes(scene), 800, 600)
+    assert box and abs(box[0] - 532) <= TEST_STEP and abs(box[1] - 393) <= TEST_STEP and abs(box[2] - 768) <= TEST_STEP, box
+    popup(scene, 800, 0, 0)   # anywhere on screen, even at its edge
+    assert find_test_popup(bytes(scene), 800, 600)
+    sea = canvas(800, 600, (150, 110, 60))
+    paint(sea, 800, 100, 100, 700, 400, (30, 140, 170))   # teal water: no window around it
+    assert find_test_popup(bytes(sea), 800, 600) is None
+    paint(sea, 800, 90, 90, 710, 100, (48, 48, 48))       # a dark band but no light rim
+    assert find_test_popup(bytes(sea), 800, 600) is None
+    small = canvas(800, 600, (150, 110, 60))
+    popup(small, 800, 100, 100)
+    paint(small, 800, 100, 100, 362, 288, (150, 110, 60)); paint(small, 800, 100, 100, 200, 140, (220, 220, 222))
+    paint(small, 800, 104, 104, 196, 136, (48, 48, 48)); paint(small, 800, 110, 110, 190, 130, (30, 130, 160))
+    assert find_test_popup(bytes(small), 800, 600) is None   # a small teal box in a window: not the panel
     # What's posted: unread values left out, state always sent, mobs (even
     # empty: "none around") only with a mob detector.
     assert form_fields({"hp": 72.0, "mana": None, "xp": 63.2, "x": None, "y": None, "mobs": "", "state": "ok"}) == \
@@ -3177,6 +3317,16 @@ def selftest():
     paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # another map: no stop, the new view is followed
     paint(fake.px, 800, 680, 50, 684, 54, yellow)
     assert [screen.read()["state"] for _ in range(3)] == ["ok"] * 3
+    # MapleStory's test popup on screen: "test" from the second reading, then
+    # "ok" once it's answered. A setup for another game doesn't look for it.
+    popup(fake.px, 800, 520, 380)
+    ms = Screen(fake, {"game": "maplestory"})
+    assert [ms.read()["state"] for _ in range(2)] == ["ok", "test"] and ms.popup, ms.popup
+    assert screen.read()["state"] == "ok" and screen.popup is None
+    assert Screen(fake, {"game": "maplestory", "test_popup": False}).test_popup() is None
+    paint(fake.px, 800, 520, 380, 782, 568, grey)
+    assert ms.read()["state"] == "ok" and ms.popup is None
+    assert "!! TEST POPUP: answer it" in describe({"state": "test"}) and ("TEST POPUP: answer it", RED) in layer_status({"state": "test"}, "USB")
     assert "map" not in r and "ml" not in r   # no map library, an older mob setup: sides only
 
     # A taught map: its name picks its mobs, which are counted out of reach
@@ -3659,7 +3809,7 @@ def main():
     ap.add_argument("--sprites", default="mobs", help="folder of mob sprite PNGs and map.json (default mobs)")
     ap.add_argument("--map", nargs="?", const="", metavar="MAP",
                     help="teach the map you're on, with its mobs from map.json; asks which without one")
-    ap.add_argument("--mark", choices=["death", "login"], help="capture a spot only that screen has")
+    ap.add_argument("--mark", choices=["death", "login", "test"], help="capture a spot only that screen has")
     ap.add_argument("--tag", action="store_true", help="mark just your name tag (so you're followed on screen)")
     ap.add_argument("--via", choices=["auto", "usb", "wifi"], default="auto",
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")

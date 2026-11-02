@@ -31,7 +31,18 @@ int main(){
     assert(livePotionTaps(0,100000,100)==LIVE_POTION_MAX_TAPS&&livePotionTaps(400,0,800)==0&&livePotionTaps(400,5000,0)==0&&livePotionTaps(-1,5000,800)==0);
     assert(livePotionTaps(1000,10000000,1)==1);   // full bar (no overflow on big totals)
     // Game state: anything but OK names a stop reason.
-    assert(!liveStopReason(LIVE_OK)&&std::string(liveStopReason(LIVE_DEAD))=="you died"&&liveStopReason(LIVE_OFFLINE));
+    assert(!liveStopReason(LIVE_OK)&&std::string(liveStopReason(LIVE_DEAD))=="you died"&&liveStopReason(LIVE_OFFLINE)&&liveStopReason(LIVE_TEST));
+    assert(std::string(liveStateName(LIVE_TEST))=="test"&&std::string(liveStateName(LIVE_OFFLINE))=="offline"&&std::string(liveStateName(99))=="ok");
+    // Notifications: a turn to a stop state is noted once (not each reading).
+    {
+        Notices n;
+        assert(!n.note(LIVE_OK,LIVE_OK,10)&&n.count==0&&n.last==0);
+        assert(n.note(LIVE_TEST,LIVE_OK,20)&&!n.note(LIVE_TEST,LIVE_TEST,30)&&n.count==1&&n.kind[0]==LIVE_TEST&&n.at[0]==20&&n.id(0)==1);
+        assert(n.note(LIVE_DEAD,LIVE_TEST,40)&&n.count==2&&n.id(1)==2&&!n.note(99,LIVE_OK,50));   // test, then died: both
+        for(uint32_t t=0;t<10;++t)n.note(t%2?LIVE_OFFLINE:LIVE_TEST,LIVE_OK,100+t);
+        assert(n.count==Notices::CAP&&n.last==12&&n.id(0)==5&&n.id(Notices::CAP-1)==12&&n.at[0]==102&&n.kind[Notices::CAP-1]==LIVE_OFFLINE);   // the newest 8
+        n.clear();assert(n.count==0&&n.note(LIVE_TEST,LIVE_OK,200)&&n.id(0)==13);   // ids go on counting
+    }
     // Facing: map edges first, then mobs on one side only; stale data has no opinion.
     assert(liveFacing(true,50,120,true,MOB_LEFT)==1);      // near the left edge: face right, even with a mob left
     assert(liveFacing(true,950,120,true,MOB_RIGHT)==-1);   // near the right edge
@@ -84,7 +95,7 @@ int main(){
     // Readings: Wi-Fi and USB share one parser; blanks and junk are "not read".
     assert(statsTenths("72.5")==725&&statsTenths("0")==0&&statsTenths("100")==1000);
     assert(statsTenths("")==-1&&statsTenths(nullptr)==-1&&statsTenths("abc")==-1&&statsTenths("7x")==-1&&statsTenths("101")==-1&&statsTenths("-1")==-1&&statsTenths("nan")==-1);
-    assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("map")==LIVE_OK&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
+    assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("test")==LIVE_TEST&&statsState("map")==LIVE_OK&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
     assert(statsMobs("LR")==(MOB_READ|MOB_LEFT|MOB_RIGHT)&&statsMobs("RL")==(MOB_READ|MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER));
     assert(statsMobs("R")==(MOB_READ|MOB_RIGHT)&&statsMobs("")==MOB_READ&&statsMobs(nullptr)==0);   // empty = looked, none; absent = not looking
     assert(statsPos("1415")==1415&&statsPos("-250")==-250&&statsPos("0")==0&&statsPos("100000")==100000);

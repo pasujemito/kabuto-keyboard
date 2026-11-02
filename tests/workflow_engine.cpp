@@ -372,6 +372,11 @@ int main() {
         liveStatsUpdate(500,500,-1,LIVE_OK);uint32_t dieAt=millis()+1500;
         play([&]{liveStatsUpdate(500,500,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});
         assert(attacks()>=1&&attacks()<4&&held.empty()&&!heldMods&&engine.stopFlag_);engine.stopFlag_=false;
+        // The game's test popup shows mid-pattern: the same stop, and one notification for it.
+        liveStatsUpdate(500,500,-1,LIVE_OK);noticesClear();uint32_t testAt=millis()+1500;
+        play([&]{liveStatsUpdate(500,500,-1,millis()>=testAt?LIVE_TEST:LIVE_OK);});
+        assert(attacks()>=1&&attacks()<4&&held.empty()&&!heldMods&&engine.stopFlag_);engine.stopFlag_=false;
+        {Notices n=noticesSnapshot();assert(n.count==1&&n.kind[0]==LIVE_TEST);noticesClear();}
         // Near the left edge while facing left (the first random draw): turns right before attacking.
         q.edgeMarginPermille=120;aware.setPattern(q);
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,50,500);});

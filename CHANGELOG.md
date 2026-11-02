@@ -3,6 +3,16 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## Screen reader (with the next release)
+
+- 💀 **No more false deaths on changing maps**: dead used to mean the HP bar
+  read 0% twice in a row (half a second), and a map's fade to black does just
+  that, so the pad stopped and notified a death. Now dead means HP under 5%
+  for 2 s with the minimap still showing (the fade hides it); without a
+  minimap set up, with the Mana bar still showing. Disconnected (bars and
+  minimap gone) waits 10 s, past any loading screen. `DEAD_HP`,
+  `DEAD_HOLD_S` and `GONE_HOLD_S` in `screen_stats.py` tune it
+
 ## 1.18.5
 
 - 🔑 **Stay logged in at `kabuto.local`**: once you've typed the PIN, the

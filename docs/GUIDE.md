@@ -536,10 +536,13 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
 - XP is a percentage of the bar, not points: exact XP numbers would need text
   reading (OCR), which isn't light.
 - **Death and disconnects stop playback at once**, and a pattern won't start
-  until the game is back. Dead means the HP bar reads 0% twice in a row (or the
-  `--mark death` spot shows); disconnected means the bars and the minimap have
-  gone (or the `--mark login` spot shows). The Buttons screen says why it
-  stopped. Without a minimap set up, disconnects show up as death.
+  until the game is back. Dead means the HP bar has stayed under 5% for 2 s
+  with the minimap still showing (or the `--mark death` spot shows);
+  disconnected means the bars and the minimap have been gone for 10 s (or the
+  `--mark login` spot shows). Changing maps fades the screen to black, which
+  empties the HP bar and hides the minimap for a moment: that's neither. The
+  Buttons screen says why it stopped. Without a minimap set up, dead also
+  needs the Mana bar still showing (a dark screen empties both).
 - **The game's test popup stops playback too.** Now and then MapleStory asks
   a question only a person can answer ("Please find the beautiful Violetta
   wearing make-up. A correct answer will pass the test.", with a mushroom,

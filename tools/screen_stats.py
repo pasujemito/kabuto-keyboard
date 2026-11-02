@@ -888,13 +888,23 @@ def find_test_popup(raw, w, h, step=TEST_STEP, least=TEST_PANEL):
             return (gx0 * step, gy0 * step, gx1 * step, gy1 * step)
     return None
 
-class GameState:
-    """ok / dead / offline / test from the readings, needing a couple of
-    agreeing readings so one odd frame doesn't stop the pad."""
-    def __init__(self):
-        self.zero_hp = self.gone = self.tests = 0
+DEAD_HP = 5.0        # % of the HP bar: under it you may be dead...
+DEAD_HOLD_S = 2.0    # ...once it has stayed there this long, with the minimap still showing
+GONE_HOLD_S = 10.0   # no bars and no minimap for this long: disconnected or at the login screen
 
-    def update(self, hp, mana, dot_seen, minimap_used, watches, popup=False):
+class GameState:
+    """ok / dead / offline / test from the readings. Changing maps fades the
+    screen to black: the HP bar reads near 0 and the minimap's dot goes too,
+    so a low HP bar only means dead while the minimap still shows (or, with
+    no minimap set up, the Mana bar), and only after DEAD_HOLD_S. Bars and
+    minimap gone only means disconnected after GONE_HOLD_S: a loading screen
+    is over by then. The test popup needs two readings in a row."""
+    def __init__(self, clock=time.monotonic):
+        self.low_since = self.gone_since = None
+        self.tests, self.clock = 0, clock
+
+    def update(self, hp, mana, dot_seen, minimap_used, watches, popup=False, now=None):
+        now = self.clock() if now is None else now
         if watches.get("login"):
             return "offline"
         self.tests = self.tests + 1 if popup else 0
@@ -902,12 +912,14 @@ class GameState:
             return "test"
         if watches.get("death"):
             return "dead"
-        no_bars = (hp in (None, 0)) and (mana in (None, 0))
-        self.gone = self.gone + 1 if no_bars and minimap_used and not dot_seen else 0
-        self.zero_hp = self.zero_hp + 1 if hp == 0 else 0
-        if self.gone >= 2:
-            return "offline"          # no bars and no minimap: login screen or disconnected
-        if self.zero_hp >= 2:
+        fading = minimap_used and not dot_seen   # the minimap's dot gone with the bars: a fade or loading screen
+        gone = fading and hp in (None, 0) and mana in (None, 0)
+        low = hp is not None and hp < DEAD_HP and not fading and (minimap_used or mana is None or mana > 0)
+        self.gone_since = (now if self.gone_since is None else self.gone_since) if gone else None
+        self.low_since = (now if self.low_since is None else self.low_since) if low else None
+        if self.gone_since is not None and now - self.gone_since >= GONE_HOLD_S:
+            return "offline"
+        if self.low_since is not None and now - self.low_since >= DEAD_HOLD_S:
             return "dead"
         return "ok"
 
@@ -1596,7 +1608,8 @@ class Screen:
         for name, mark in c.get("watch", {}).items():
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
         self.popup = self.test_popup()
-        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, self.popup is not None)
+        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, self.popup is not None,
+                                         self.clock())
         out["x"], out["y"] = dot if dot else (None, None)
         out["wx"], out["wy"] = world if world else (None, None)   # for stuck: moves even when the dot doesn't
         out["mobs"] = mobs
@@ -3587,11 +3600,19 @@ def selftest():
     assert patch_matches(bytes([12, 18, 33] * 25), ref) and not patch_matches(bytes([200, 200, 200] * 25), ref)
     assert not patch_matches(b"", ref)
     # Game state needs agreeing readings; marks win straight away.
+    # Dead: HP under 5% for 2 s with the minimap still showing.
     g = GameState()
-    assert g.update(0, 50, True, True, {}) == "ok" and g.update(0, 50, True, True, {}) == "dead"
-    assert g.update(70, 50, True, True, {}) == "ok"
-    g = GameState(); g.update(0, 0, False, True, {})
-    assert g.update(None, 0, False, True, {}) == "offline"
+    assert [g.update(hp, 50, True, True, {}, now=t) for t, hp in ((0, 3.0), (1, 0.0), (2, 0.0), (3, 70.0))] == ["ok", "ok", "dead", "ok"]
+    assert [GameState().update(6.0, 50, True, True, {}, now=t) for t in (0, 5)] == ["ok", "ok"]   # 6%: low, not dead
+    g = GameState()   # changing maps: the screen fades, HP reads 0 and the minimap's dot goes: not dead
+    assert [g.update(0.0, 0.0, False, True, {}, now=t / 2) for t in range(12)] == ["ok"] * 12
+    assert g.update(81.0, 82.0, True, True, {}, now=6) == "ok"
+    g = GameState()   # no minimap set up: a dark screen empties both bars (not dead); dead keeps Mana
+    assert [g.update(0.0, 0.0, False, False, {}, now=t) for t in range(5)] == ["ok"] * 5
+    assert [g.update(0.0, 40.0, False, False, {}, now=t) for t in (5, 7)] == ["ok", "dead"]
+    # Disconnected: no bars and no minimap for 10 s (a loading screen is over sooner).
+    g = GameState()
+    assert [g.update(None, 0, False, True, {}, now=t) for t in (0, 5, 9.9, 10)] == ["ok", "ok", "ok", "offline"]
     assert GameState().update(80, 50, True, True, {"death": True}) == "dead"
     assert GameState().update(80, 50, True, True, {"login": True, "death": True}) == "offline"
     assert GameState().update(None, None, False, False, {}) == "ok"   # nothing set up: no false alarms
@@ -3662,8 +3683,13 @@ def selftest():
     assert r["hp"] == 75.0 and r["mana"] == 30.0 and r["state"] == "ok" and r["mobs"] == "L", r
     assert r["wx"] == round(r["x"] * 10) and r["wy"] == round(r["y"] * 10), r   # no slide yet: map position = dot
     assert abs(r["x"] - 26.4) < 2 and abs(r["y"] - 52.0) < 4, r
-    paint(fake.px, 800, 100, 580, 250, 584, grey)            # HP gone: dead after two readings
-    assert screen.read()["state"] == "ok" and screen.read()["state"] == "dead"
+    paint(fake.px, 800, 100, 580, 250, 584, grey)            # HP gone: dead once it has stayed 2 s
+    clock = [100.0]
+    screen.clock = lambda: clock[0]
+    assert screen.read()["state"] == "ok"
+    clock[0] += 2
+    assert screen.read()["state"] == "dead"
+    screen.clock = time.monotonic
     paint(fake.px, 800, 100, 580, 250, 584, red)
     paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # another map: no stop, the new view is followed
     paint(fake.px, 800, 680, 50, 684, 54, yellow)

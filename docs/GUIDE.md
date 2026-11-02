@@ -200,7 +200,13 @@ across the top of the screen shows what it reads and sends (USB or Wi-Fi, HP,
 MP, XP, dead, offline or a test popup), the map ("new map: F9" for one you haven't taught),
 the mobs (◀ left · right ▶ counts) and the target: the nearest mob, named,
 with its distance in % of your reach (red when in reach). Setup steps show on
-it too, so you can set up without leaving the game. Keys, which work while
+it too, so you can set up without leaving the game. It's drawn like
+MapleStory's own windows: a light rim around dark slate, an orange Kabuto
+badge with a maple leaf, HP/MP/XP as gauges like the status bar, anything
+that needs you as a red pill, and the next step on a teal panel. It sits in
+the middle of the top of the screen (wrapping onto more rows if it must), so
+the minimap and the windows at the top right stay visible. Outline labels
+(F10) are name tags, and the F9 map list is a MapleStory window too. Keys, which work while
 the game has focus:
 
 | Key | Does |

@@ -2758,6 +2758,90 @@ def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
         out.append((a["x1"] - 2, a["y1"] - 2, a["x2"] + 2, a["y2"] + 2, "#c084fc", "map name"))
     return out
 
+# The layer's look is MapleStory's own: windows with a light rim around a dark
+# slate inside, a teal panel for what to do next, an orange badge and main
+# button, HP/MP/XP as gauges like its status bar, names on dark name tags.
+MS = {"rim": "#e6e9ec", "rim_edge": "#7f868f", "panel": "#2b3038", "deep": "#1b1f25", "line": "#4a525d",
+      "teal": "#1d93ab", "teal_top": "#176f88", "orange": "#f6921e", "orange_top": "#ffc860", "orange_ink": "#3a1d00",
+      "alert": "#d8263a", "alert_top": "#ff5a62", "track": "#111418", "tag": "#16191e", "field": "#f4f6f8",
+      "title": "#566d85", "title_top": "#8fa6bd", "gold": "#ffd34d"}
+UI_FONT = "Segoe UI"
+STRIP_MARGIN = 260   # px kept clear either side of the strip: the minimap (and its map name) is at the top left
+GAUGE = re.compile(r"^(HP|MP|XP) (\d+)%$")
+
+def mix(a, b, t):
+    """The colour t (0-1) of the way from a to b ("#rrggbb")."""
+    ca, cb = [int(a[i:i + 2], 16) for i in (1, 3, 5)], [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(round(x + (y - x) * t) for x, y in zip(ca, cb))
+
+def round_rect(c, x0, y0, x1, y1, r, **kw):
+    """A rectangle with rounded corners on a tk canvas."""
+    r = max(0, min(r, (x1 - x0) // 2, (y1 - y0) // 2))
+    pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r,
+           x0, y0 + r, x0, y0]
+    return c.create_polygon(pts, smooth=True, **kw)
+
+def shade(c, x0, y0, x1, y1, top, bottom, r=0, tags=()):
+    """A top-to-bottom gradient, its ends rounded by r."""
+    for y in range(y0, y1):
+        inset = r - int((r * r - (min(y - y0, y1 - 1 - y) - r + 0.5) ** 2) ** 0.5) if r and min(y - y0, y1 - 1 - y) < r else 0
+        c.create_line(x0 + inset, y, x1 - inset, y, fill=mix(top, bottom, (y - y0) / max(1, y1 - y0 - 1)), tags=tags)
+
+def ms_window(c, x0, y0, x1, y1, r=9, tags=()):
+    """A MapleStory window: a light rim around the dark inside."""
+    round_rect(c, x0, y0, x1, y1, r, fill=MS["rim"], outline=MS["rim_edge"], tags=tags)
+    round_rect(c, x0 + 3, y0 + 3, x1 - 3, y1 - 3, r - 2, fill=MS["panel"], outline=MS["deep"], tags=tags)
+
+def ms_text(c, x, y, text, fill, size=10, bold=False, anchor="w", tags=()):
+    """Text with a dark shadow under it, as the game draws it over pictures."""
+    font = (UI_FONT, size, "bold") if bold else (UI_FONT, size)
+    c.create_text(x + 1, y + 1, text=text, fill="#000000", anchor=anchor, font=font, tags=tags)
+    return c.create_text(x, y, text=text, fill=fill, anchor=anchor, font=font, tags=tags)
+
+LEAF = ((.50, 0), (.58, .18), (.70, .12), (.66, .36), (.86, .24), (.82, .36), (1, .42), (.86, .52), (.92, .60), (.62, .62),
+        (.66, .74), (.53, .70), (.53, 1), (.47, 1), (.47, .70), (.34, .74), (.38, .62), (.08, .60), (.14, .52), (0, .42),
+        (.18, .36), (.14, .24), (.34, .36), (.30, .12), (.42, .18))
+
+def ms_leaf(c, x, y, size, fill="#e0262f", tags=()):
+    """A maple leaf, its middle at (x, y) (drawn: Tk can't show emoji everywhere)."""
+    pts = [v for px, py in LEAF for v in (x + (px - .5) * size, y + (py - .5) * size)]
+    return c.create_polygon(pts, fill=fill, outline=mix(fill, "#000000", 0.45), tags=tags)
+
+def ms_pill(c, x, y, text, top, bottom, ink, h=20, leaf=False, tags=()):
+    """Bold text on a glossy pill (the badge, alerts), a maple leaf before it
+    if asked; returns its right edge."""
+    probe = c.create_text(0, -100, text=text, font=(UI_FONT, 9, "bold"))
+    lead = 16 if leaf else 0
+    w = c.bbox(probe)[2] - c.bbox(probe)[0] + 18 + lead
+    c.delete(probe)
+    round_rect(c, x, y - h // 2, x + w, y + h // 2, h // 2, fill=bottom, outline=mix(bottom, "#000000", 0.35), tags=tags)
+    shade(c, x + 3, y - h // 2 + 2, x + w - 3, y, top, bottom, r=h // 2 - 3, tags=tags)
+    if leaf:
+        ms_leaf(c, x + 15, y, 14, tags=tags)
+    c.create_text(x + (w + lead) // 2, y, text=text, fill=ink, font=(UI_FONT, 9, "bold"), tags=tags)
+    return x + w
+
+def ms_gauge(c, x, y, label, percent, color, tags=()):
+    """A bar like the game's status bar: the label, then the fill on a dark
+    track with its value on it; returns its right edge."""
+    item = ms_text(c, x, y, label, MS["gold"] if label == "XP" else "#ffffff", 9, True, tags=tags)
+    left, w, h = c.bbox(item)[2] + 5, 86, 12
+    round_rect(c, left, y - h // 2, left + w, y + h // 2, 4, fill=MS["track"], outline=MS["line"], tags=tags)
+    fill = int((w - 4) * max(0, min(100, percent)) / 100)
+    if fill > 1:
+        shade(c, left + 2, y - h // 2 + 2, left + 2 + fill, y + h // 2 - 1, mix(color, "#ffffff", 0.45), mix(color, "#000000", 0.2),
+              tags=tags)
+    ms_text(c, left + w // 2, y, "%d%%" % percent, "#ffffff", 8, True, anchor="center", tags=tags)
+    return left + w
+
+def ms_tag(c, x, y, text, color, anchor, tags=()):
+    """A name tag (dark, rounded, its text in the outline's colour) as the game
+    puts under characters and mobs."""
+    item = c.create_text(x, y, text=text, fill=color, anchor=anchor, font=(UI_FONT, 9, "bold"), tags=tags)
+    x0, y0, x1, y1 = c.bbox(item)
+    back = round_rect(c, x0 - 4, y0, x1 + 4, y1, 4, fill=MS["tag"], outline=mix(color, MS["tag"], 0.5), tags=tags)
+    c.tag_raise(item, back)
+
 class Layer:
     KEY = "#010203"   # drawn in this colour = see-through (Windows)
 
@@ -2771,9 +2855,9 @@ class Layer:
         root.attributes("-topmost", True)
         # Windows: the whole screen, see-through but for what's drawn. Elsewhere
         # there's no see-through colour, so just the strip.
-        w, h = (monitor["width"], monitor["height"]) if self.windows else (monitor["width"], 44)
+        w, h = (monitor["width"], monitor["height"]) if self.windows else (monitor["width"], 96)
         root.geometry("%dx%d+%d+%d" % (w, h, monitor["left"], monitor["top"]))
-        bg = self.KEY if self.windows else "#16181d"
+        bg = self.KEY if self.windows else MS["deep"]
         if self.windows:
             root.attributes("-transparentcolor", self.KEY)
         self.canvas = tk.Canvas(root, width=w, height=h, bg=bg, highlightthickness=0)
@@ -2865,23 +2949,45 @@ class Layer:
         for x0, y0, x1, y1, color, label in shapes:
             c.create_rectangle(x0 - ox, y0 - oy, x1 - ox, y1 - oy, outline=color, width=2)
             if label == "minimap":   # under it: the map name is usually just above
-                c.create_text(x0 - ox + 3, y1 - oy + 2, text=label, fill=color, anchor="nw", font=("Segoe UI", 9, "bold"))
+                ms_tag(c, x0 - ox + 4, y1 - oy + 4, label, color, "nw")
             elif label and label != "you":
-                c.create_text(x0 - ox + 3, y0 - oy - 2, text=label, fill=color, anchor="sw", font=("Segoe UI", 9, "bold"))
-        x, font = 0, ("Segoe UI", 10)
-        items = []
-        for text, color in status:
-            item = c.create_text(x, 12, text=text, fill=color, anchor="w", font=font)
-            items.append(item)
-            x = c.bbox(item)[2] + 14
+                ms_tag(c, x0 - ox + 4, y0 - oy - 4, label, color, "sw")
+        # The strip: a MapleStory window hanging from the top of the screen,
+        # its items on as many rows as they need, clear of the minimap at the
+        # top left (and the game's windows at the top right).
+        margin = min(STRIP_MARGIN, int(c["width"]) // 6)
+        x, y, right, limit = 0, 16, 0, int(c["width"]) - 2 * margin
+        for i, (text, color) in enumerate(status):
+            tags, start = ("strip", "item%d" % i), x
+            gauge = GAUGE.match(text)
+            if i == 0:   # Kabuto (and the game): the badge
+                x = ms_pill(c, x, y, text, MS["orange_top"], MS["orange"], MS["orange_ink"], leaf=True, tags=tags)
+            elif gauge and color in BAR_COLORS.values():
+                x = ms_gauge(c, x, y, gauge.group(1), int(gauge.group(2)), color, tags=tags)
+            elif color == RED:   # what needs you: an alert
+                x = ms_pill(c, x, y, text, MS["alert_top"], MS["alert"], "#ffffff", tags=tags)
+            else:
+                item = ms_text(c, x, y, text, MS["gold"] if color == AMBER else color, 9 if color == DIM else 10,
+                               color == INK, tags=tags)
+                x = c.bbox(item)[2]
+            if x > limit and start > 0:   # doesn't fit: on the next row
+                c.move("item%d" % i, -start, 24)
+                x, y = x - start, y + 24
+            right = max(right, x)
+            x += 12
+        right, bottom = max(right, 0), y + 15
+        if message:   # what to do next, on the teal panel the game uses for it
+            item = ms_text(c, 10, bottom + 12, message, "#ffffff", 10, True, tags=("strip", "message"))
+            right = max(right, c.bbox(item)[2] - 10)
+            shade(c, 0, bottom + 1, right + 20, bottom + 23, MS["teal_top"], MS["teal"], r=5, tags=("strip", "teal"))
+            c.tag_lower("teal", "message")
+            bottom += 25
+        shift = max(margin, (int(c["width"]) - right) // 2)
+        c.move("strip", shift, 0)
         if message:
-            items.append(c.create_text(0, 32, text=message, fill=AMBER, anchor="w", font=font))
-        right = max(c.bbox(i)[2] for i in items)
-        shift = max(0, (int(c["width"]) - right) // 2)
-        for i in items:
-            c.move(i, shift, 0)
-        bg = c.create_rectangle(shift - 10, 0, shift + right + 10, 44 if message else 24, fill="#16181d", outline="#2b2f39")
-        c.tag_lower(bg)
+            c.move("teal", -10, 0)
+        ms_window(c, shift - 14, -12, shift + right + 14, bottom + 6, tags="window")
+        c.tag_lower("window", "strip")
 
     def _pick_map(self):
         """Which map (from map.json) this is: a searchable list. Type to
@@ -2898,30 +3004,42 @@ class Layer:
         if not self.maps:
             self.say('List your maps in mobs/%s, e.g. [{"name": "Henesys", "mobs": ["snail.png"]}], with the PNGs in mobs, then F9' % MAP_LIST)
             return
-        panel, field, font = "#1e2128", "#16181d", "Segoe UI"
+        # A MapleStory window: light rim, a title bar like the minimap's, the
+        # question on a teal panel, a white field to type in, orange to pick.
+        panel, deep, font = MS["panel"], MS["deep"], UI_FONT
         win = self.picker = tk.Toplevel(self.root)
         win.title("Which map is this?")
         win.attributes("-topmost", True)
-        win.configure(bg=panel, padx=16, pady=14)
-        w, h = 460, 540
+        win.configure(bg=MS["rim"], padx=3, pady=3, highlightthickness=1, highlightbackground=MS["rim_edge"])
+        w, h = 460, 560
         win.geometry("%dx%d+%d+%d" % (w, h, self.monitor["left"] + (self.monitor["width"] - w) // 2,
                                       self.monitor["top"] + max(40, (self.monitor["height"] - h) // 3)))
-        tk.Label(win, text="Which map are you on?", bg=panel, fg=INK, font=(font, 14, "bold")).pack(anchor="w")
-        tk.Label(win, text="Type to search  \u00b7  \u2191\u2193 to move  \u00b7  Enter picks  \u00b7  Esc closes",
-                 bg=panel, fg=DIM, font=(font, 9)).pack(anchor="w", pady=(2, 10))
+        title = tk.Canvas(win, height=26, bg=MS["title"], highlightthickness=0)
+        title.pack(fill="x")
+        title.bind("<Configure>", lambda e: (title.delete("all"), shade(title, 0, 0, e.width, 26, MS["title_top"], MS["title"]),
+                                             ms_leaf(title, 17, 13, 15), ms_text(title, 30, 13, "MAP LIST", "#ffffff", 10, True)))
+        body = tk.Frame(win, bg=panel, padx=14, pady=12)
+        body.pack(fill="both", expand=True)
+        ask = tk.Frame(body, bg=MS["teal"], padx=12, pady=8, highlightthickness=1, highlightbackground=MS["teal_top"])
+        ask.pack(fill="x")
+        tk.Label(ask, text="Which map are you on?", bg=MS["teal"], fg="#ffffff", font=(font, 13, "bold")).pack(anchor="w")
+        tk.Label(ask, text="Type to search  \u00b7  \u2191\u2193 to move  \u00b7  Enter picks  \u00b7  Esc closes",
+                 bg=MS["teal"], fg="#d6f3f8", font=(font, 9)).pack(anchor="w", pady=(2, 0))
         query = tk.StringVar()
-        entry = tk.Entry(win, textvariable=query, bg=field, fg=INK, insertbackground=INK, relief="flat", font=(font, 12),
-                         highlightthickness=1, highlightbackground="#2b2f39", highlightcolor=AMBER)
-        entry.pack(fill="x", ipady=7)
-        box = tk.Frame(win, bg=panel)
-        box.pack(fill="both", expand=True, pady=(10, 6))
-        bar = tk.Scrollbar(box, orient="vertical")
-        rows = tk.Listbox(box, bg=field, fg=INK, font=(font, 11), activestyle="none", relief="flat", highlightthickness=0,
-                          selectbackground=AMBER, selectforeground=field, borderwidth=0, yscrollcommand=bar.set)
+        entry = tk.Entry(body, textvariable=query, bg=MS["field"], fg=deep, insertbackground=deep, relief="flat",
+                         font=(font, 12), highlightthickness=2, highlightbackground=MS["rim_edge"], highlightcolor=MS["orange"])
+        entry.pack(fill="x", ipady=6, pady=(12, 0))
+        box = tk.Frame(body, bg=MS["line"], padx=1, pady=1)
+        box.pack(fill="both", expand=True, pady=(10, 8))
+        bar = tk.Scrollbar(box, orient="vertical", bg=panel, troughcolor=deep, activebackground=MS["orange"], relief="flat",
+                           borderwidth=0)
+        rows = tk.Listbox(box, bg=deep, fg="#ffffff", font=(font, 11), activestyle="none", relief="flat", highlightthickness=0,
+                          selectbackground=MS["orange"], selectforeground=MS["orange_ink"], borderwidth=0,
+                          yscrollcommand=bar.set)
         bar.config(command=rows.yview)
         bar.pack(side="right", fill="y")
         rows.pack(side="left", fill="both", expand=True)
-        foot = tk.Frame(win, bg=panel)
+        foot = tk.Frame(body, bg=panel)
         foot.pack(fill="x")
         count = tk.Label(foot, bg=panel, fg=DIM, font=(font, 9))
         count.pack(side="left")
@@ -2947,16 +3065,18 @@ class Layer:
             for i, (name, note) in enumerate(shown):
                 rows.insert("end", "  %s%s" % (name, "     " + note if note else ""))
                 if note:
-                    rows.itemconfig(i, fg=AMBER if note.startswith("changed") else "#45d6b5")
+                    rows.itemconfig(i, fg=MS["gold"] if note.startswith("changed") else "#6fdcef")
             if shown:
                 rows.selection_set(0); rows.see(0)
             total = len(self.maps)
             count.config(text=("%d of %d maps" % (len(shown), total) if query.get().strip() else "%d maps" % total)
                          + ("" if shown else "  \u00b7  no match"))
-        tk.Button(foot, text="Cancel", command=close, bg=field, fg=INK, relief="flat", padx=12,
-                  activebackground="#2b2f39", activeforeground=INK).pack(side="right")
-        tk.Button(foot, text="Teach this map", command=choose, bg=AMBER, fg=field, relief="flat", padx=12,
-                  activebackground="#ffc04d", activeforeground=field, font=(font, 10, "bold")).pack(side="right", padx=(0, 8))
+        tk.Button(foot, text="Cancel", command=close, bg="#59616c", fg="#ffffff", relief="flat", padx=14, pady=3,
+                  activebackground="#6d7681", activeforeground="#ffffff", font=(font, 10, "bold"), cursor="hand2",
+                  highlightthickness=1, highlightbackground=MS["rim_edge"]).pack(side="right")
+        tk.Button(foot, text="Teach this map", command=choose, bg=MS["orange"], fg=MS["orange_ink"], relief="flat", padx=14,
+                  pady=3, activebackground=MS["orange_top"], activeforeground=MS["orange_ink"], font=(font, 10, "bold"),
+                  cursor="hand2", highlightthickness=1, highlightbackground="#b85f00").pack(side="right", padx=(0, 8))
         query.trace_add("write", refresh)
         for key, step in (("<Down>", 1), ("<Up>", -1), ("<Next>", 10), ("<Prior>", -10)):
             entry.bind(key, lambda e, s=step: move(s))
@@ -3675,6 +3795,10 @@ def selftest():
     assert ("DEAD", RED) in strip and ("new map, mobs not seen: F9", RED) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
     assert ("map not taught", RED) in layer_status({"map": "-"}, "USB", None, [])
     assert ("tolerance 45", DIM) in layer_status({"mobs": "R"}, "USB", tol=45) and not any(t.startswith("tolerance") for t, _ in layer_status({"mobs": "R"}, "USB"))
+    # The layer's MapleStory look: colours mixed for its gradients; bars drawn as gauges.
+    assert mix("#000000", "#ffffff", 0.5) == "#808080" and mix("#f6921e", "#f6921e", 0.3) == "#f6921e"
+    assert GAUGE.match("HP 72%").groups() == ("HP", "72") and not GAUGE.match("+3.2%/h, level in 25.4h")
+    assert [t for t, c in layer_status({"hp": 72.4, "mana": 40.0, "xp": 63.2}, "USB") if GAUGE.match(t)] == ["HP 72%", "MP 40%", "XP 63%"]
     # No mob readings on a taught map (or without maps): said in red, since smart can't stop for mobs then.
     assert ("not looking for mobs: F9 on this map", RED) in layer_status({"map": "Henesys", "mobs": None}, "USB", None, ["Henesys"])
     assert ("not looking for mobs", RED) in layer_status({"hp": 50.0}, "USB") and not any("not looking" in t for t, _ in layer_status({"mobs": ""}, "USB"))

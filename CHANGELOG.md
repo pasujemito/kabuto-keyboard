@@ -15,6 +15,13 @@ and show up in the pad's **Updates** panel.
   disconnect, newest first with how long ago, the one still on screen in red.
   A new one shows a message and buzzes the phone. The pad keeps the last 8;
   **Clear** empties them
+- 🍁 **The game layer looks like MapleStory**: the strip is a MapleStory
+  window (light rim, dark slate), with an orange Kabuto badge and maple leaf,
+  HP/MP/XP as gauges like the game's status bar, warnings as red pills and
+  the next step on a teal panel. It wraps onto more rows instead of running
+  off the screen, and keeps clear of the minimap. F10 labels are name tags;
+  the F9 map list is a MapleStory window with a title bar, a white search
+  field and an orange **Teach this map** button
 
 ## 1.18.3
 

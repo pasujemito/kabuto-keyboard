@@ -543,10 +543,13 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   row, the pad stops, and the strip says **TEST POPUP: answer it**. Nothing
   answers it for you. Once you have, start the pattern again. `"test_popup":
   false` in `kabuto-bars.json` turns the check off.
-- **The PC plays a sound** when the game needs you: Windows' Exclamation as
-  the test popup shows and every 5 s while it stays, Critical Stop once for a
-  death or a disconnect (change them in Windows' sound settings). Run with
-  `--quiet`, or set `"sound": false` in `kabuto-bars.json`, for silence.
+- **A soft chime** when the game needs you: two plucked notes, rising as the
+  test popup shows (and every 10 s while it stays), falling once for a death
+  or a disconnect, with a bubble on the game layer saying what happened. The
+  script makes the sound itself; to use your own, put `kabuto-test.wav`
+  (`kabuto-dead.wav`, `kabuto-offline.wav`) next to `kabuto-bars.json`. Run
+  with `--quiet`, or set `"sound": false` in `kabuto-bars.json`, for silence.
+  `CHIME_VOLUME` in the script sets how loud.
 - **🔔 Notifications**, above the dashboard, list each time the game turned
   to one of those: 🧩 test popup, 💀 death, 🔌 disconnect, newest first with
   how long ago (hover for the time). One still on screen is red ("on screen

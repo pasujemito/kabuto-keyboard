@@ -2012,6 +2012,21 @@ function renderLiveStats(live,pattern=status.pattern){
 // test popup, a death, a disconnect), oldest first. A new one buzzes the phone.
 const NOTICES={test:['🧩','Test popup in the game','Answer it yourself; the pad stopped playing.'],
   dead:['💀','You died','The pad stopped playing.'],offline:['🔌','Game disconnected','Disconnected or at the login screen; the pad stopped playing.']};
+// A soft chime with a new one, the same as the PC's: two plucked notes, rising
+// for the test popup, falling for the rest. Browsers allow sound only after a
+// tap on the page, so the first tap turns it on.
+let audio=null;
+const unlockAudio=()=>{try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();audio.resume();}catch(e){}};
+for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,unlockAudio,{once:true});
+function chime(kind){
+  if(!audio||audio.state!=='running')return;
+  const now=audio.currentTime;
+  for(const [hz,at] of kind==='test'?[[659.25,0],[987.77,.12]]:[[587.33,0],[440,.14]]){
+    const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=hz;o.connect(g);g.connect(audio.destination);
+    g.gain.setValueAtTime(0,now+at);g.gain.linearRampToValueAtTime(.2,now+at+.005);g.gain.exponentialRampToValueAtTime(.0001,now+at+.55);
+    o.start(now+at);o.stop(now+at+.6);
+  }
+}
 let noticeSeen=0;try{noticeSeen=+localStorage.getItem('kabutoNoticeSeen')||0;}catch(e){}
 const agoText=ms=>ms<60000?Math.round(ms/1000)+' s ago':ms<3600000?Math.round(ms/60000)+' min ago':Math.floor(ms/3600000)+' h '+Math.floor(ms%3600000/60000)+' min ago';
 function renderNotices(list=[],live){
@@ -2022,6 +2037,7 @@ function renderNotices(list=[],live){
     noticeSeen=newest.id;try{localStorage.setItem('kabutoNoticeSeen',noticeSeen);}catch(e){}
     const [icon,label]=NOTICES[newest.kind]||['🔔',newest.text];toast(icon+' '+label,true);
     try{navigator.vibrate&&navigator.vibrate([300,150,300,150,300]);}catch(e){}
+    try{chime(newest.kind);}catch(e){}
   }
   if(!newest)return;
   // Still on screen: the newest of its kind while the reader says so.

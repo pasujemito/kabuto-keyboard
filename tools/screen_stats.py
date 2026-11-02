@@ -2381,13 +2381,39 @@ def connect(args):
 STATE_TEXT = {"dead": "DEAD", "offline": "OFFLINE", "test": "TEST POPUP: answer it"}   # anything but ok
 
 # ---- alert sounds -------------------------------------------------------------
-# A sound on the PC when the game needs you: the test popup chimes as it shows
-# and again every TEST_REPEAT_S while it stays (it has a time limit); a death
-# or a disconnect chimes once. Windows' own sounds (Exclamation, Hand), so
-# they follow your sound settings; elsewhere the terminal's bell. --quiet, or
-# "sound": false in the setup file, turns them off.
-ALERT_SOUNDS = {"test": "SystemExclamation", "dead": "SystemHand", "offline": "SystemHand"}
-TEST_REPEAT_S = 5
+# A soft chime on the PC when the game needs you, made here (no sound files):
+# two plucked notes, rising for the test popup (as it shows, and again every
+# TEST_REPEAT_S while it stays: it has a time limit), falling once for a death
+# or a disconnect. Your own sound instead: kabuto-test.wav / kabuto-dead.wav /
+# kabuto-offline.wav next to the setup file. --quiet, or "sound": false in the
+# setup file, for none.
+CHIMES = {"test": ((659.25, 0.0), (987.77, 0.12)),      # E5 then B5: "pop-ding"
+          "dead": ((587.33, 0.0), (440.0, 0.14)),       # D5 then A4
+          "offline": ((587.33, 0.0), (440.0, 0.14))}
+ALERT_MESSAGES = {"test": "The game is testing you: answer the popup yourself (the pad has stopped)",
+                  "dead": "You died: the pad has stopped", "offline": "The game is disconnected: the pad has stopped"}
+TEST_REPEAT_S = 10
+CHIME_VOLUME = 0.35   # 0-1
+
+def chime_wav(notes, volume=CHIME_VOLUME, rate=22050):
+    """A soft chime as WAV bytes: each (Hz, start s) a quick pluck that rings
+    out (a sine with a little of its octave, fading fast)."""
+    import io, math, struct, wave
+    ring = 0.55
+    n = int((max(start for _, start in notes) + ring) * rate)
+    samples = [0.0] * n
+    for hz, start in notes:
+        first = int(start * rate)
+        for i in range(min(int(ring * rate), n - first)):
+            t = i / rate
+            env = min(1.0, t / 0.005) * math.exp(-t * 8)
+            samples[first + i] += env * (math.sin(2 * math.pi * hz * t) + 0.2 * math.sin(4 * math.pi * hz * t))
+    peak = max(abs(v) for v in samples) or 1.0
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(v / peak * volume * 32767)) for v in samples))
+    return out.getvalue()
 
 class Alarm:
     """When to sound: update() each reading returns the state to sound for
@@ -2397,21 +2423,46 @@ class Alarm:
 
     def update(self, state, now):
         was, self.state = self.state, state
-        if state not in ALERT_SOUNDS:
+        if state not in CHIMES:
             return None
         if state != was or (state == "test" and now - self.last >= self.repeat):
             self.last = now
             return state
         return None
 
-def play_alert(state):
-    """The alert's sound, without waiting for it to finish."""
+SOUND_FILES = {}   # state -> the WAV file played (made once per run)
+
+def alert_sound(state, folder="."):
+    """The WAV file for an alert: yours next to the setup file, else the chime
+    made once into the temp folder."""
+    own = os.path.join(folder, "kabuto-%s.wav" % state)
+    if os.path.isfile(own):
+        return own
+    if state not in SOUND_FILES:
+        import tempfile
+        path = os.path.join(tempfile.gettempdir(), "kabuto-chime-%s.wav" % state)
+        with open(path, "wb") as f:
+            f.write(chime_wav(CHIMES.get(state, CHIMES["test"])))
+        SOUND_FILES[state] = path
+    return SOUND_FILES[state]
+
+def play_alert(state, folder="."):
+    """The alert's chime, without waiting for it to finish; and what happened
+    in a bubble on the game layer."""
+    say(ALERT_MESSAGES.get(state, state))
     try:
-        import winsound
-        winsound.PlaySound(ALERT_SOUNDS.get(state, "SystemExclamation"), winsound.SND_ALIAS | winsound.SND_ASYNC)
-    except ImportError:   # not Windows
-        print("\a", end="", flush=True)
-    except Exception:   # no sound device: the strip still says it
+        path = alert_sound(state, folder)
+        if sys.platform == "win32":
+            import winsound
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        else:
+            import shutil, subprocess
+            player = shutil.which("afplay") or shutil.which("paplay") or shutil.which("aplay")
+            if player:
+                subprocess.Popen([player, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                print("\a", end="", flush=True)
+    except Exception:   # no sound device, no temp folder: the strip still says it
         pass
 
 def describe(r, xp=""):
@@ -2622,7 +2673,7 @@ def run(args):
         started = time.time()
         readings = screen.read()
         if alarm and alarm.update(readings.get("state", "ok"), started):
-            play_alert(readings.get("state"))
+            play_alert(readings.get("state"), os.path.dirname(os.path.abspath(args.config)))
         if readings.get("state", "ok") == "ok":   # a death or login screen isn't XP news
             xp_rate.add(readings.get("xp"), started)
         line = describe(readings, xp_text(xp_rate)) + "  %d ms" % ((time.time() - started) * 1000)   # how long a reading takes here
@@ -3630,7 +3681,20 @@ def selftest():
     alarm = Alarm()
     heard = [alarm.update(state, t) for t, state in ((0, "ok"), (1, "test"), (2, "test"), (5.9, "test"), (6, "test"),
                                                      (7, "ok"), (8, "dead"), (20, "dead"), (21, "offline"), (22, "ok"))]
-    assert heard == [None, "test", None, None, "test", None, "dead", None, "offline", None], heard
+    assert heard == [None, "test", None, None, None, None, "dead", None, "offline", None], heard
+    assert Alarm().update("test", 0) == "test" and [Alarm(10).update("test", t) for t in (0,)] == ["test"]
+    a10 = Alarm(); a10.update("test", 0); assert a10.update("test", 9.9) is None and a10.update("test", 10) == "test"
+    import io, tempfile, wave
+    with wave.open(io.BytesIO(chime_wav(CHIMES["test"])), "rb") as w:   # the chime: short, soft, not clipped
+        frames = w.readframes(w.getnframes())
+        assert w.getframerate() == 22050 and 0.5 < w.getnframes() / 22050 < 1.0, w.getnframes()
+        loudest = max(abs(int.from_bytes(frames[i:i + 2], "little", signed=True)) for i in range(0, len(frames), 2))
+        assert 0.3 * 32767 < loudest <= CHIME_VOLUME * 32767 + 1, loudest
+    with tempfile.TemporaryDirectory() as own:
+        open(os.path.join(own, "kabuto-test.wav"), "wb").close()
+        assert alert_sound("test", own) == os.path.join(own, "kabuto-test.wav")   # yours wins
+        made = alert_sound("dead", own)
+        assert made.endswith("kabuto-chime-dead.wav") and os.path.getsize(made) > 1000
     assert "!! TEST POPUP: answer it" in describe({"state": "test"}) and ("TEST POPUP: answer it", RED) in layer_status({"state": "test"}, "USB")
     assert "map" not in r and "ml" not in r   # no map library, an older mob setup: sides only
 

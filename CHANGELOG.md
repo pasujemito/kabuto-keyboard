@@ -15,15 +15,19 @@ and show up in the pad's **Updates** panel.
   disconnect, newest first with how long ago, the one still on screen in red.
   A new one shows a message and buzzes the phone. The pad keeps the last 8;
   **Clear** empties them
-- 🍁 **The game layer looks like MapleStory's own windows**: the strip is
-  light, see-through paper (a pixel dither the game shows through) with a thin
-  grey edge and square-cut corners, bold text with a white outline, an orange
-  KABUTO tab with a maple leaf, and warnings as red tags. HP, MP and XP are
-  just their % (your bars are at the bottom of the screen). The strip has a
-  fixed width and the map name, %, XP rate, mobs and target fixed slots (long
-  names cut with "..."), so it no longer grows and shrinks; it keeps clear of
-  the minimap. F10 labels are see-through name tags; the F9 map list is a light
-  window with a title bar like the minimap's
+- 🍁 **The game layer looks like MapleStory's own windows**: one row with
+  a white rim and rounded bottom corners over a pane of 20% white (on Windows
+  a faded window of its own behind the strip, click-through and left out of
+  screen captures), bold text outlined in white and small drawn icons: a
+  maple leaf, USB plug or Wi-Fi, a map pin, a mushroom for the mobs seen
+  each side, a crosshair for the target, ▲ for XP per hour and a clock for
+  the time to the next level. HP, MP and XP are just their % (your bars are
+  at the bottom of the screen). Warnings are red tags. The strip has a fixed
+  width and the changing parts fixed slots (long map names cut with "..."),
+  so it no longer grows and shrinks; it keeps clear of the minimap. Setup
+  steps show in a bubble under it; the keys show there for 20 s at start.
+  F10 labels are name tags; the F9 map list is a light window with a title
+  bar like the minimap's
 - 📈 **XP per hour survives changing maps**: as the screen fades the XP bar
   was misread low (counted as a level-up), then the jump back counted as a
   huge gain (thousands of %/h). Now a rise of up to 10% counts at once; any

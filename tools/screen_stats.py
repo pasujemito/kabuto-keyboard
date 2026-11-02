@@ -2716,37 +2716,45 @@ def xp_text(rate):
 
 def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp=""):
     """The strip's items from a reading: [(text, colour), ...], Cells with a
-    fixed width where their text changes reading to reading."""
+    fixed width where their text changes reading to reading, and an icon and
+    a shorter text for the strip's one row."""
     known = GAMES.get(game)
-    out = [Cell("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER),
-           Cell(link or "starting", RED if link and link.startswith("can't") else DIM, 96)]
+    out = [Cell("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER)]
+    if link and link.startswith("can't"):
+        out.append(Cell(link, RED, 72, "warn", "no pad"))
+    else:
+        how, _, where = (link or "starting").partition(" ")
+        out.append(Cell(link or "starting", DIM, 72, {"USB": "usb", "Wi-Fi": "wifi"}.get(how),
+                        where if how in ("USB", "Wi-Fi") else None))
     for name, label in BARS:
         if r.get(name) is not None:
-            out.append(Cell("%s %.0f%%" % ("MP" if name == "mana" else label, r[name]), BAR_COLORS[name], 58))
+            out.append(Cell("%s %.0f%%" % ("MP" if name == "mana" else label, r[name]), BAR_COLORS[name], 52))
             if name == "xp":   # its slot even before there's a rate, so the rest keeps its place
-                out.append(Cell(xp, BAR_COLORS["xp"], 176))
+                out.append(Cell(xp, BAR_COLORS["xp"], 136))
+    if r.get("state", "ok") != "ok":   # first after the bars: the rest (mobs, map) may be cut
+        out.append(Cell(STATE_TEXT.get(r["state"], r["state"].upper()), RED, None, "warn"))
     if r.get("map") == "-":
-        out.append(Cell("new map, mobs not seen: F9" if maps else "map not taught", RED, 210))
+        out.append(Cell("new map, mobs not seen: F9" if maps else "map not taught", RED, 186, "pin",
+                        "new map: F9" if maps else "map not taught"))
     elif r.get("map"):
-        out.append(Cell(r["map"].replace("_", " "), INK, 210))
+        out.append(Cell(r["map"].replace("_", " "), INK, 186, "pin"))
     if r.get("ml") is not None:
         near = [(r["d" + side], side) for side in "lr" if r.get("d" + side) is not None]
-        out.append(Cell("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK, 52))
+        out.append(Cell("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK, 60, "mob", "%d\u25c0 \u25b6%d" % (r["ml"], r["mr"])))
         if near:
             d, side = min(near)
+            who = (r.get("mn") or ("left" if side == "l" else "right")).replace("_", " ")
             out.append(Cell("%s %s %d%%" % ("target" if d <= 100 else "nearest", r.get("mn") or ("left" if side == "l" else "right"), d),
-                            RED if d <= 100 else DIM, 180))
+                            RED if d <= 100 else DIM, 156, "target", "%s %d%%" % (who, d)))
     elif r.get("mobs") is not None:
-        out.append(Cell("mobs " + (r["mobs"] or "-"), INK, 52))
+        out.append(Cell("mobs " + (r["mobs"] or "-"), INK, 60, "mob", r["mobs"] or "-"))
     elif r.get("map") != "-":   # nothing to say how many: smart can't stop for them
-        out.append(("not looking for mobs" + (": F9 on this map" if maps else ""), RED))
+        out.append(Cell("not looking for mobs" + (": F9 on this map" if maps else ""), RED, None, "mob",
+                        "no mobs" + (": F9" if maps else "")))
     if tol is not None:   # how close a colour must be to a mob's (F6 looser, F7 stricter)
-        out.append(Cell("tolerance %d" % tol, DIM, 84))
-    if r.get("state", "ok") != "ok":   # after the rest, so it doesn't move them
-        out.append((STATE_TEXT.get(r["state"], r["state"].upper()), RED))
+        out.append(Cell("tolerance %d" % tol, DIM, 40, None, "\u00b1%d" % tol))
     if hint:
-        out.append((hint, AMBER))
-    out.append(("F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
+        out.append(Cell(hint, AMBER, None, "warn"))
     return out
 
 def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
@@ -2784,28 +2792,31 @@ def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
         out.append((a["x1"] - 2, a["y1"] - 2, a["x2"] + 2, a["y2"] + 2, "#c084fc", "map name"))
     return out
 
-# The layer's look is MapleStory's own windows (the Quest Helper, the party
-# list): light, see-through paper with a thin grey edge and square, pixel-cut
-# corners, dark bold text, an orange tab like the minimap's WORLD button, mob
-# names on dark name tags. See-through is a pixel dither (a Tk stipple): on
-# Windows the pixels it leaves out are the see-through colour, so the game
-# shows between them.
-MS = {"paper": "#ffffff", "edge": "#8e9298", "ink": "#2b2b2b", "muted": "#5a5e63", "line": "#c3c7cc",
+# The layer's look is MapleStory's own windows: a white rim with rounded
+# bottom corners around a pane of white at BACKDROP_ALPHA over the game, one
+# row of small drawn icons and dark bold text outlined in white, an orange
+# maple leaf, warnings on red tags, mob names on dark name tags. Tk can't fade
+# part of a window, so on Windows the pane is a window of its own behind the
+# layer (white, faded, click-through, rounded by a window region).
+MS = {"rim": "#ffffff", "edge": "#6f767e", "ink": "#262626", "muted": "#55595e", "line": "#c3c7cc",
       "orange": "#f6921e", "orange_ink": "#3a1d00", "orange_edge": "#a85400", "alert": "#d8263a", "alert_edge": "#8c0f1c",
-      "hp": "#d9202a", "mp": "#1b62d6", "xp": "#4a7000", "gold": "#a65a00", "tag": "#000000",
+      "hp": "#d9202a", "mp": "#1b62d6", "xp": "#4a7000", "gold": "#a65a00", "tag": "#1a1c20", "green": "#2f9e1f",
       "title": "#5b7189", "title_top": "#93a9bf", "body": "#f1f3f5", "field": "#ffffff", "teal": "#1d93ab"}
-SEE_THROUGH = "gray75"   # the paper's dither: 3 of 4 pixels drawn ("gray50" is more see-through, "" solid)
+BACKDROP_ALPHA = 0.2     # how white the pane behind the strip is (0 clear, 1 solid white)
 UI_FONT = "Arial"        # what the game's windows use (small and bold)
-STRIP_MARGIN = 260       # px kept clear either side of the strip: the minimap (and its map name) is at the top left
-STRIP_WIDTH = 900        # px: the strip's width (at most the screen's less the margins); fixed, so it doesn't jump
+STRIP_MARGIN = 240       # px kept clear either side of the strip: the minimap (and its map name) is at the top left
+STRIP_WIDTH = 880        # px: the strip's width (at most the screen's less the margins); fixed, so it doesn't jump
+STRIP_HEIGHT = 26        # px: its one row
 GAUGE = re.compile(r"^(HP|MP|XP) (\d+)%$")
+XP_RATE = re.compile(r"^\+([\d.]+%/h)(?:, level in (.+))?$")
 
 class Cell(tuple):
     """One item on the strip: (text, colour), with the width it's given (px,
-    None for as wide as it is) so its neighbours don't move as it changes."""
-    def __new__(cls, text, color, slot=None):
+    None for as wide as it is) so its neighbours don't move as it changes, the
+    icon drawn before it and, if shorter, the text shown."""
+    def __new__(cls, text, color, slot=None, icon=None, show=None):
         cell = super().__new__(cls, (text, color))
-        cell.slot = slot
+        cell.slot, cell.icon, cell.show = slot, icon, show
         return cell
 
 def mix(a, b, t):
@@ -2821,10 +2832,12 @@ def fit(text, width, measure):
         text = text[:-1]
     return text.rstrip() + "\u2026"
 
-def pixel_box(c, x0, y0, x1, y1, fill, edge, cut=2, stipple="", tags=()):
-    """A box with its corners cut square, pixel style: (cut px in each way)."""
-    pts = [x0 + cut, y0, x1 - cut, y0, x1, y0 + cut, x1, y1 - cut, x1 - cut, y1, x0 + cut, y1, x0, y1 - cut, x0, y0 + cut]
-    return c.create_polygon(pts, fill=fill, outline=edge, stipple=stipple, tags=tags)
+def round_rect(c, x0, y0, x1, y1, r, **kw):
+    """A rectangle with rounded corners on a tk canvas (a polygon)."""
+    r = max(0, min(r, (x1 - x0) // 2, (y1 - y0) // 2))
+    pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r,
+           x0, y0 + r, x0, y0]
+    return c.create_polygon(pts, smooth=True, **kw)
 
 def shade(c, x0, y0, x1, y1, top, bottom, tags=()):
     """A top-to-bottom gradient (the title bars)."""
@@ -2835,24 +2848,66 @@ LEAF = ((.50, 0), (.58, .18), (.70, .12), (.66, .36), (.86, .24), (.82, .36), (1
         (.66, .74), (.53, .70), (.53, 1), (.47, 1), (.47, .70), (.34, .74), (.38, .62), (.08, .60), (.14, .52), (0, .42),
         (.18, .36), (.14, .24), (.34, .36), (.30, .12), (.42, .18))
 
-def ms_leaf(c, x, y, size, fill="#e0262f", tags=()):
+def ms_leaf(c, x, y, size, fill="#f6921e", tags=()):
     """A maple leaf, its middle at (x, y) (drawn: Tk can't show emoji everywhere)."""
     pts = [v for px, py in LEAF for v in (x + (px - .5) * size, y + (py - .5) * size)]
     return c.create_polygon(pts, fill=fill, outline=mix(fill, "#000000", 0.45), tags=tags)
 
-def outlined(c, x, y, text, fill, font, anchor="w", tags=()):
-    """Text with a 1 px white outline, as the game draws it over busy scenery
-    (and over the see-through paper's dither); returns the text's item."""
-    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-        c.create_text(x + dx, y + dy, text=text, fill="#ffffff", anchor=anchor, font=font, tags=tags)
+def outlined(c, x, y, text, fill, font, anchor="w", tags=(), halo="#ffffff"):
+    """Text with a 1 px outline all round, as the game draws it over busy
+    scenery; returns the text's item."""
+    for dx, dy in ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)):
+        c.create_text(x + dx, y + dy, text=text, fill=halo, anchor=anchor, font=font, tags=tags)
     return c.create_text(x, y, text=text, fill=fill, anchor=anchor, font=font, tags=tags)
 
+ICON = 14   # px an icon takes, with the gap after it
+
+def draw_icon(c, kind, x, y, color=None, tags=()):
+    """A small icon (12 px) with its left edge at x, middle at y: usb, wifi,
+    pin (the map), mob (a mushroom), target, up (XP rate), clock (to the next
+    level), warn. Outlined dark so it shows on any scenery."""
+    o = {"outline": "#2b2b2b", "tags": tags}
+    if kind == "usb":
+        c.create_line(x + 4, y - 6, x + 4, y - 2, fill="#2b2b2b", width=2, tags=tags)
+        c.create_line(x + 8, y - 6, x + 8, y - 2, fill="#2b2b2b", width=2, tags=tags)
+        c.create_rectangle(x + 2, y - 2, x + 10, y + 4, fill=color or "#8a96a3", **o)
+        c.create_line(x + 6, y + 4, x + 6, y + 7, fill="#2b2b2b", width=2, tags=tags)
+    elif kind == "wifi":
+        for r in (3, 6, 9):
+            c.create_arc(x + 6 - r, y + 5 - r, x + 6 + r, y + 5 + r, start=50, extent=80, style="arc", width=2,
+                         outline=color or "#1b62d6", tags=tags)
+        c.create_oval(x + 5, y + 4, x + 7, y + 6, fill=color or "#1b62d6", outline="", tags=tags)
+    elif kind == "pin":
+        c.create_polygon(x + 3, y - 1, x + 9, y - 1, x + 6, y + 7, fill=color or "#d9202a", **o)
+        c.create_oval(x + 2, y - 7, x + 10, y + 1, fill=color or "#d9202a", **o)
+        c.create_oval(x + 5, y - 4, x + 7, y - 2, fill="#ffffff", outline="", tags=tags)
+    elif kind == "mob":
+        c.create_rectangle(x + 4, y, x + 8, y + 6, fill="#f3e3c3", **o)
+        c.create_arc(x, y - 6, x + 12, y + 6, start=0, extent=180, style="chord", fill=color or "#f08a24", **o)
+        for dx, dy in ((3, -3), (7, -4), (9, -1)):
+            c.create_oval(x + dx - 1, y + dy - 1, x + dx + 1, y + dy + 1, fill="#ffffff", outline="", tags=tags)
+    elif kind == "target":
+        ring = color or "#2b2b2b"
+        c.create_oval(x + 1, y - 5, x + 11, y + 5, outline=ring, width=2, tags=tags)
+        c.create_line(x + 6, y - 7, x + 6, y + 7, fill=ring, width=1, tags=tags)
+        c.create_line(x - 1, y, x + 13, y, fill=ring, width=1, tags=tags)
+    elif kind == "up":
+        c.create_polygon(x + 1, y + 4, x + 6, y - 5, x + 11, y + 4, fill=color or MS["green"], **o)
+    elif kind == "clock":
+        c.create_oval(x + 1, y - 5, x + 11, y + 5, fill="#ffffff", **o)
+        c.create_line(x + 6, y, x + 6, y - 3, fill="#2b2b2b", width=1, tags=tags)
+        c.create_line(x + 6, y, x + 9, y, fill="#2b2b2b", width=1, tags=tags)
+    elif kind == "warn":
+        c.create_polygon(x, y + 5, x + 6, y - 6, x + 12, y + 5, fill=color or "#ffd34d", **o)
+        c.create_text(x + 6, y + 1, text="!", fill="#2b2b2b", font=(UI_FONT, 7, "bold"), tags=tags)
+    return x + ICON
+
 def ms_tag(c, x, y, text, color, anchor, tags=()):
-    """A name tag as the game puts under characters and mobs: dark, see-through,
+    """A name tag as the game puts under characters and mobs: dark, rounded,
     its text in the outline's colour."""
     item = c.create_text(x, y, text=text, fill=color, anchor=anchor, font=(UI_FONT, 8, "bold"), tags=tags)
     x0, y0, x1, y1 = c.bbox(item)
-    back = pixel_box(c, x0 - 4, y0, x1 + 4, y1, MS["tag"], "", stipple="gray75", tags=tags)
+    back = round_rect(c, x0 - 4, y0, x1 + 4, y1, 4, fill=MS["tag"], outline=mix(color, MS["tag"], 0.5), tags=tags)
     c.tag_raise(item, back)
 
 class Layer:
@@ -2868,7 +2923,7 @@ class Layer:
         root.attributes("-topmost", True)
         # Windows: the whole screen, see-through but for what's drawn. Elsewhere
         # there's no see-through colour, so just the strip.
-        w, h = (monitor["width"], monitor["height"]) if self.windows else (monitor["width"], 96)
+        w, h = (monitor["width"], monitor["height"]) if self.windows else (monitor["width"], 60)
         root.geometry("%dx%d+%d+%d" % (w, h, monitor["left"], monitor["top"]))
         bg = self.KEY if self.windows else MS["body"]
         if self.windows:
@@ -2876,20 +2931,32 @@ class Layer:
         self.canvas = tk.Canvas(root, width=w, height=h, bg=bg, highlightthickness=0)
         self.canvas.pack()
         root.update_idletasks()
-        self.unseen = self._click_through() if self.windows else True
+        self.unseen = self._click_through(root) if self.windows else True
+        self.backdrop, self.placed = None, None
+        if self.windows:   # the strip's faded white pane: a window of its own, under the layer
+            pane = self.backdrop = tk.Toplevel(root)
+            pane.overrideredirect(True)
+            pane.attributes("-topmost", True)
+            pane.attributes("-alpha", BACKDROP_ALPHA)
+            pane.configure(bg="#ffffff")
+            pane.geometry("1x1+%d+%d" % (monitor["left"] - 10, monitor["top"] - 10))
+            pane.update_idletasks()
+            self._click_through(pane)
+            root.lift()
         root.report_callback_exception = self._error
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
-        self.status, self.shapes, self.message, self.until = [("Kabuto", AMBER), ("starting", DIM)], [], "", 0
+        self.status, self.shapes = [("Kabuto", AMBER), ("starting", DIM)], []
+        self.message, self.until = "F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", time.time() + 20
         self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], {}, None
         self.changed = set()
         self.unlisten = listen(self.keys.put)
 
-    def _click_through(self):
+    def _click_through(self, window):
         """Clicks pass through to the game, no taskbar button, never focused;
         and left out of screen captures. False if Windows can't leave it out."""
         import ctypes
         user32 = ctypes.windll.user32
-        hwnd = user32.GetParent(self.root.winfo_id())
+        hwnd = user32.GetParent(window.winfo_id())
         style = user32.GetWindowLongW(hwnd, -20)   # GWL_EXSTYLE
         user32.SetWindowLongW(hwnd, -20, style | 0x80000 | 0x20 | 0x80 | 0x8000000)   # layered, transparent, tool, no-activate
         return bool(user32.SetWindowDisplayAffinity(hwnd, 0x11))   # WDA_EXCLUDEFROMCAPTURE
@@ -2958,6 +3025,9 @@ class Layer:
         c, ox, oy = self.canvas, self.monitor["left"], self.monitor["top"]
         c.delete("all")
         if self.hidden:
+            if self.backdrop and self.placed:
+                self.backdrop.geometry("1x1+%d+%d" % (self.monitor["left"] - 10, self.monitor["top"] - 10))
+                self.placed = None
             return
         for x0, y0, x1, y1, color, label in shapes:
             c.create_rectangle(x0 - ox, y0 - oy, x1 - ox, y1 - oy, outline=color, width=2)
@@ -2965,61 +3035,103 @@ class Layer:
                 ms_tag(c, x0 - ox + 4, y1 - oy + 4, label, color, "nw")
             elif label and label != "you":
                 ms_tag(c, x0 - ox + 4, y0 - oy - 4, label, color, "sw")
-        # The strip: a sheet of the game's see-through paper hanging from the
-        # top of the screen, its width fixed, clear of the minimap at the top
-        # left (and the game's windows at the top right). Items with a slot
-        # keep their place; the rest wrap onto more rows when they must.
+        # The strip: one row hanging from the top of the screen, its width
+        # fixed, clear of the minimap at the top left (and the game's windows
+        # at the top right). Items with a slot keep their place; what doesn't
+        # fit at the end is cut.
         margin = min(STRIP_MARGIN, int(c["width"]) // 6)
         width = min(STRIP_WIDTH, int(c["width"]) - 2 * margin)
-        bold, plain = (UI_FONT, 9, "bold"), (UI_FONT, 8, "bold")
-        if not getattr(self, "fonts", None):
+        bold = (UI_FONT, 9, "bold")
+        if not getattr(self, "measure", None):
             import tkinter.font as tkfont
-            self.fonts = {f: tkfont.Font(root=self.root, family=f[0], size=f[1], weight=f[2] if len(f) > 2 else "normal")
-                          for f in (bold, plain)}
-        x, y = 0, 13
+            self.measure = tkfont.Font(root=self.root, family=UI_FONT, size=9, weight="bold").measure
+        x, y = 0, STRIP_HEIGHT // 2
         for i, cell in enumerate(status):
             text, color = cell
-            slot, tags, start = getattr(cell, "slot", None), ("strip", "item%d" % i), x
-            gauge = GAUGE.match(text)
-            if i == 0:   # Kabuto (and the game): an orange tab like the minimap's WORLD button
-                label = c.create_text(x + 21, y, text=text.upper(), fill=MS["orange_ink"], anchor="w", font=bold, tags=tags)
-                right = c.bbox(label)[2] + 6
-                tab = pixel_box(c, x, y - 8, right, y + 8, MS["orange"], MS["orange_edge"], tags=tags)
-                ms_leaf(c, x + 11, y, 11, tags=tags)
-                c.tag_raise(label, tab)
-                x = right
+            slot, icon, show = getattr(cell, "slot", None), getattr(cell, "icon", None), getattr(cell, "show", None)
+            text, tags, start = text if show is None else show, "strip", x
+            room = width - x - (ICON if icon else 0)
+            if room < 30:
+                break   # no room left on the row
+            gauge, rate = GAUGE.match(text), XP_RATE.match(text)
+            if i == 0:   # Kabuto: the maple leaf
+                ms_leaf(c, x + 8, y, 16, tags=tags)
+                x += 18
             elif gauge and color in BAR_COLORS.values():   # just the %: the game's own bars are at the bottom
                 name = outlined(c, x, y, gauge.group(1), MS[gauge.group(1).lower()], bold, tags=tags)
-                outlined(c, c.bbox(name)[2] + 2, y, gauge.group(2) + "%", MS["ink"], bold, tags=tags)
-                x += slot or 60
+                outlined(c, c.bbox(name)[2] + 3, y, gauge.group(2) + "%", MS["ink"], bold, tags=tags)
+                x += slot or 54
+            elif rate:   # XP per hour, then the time to the next level
+                x = draw_icon(c, "up", x, y, tags=tags)
+                x = c.bbox(outlined(c, x, y, rate.group(1), MS["xp"], bold, tags=tags))[2] + 6
+                if rate.group(2):
+                    x = draw_icon(c, "clock", x, y, tags=tags)
+                    outlined(c, x, y, rate.group(2), MS["ink"], bold, tags=tags)
+                x = start + (slot or 0) if slot else c.bbox("strip")[2]
             elif color == RED:   # what needs you: a red tag
-                label = c.create_text(x + 6, y, text=fit(text, slot - 12, self.fonts[bold].measure) if slot else text,
-                                      fill="#ffffff", anchor="w", font=bold, tags=tags)
-                right = x + slot if slot else c.bbox(label)[2] + 6
-                box = pixel_box(c, x, y - 8, right, y + 8, MS["alert"], MS["alert_edge"], tags=tags)
-                c.tag_raise(label, box)
+                label = text if slot is None else fit(text, slot - 12 - (ICON if icon else 0), self.measure)
+                label = fit(label, room - 12, self.measure)
+                inner = x + 6
+                right = (x + slot) if slot else inner + (ICON if icon else 0) + self.measure(label) + 6
+                box = round_rect(c, x, y - 9, right, y + 9, 5, fill=MS["alert"], outline=MS["alert_edge"], tags=tags)
+                if icon:
+                    inner = draw_icon(c, icon, inner, y, "#ffd34d" if icon == "warn" else "#ffffff", tags=tags)
+                c.tag_raise(c.create_text(inner, y, text=label, fill="#ffffff", anchor="w", font=bold, tags=tags), box)
                 x = right
             else:
-                font = plain if color == DIM else bold
+                if icon:
+                    x = draw_icon(c, icon, x, y, tags=tags)
                 ink = {DIM: MS["muted"], AMBER: MS["gold"], BAR_COLORS["xp"]: MS["xp"]}.get(color, MS["ink"])
-                if slot:
-                    text = fit(text, slot, self.fonts[font].measure)
-                item = outlined(c, x, y, text, ink, font, tags=tags)
-                x = x + slot if slot else c.bbox(item)[2]
-            if x > width and start > 0:   # doesn't fit: on the next row
-                c.move("item%d" % i, -start, 20)
-                x, y = x - start, y + 20
+                label = fit(text, min(slot - (x - start) if slot else room, room), self.measure)
+                item = outlined(c, x, y, label, ink, bold, tags=tags)
+                x = start + slot if slot else c.bbox(item)[2]
             x += 10
-        bottom = y + 11
-        if message:   # what to do next: under a line, in the game's quest-note brown
-            c.create_line(0, bottom + 1, width, bottom + 1, fill=MS["line"], tags="strip")
-            outlined(c, 0, bottom + 12, fit(message, width, self.fonts[bold].measure), MS["gold"], bold, tags="strip")
-            bottom += 23
         shift = max(margin, (int(c["width"]) - width) // 2)
         c.move("strip", shift, 0)
-        pixel_box(c, shift - 10, -4, shift + width + 10, bottom + 4, MS["paper"], MS["edge"], cut=3, stipple=SEE_THROUGH,
-                  tags="window")
-        c.tag_lower("window", "strip")
+        panes = [(shift - 12, 0, shift + width + 12, STRIP_HEIGHT + 4)]
+        if message:   # what to do next: a bubble under the strip, while there is something to say
+            text = fit(message, int(c["width"]) - 2 * margin - 24, self.measure)
+            w = self.measure(text)
+            x0 = (int(c["width"]) - w) // 2
+            outlined(c, x0, STRIP_HEIGHT + 20, text, MS["gold"], bold, tags="bubble")
+            panes.append((x0 - 12, STRIP_HEIGHT + 9, x0 + w + 12, STRIP_HEIGHT + 31))
+        for i, (x0, y0, x1, y1) in enumerate(panes):   # the white rim (top corners off the screen for the strip)
+            top = y0 - 10 if i == 0 else y0
+            if not self.backdrop:   # no faded pane (not Windows): a solid one
+                round_rect(c, x0, top, x1, y1, 8, fill=MS["body"], outline="", tags="pane")
+            round_rect(c, x0 - 1, top - 1, x1 + 1, y1 + 1, 9, fill="", outline=MS["edge"], tags="pane")
+            round_rect(c, x0, top, x1, y1, 8, fill="", outline=MS["rim"], width=2, tags="pane")
+        c.tag_lower("pane")
+        self._place_backdrop(panes)
+
+    def _place_backdrop(self, panes):
+        """The faded white pane behind the strip (and the bubble): one window,
+        cut to their rounded shapes by a window region (Windows only)."""
+        if not self.backdrop or panes == self.placed:
+            return
+        self.placed = panes
+        import ctypes
+        user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+        handle = ctypes.c_void_p   # 64-bit handles
+        gdi32.CreateRoundRectRgn.restype = handle
+        gdi32.CombineRgn.argtypes = (handle, handle, handle, ctypes.c_int)
+        gdi32.DeleteObject.argtypes = (handle,)
+        user32.SetWindowRgn.argtypes = (handle, handle, ctypes.c_bool)
+        ox, oy = self.monitor["left"], self.monitor["top"]
+        x0, y0 = min(p[0] for p in panes), min(p[1] for p in panes)
+        x1, y1 = max(p[2] for p in panes), max(p[3] for p in panes)
+        self.backdrop.geometry("%dx%d+%d+%d" % (x1 - x0 + 1, y1 - y0 + 1, ox + x0, oy + y0))
+        self.backdrop.update_idletasks()
+        region = None
+        for i, (a, b, c_, d) in enumerate(panes):
+            top = b - y0 - (10 if i == 0 else 0)   # the strip's top corners off the screen: square
+            part = gdi32.CreateRoundRectRgn(a - x0, top, c_ - x0 + 1, d - y0 + 1, 16, 16)
+            if region is None:
+                region = part
+            else:
+                gdi32.CombineRgn(region, region, part, 2)   # RGN_OR
+                gdi32.DeleteObject(part)
+        user32.SetWindowRgn(user32.GetParent(self.backdrop.winfo_id()), region, True)   # Windows owns the region now
 
     def _pick_map(self):
         """Which map (from map.json) this is: a searchable list. Type to

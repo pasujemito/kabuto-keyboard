@@ -201,13 +201,17 @@ MP, XP, dead, offline or a test popup), the map ("new map: F9" for one you haven
 the mobs (◀ left · right ▶ counts) and the target: the nearest mob, named,
 with its distance in % of your reach (red when in reach). Setup steps show on
 it too, so you can set up without leaving the game. It's drawn like
-MapleStory's own windows (the Quest Helper): light, see-through paper with
-square-cut corners, bold outlined text, an orange KABUTO tab, warnings as red
-tags. HP, MP and XP are just their % (your bars are at the bottom). Its width
-is fixed and the changing parts (map name, %, XP rate, mobs, target) have
-fixed places, so it doesn't jump about; it sits at the top middle, clear of
-the minimap. F10 labels are name tags; the F9 map list is a light window too.
-`SEE_THROUGH` in the script sets how see-through the strip is. Keys, which work while
+MapleStory's own windows: one row with a white rim and rounded bottom corners
+over a pane of 20% white (`BACKDROP_ALPHA` in the script), bold outlined text
+and small icons: 🍁 Kabuto, a plug (USB) or Wi-Fi, HP/MP/XP % (your bars are at
+the bottom), ▲ XP per hour and a clock for the time to the next level, a pin
+and the map, a mushroom with the mobs seen each side, a crosshair and the
+target (red when in reach), ± the colour tolerance. Warnings (a test popup,
+death, no pad) are red tags. Its width is fixed and the changing parts keep
+their places, so it doesn't jump about; it sits at the top middle, clear of
+the minimap. Setup steps show in a bubble under it (the keys, for 20 s at
+start). F10 labels are name tags; the F9 map list is a light window too.
+Keys, which work while
 the game has focus:
 
 | Key | Does |

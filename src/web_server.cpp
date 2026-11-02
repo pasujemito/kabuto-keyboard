@@ -244,12 +244,15 @@ void webServerBegin() {
 
     server.on("/", HTTP_GET, sendWebUi);   // the page itself holds no secrets
     server.on("/api/login", HTTP_POST, [](AsyncWebServerRequest* req) {
-        String err, token = accessLogin(req->hasParam("pin", true) ? req->getParam("pin", true)->value() : String(), err);
+        bool script = req->hasParam("who", true) && req->getParam("who", true)->value() == "script";
+        String err, token = accessLogin(req->hasParam("pin", true) ? req->getParam("pin", true)->value() : String(), err, script);
         JsonDocument d; d["ok"] = token.length() > 0; if (err.length()) d["error"] = err;
         String out; serializeJson(d, out);
         AsyncWebServerResponse* r = req->beginResponse(token.length() ? 200 : 401, "application/json", out);
         r->addHeader("Cache-Control", "no-store");
-        if (token.length()) r->addHeader("Set-Cookie", String(ACCESS_COOKIE "=") + token + "; Path=/; HttpOnly; SameSite=Strict");
+        // Max-Age: kept when the browser closes, so you aren't asked again.
+        if (token.length()) r->addHeader("Set-Cookie", String(ACCESS_COOKIE "=") + token + "; Path=/; Max-Age=" +
+                                         String(ACCESS_COOKIE_DAYS * 86400L) + "; HttpOnly; SameSite=Strict");
         req->send(r);
     });
 

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 
 // PIN rules, login throttling and cookie parsing for the editor on your home
@@ -36,6 +37,57 @@ inline std::string cookieValue(const std::string& header, const std::string& nam
     }
     return "";
 }
+
+// Logged-in browsers (and, kept apart, the PC script): each slot holds a
+// token's hash and when it was last used (a counter, not a clock). A login
+// takes an empty slot or the one unused the longest, so the phone you use
+// stays logged in however often something else logs in. access.cpp keeps
+// them across restarts; a new PIN empties them all.
+inline bool constantTimeEquals(const std::string& a, const std::string& b);
+template <size_t N> struct SessionSlots {
+    std::string hash[N];
+    uint32_t used[N] = {};
+    uint32_t clock = 0;
+    size_t add(const std::string& h) {
+        size_t at = 0;
+        for (size_t i = 0; i < N; ++i) {
+            if (hash[i].empty()) { at = i; break; }
+            if (used[i] < used[at]) at = i;
+        }
+        hash[at] = h; used[at] = ++clock;
+        return at;
+    }
+    bool touch(const std::string& h) {   // a request with this session: still in use
+        if (h.empty()) return false;
+        for (size_t i = 0; i < N; ++i)
+            if (!hash[i].empty() && constantTimeEquals(hash[i], h)) { used[i] = ++clock; return true; }
+        return false;
+    }
+    void clear() { for (size_t i = 0; i < N; ++i) { hash[i].clear(); used[i] = 0; } }
+    // Kept as "hash:used,hash:used"; a damaged entry is skipped.
+    std::string save() const {
+        std::string out;
+        for (size_t i = 0; i < N; ++i)
+            if (!hash[i].empty()) out += (out.empty() ? "" : ",") + hash[i] + ":" + std::to_string(used[i]);
+        return out;
+    }
+    void load(const std::string& text) {
+        clear();
+        size_t i = 0;
+        for (size_t pos = 0; pos < text.size() && i < N;) {
+            size_t end = text.find(',', pos);
+            if (end == std::string::npos) end = text.size();
+            size_t colon = text.find(':', pos);
+            if (colon != std::string::npos && colon > pos && colon < end) {
+                hash[i] = text.substr(pos, colon - pos);
+                used[i] = (uint32_t)strtoul(text.substr(colon + 1, end - colon - 1).c_str(), nullptr, 10);
+                if (used[i] > clock) clock = used[i];
+                ++i;
+            }
+            pos = end + 1;
+        }
+    }
+};
 
 // Compares without stopping at the first difference, so response timing
 // doesn't reveal how much of a secret matched.

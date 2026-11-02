@@ -136,7 +136,12 @@ const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4, MOB_READ = 8;
 // until within half the range. Then: auto-pause (`paused`, see AutoPause)
 // waits; mobs in reach are attacked; with `approach`, mobs you can see but
 // not reach are walked to (the nearer side), but not past 3/4 of the home
-// range. No fresh reading or no mob detector: just attack.
+// range. Then, with a home and the mob detector, nothing to fight nearby
+// means back home: walk until within HOME_SETTLE / 2 of it whenever farther
+// than HOME_SETTLE, so you hunt around home rather than wherever the last
+// mob led you (auto-pause waits there too). No fresh reading or no mob
+// detector: just attack.
+const int HOME_SETTLE = 60;   // tenths of a minimap width: "at home" within this (3% once walking)
 enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT };
 struct SmartInput {
     bool fresh = false;
@@ -155,7 +160,8 @@ inline uint8_t smartDecide(const SmartInput& in) {
         int dist = off < 0 ? -off : off;
         if (dist > (in.homing ? in.range / 2 : in.range) && (!any || dist > 2 * in.range)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
     }
-    if (in.paused) return SMART_PAUSE;
+    bool away = homed && (in.mobs & MOB_READ) && (off < 0 ? -off : off) > (in.homing ? HOME_SETTLE / 2 : HOME_SETTLE);
+    if (in.paused) return away ? (off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT) : SMART_PAUSE;
     if (any) return SMART_ATTACK;
     bool left = in.seenLeft > 0, right = in.seenRight > 0;
     if (in.approach && (left || right)) {
@@ -163,6 +169,7 @@ inline uint8_t smartDecide(const SmartInput& in) {
         int limit = in.range * 3 / 4;
         if (!homed || (goLeft ? off > -limit : off < limit)) return goLeft ? SMART_APPROACH_LEFT : SMART_APPROACH_RIGHT;
     }
+    if (away) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;   // nothing to fight here: back home
     return (in.mobs & MOB_READ) ? SMART_WAIT : SMART_ATTACK;
 }
 // The decision with mobs in reach only (no counts, approach or auto-pause).
@@ -237,19 +244,19 @@ struct StuckWatch {
 // ---- the screen reader's keys, pressed on the pad ---------------------------
 // "tool" steps press tools/screen_stats.py's keys from the pad: mark (its F8),
 // skip (Esc), map (F9), outlines (F10), hide (F11), looser (F6) and stricter
-// (F7) mob colours, so setup, tuning and the game layer need no keyboard and
+// (F7) mob colours, home (F12: this map's home is where you stand), so setup, tuning and the game layer need no keyboard and
 // work whatever has focus. They wait here until the
 // script asks (USB "KABUTO keys", Wi-Fi POST /api/tool/keys); ones older than
 // TOOL_KEY_MAX_AGE_MS are dropped, so presses with no script running don't
 // fire later.
-enum ToolKey : uint8_t { TOOL_NONE, TOOL_MARK, TOOL_SKIP, TOOL_MAP, TOOL_OUTLINES, TOOL_HIDE, TOOL_LOOSER, TOOL_STRICTER };
+enum ToolKey : uint8_t { TOOL_NONE, TOOL_MARK, TOOL_SKIP, TOOL_MAP, TOOL_OUTLINES, TOOL_HIDE, TOOL_LOOSER, TOOL_STRICTER, TOOL_HOME };
 const uint32_t TOOL_KEY_MAX_AGE_MS = 3000;
 inline const char* toolKeyName(uint8_t key) {
-    static const char* const names[] = {"", "mark", "skip", "map", "outlines", "hide", "looser", "stricter"};
-    return key <= TOOL_STRICTER ? names[key] : "";
+    static const char* const names[] = {"", "mark", "skip", "map", "outlines", "hide", "looser", "stricter", "home"};
+    return key <= TOOL_HOME ? names[key] : "";
 }
 inline uint8_t toolKeyFromName(const char* name) {
-    for (uint8_t k = TOOL_MARK; name && k <= TOOL_STRICTER; ++k)
+    for (uint8_t k = TOOL_MARK; name && k <= TOOL_HOME; ++k)
         if (!strcmp(name, toolKeyName(k))) return k;
     return TOOL_NONE;
 }
@@ -284,7 +291,8 @@ struct ToolKeys {
 // &ml=1&mr=3&dl=192&dr=52&mn=Slime&map=Henesys") comes over Wi-Fi (POST
 // /api/stats) or the USB cable ("KABUTO stats <form>"). ml/mr: mobs seen each
 // side; dl/dr: the nearest each side in % of your reach; mn: its name; map:
-// the map's name ("-" for one the script wasn't taught). state: ok, dead,
+// the map's name ("-" for one the script wasn't taught). hx: the map's home
+// (set with F12), % across its minimap. state: ok, dead,
 // offline or test (the game's test popup).
 
 // "72.5" -> 725 tenths. Empty, not a number or outside 0-100 -> -1 (not read):
@@ -341,6 +349,7 @@ struct StatsReading {
     uint8_t state = LIVE_OK, mobs = 0;   // no "mobs" field: 0, no detector
     int ml = -1, mr = -1, dl = -1, dr = -1;
     char map[LIVE_NAME_LEN] = {}, mob[LIVE_NAME_LEN] = {};   // "": not sent
+    int homeX = -1;   // this map's home, tenths of the minimap's width (-1: none set)
 };
 
 // One field of a reading; unknown keys are ignored.
@@ -360,6 +369,7 @@ inline void statsField(StatsReading& r, const char* key, const char* value) {
     else if (!strcmp(key, "dr")) r.dr = statsCount(value);
     else if (!strcmp(key, "mn")) statsName(value, r.mob);
     else if (!strcmp(key, "map")) statsName(value, r.map);
+    else if (!strcmp(key, "hx")) r.homeX = statsTenths(value);
 }
 
 // Parses the form without allocating. Values the script sends never need

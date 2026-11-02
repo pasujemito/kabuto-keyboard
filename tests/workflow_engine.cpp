@@ -473,6 +473,30 @@ int main() {
         bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
                  walked=walked||holds(L,280)>=1;seen(walked?MOB_READ|MOB_LEFT:MOB_READ,walked,0,walked?40:-1,-1,walked?320:900,"Henesys");});
         assert(walked&&attacks()==3);
+        // A set home (the pattern's home_at, across the minimap): walks there from wherever it starts, then hunts.
+        auto at=[&](int x,uint8_t mobs,int homeX=-1){
+            StatsReading r;r.hp=r.mana=500;r.x=x;r.y=500;r.mobs=mobs;r.ml=(mobs&MOB_LEFT)?1:0;r.mr=(mobs&MOB_RIGHT)?1:0;
+            r.dl=(mobs&MOB_LEFT)?40:-1;r.dr=(mobs&MOB_RIGHT)?40:-1;r.homeX=homeX;liveStatsUpdate(r);};
+        q.homeAtPermille=300;aware.setPattern(q);walked=false;bool homeShown=false;
+        bounded([&]{walked=walked||holds(L,280)>=1;at(walked?310:500,walked?MOB_READ|MOB_LEFT:MOB_READ);
+                 PatternView v=patternViewSnapshot();homeShown=homeShown||(v.haveHome&&v.home==300&&!v.homeOnMap);});
+        assert(walked&&holds(R,280)==0&&attacks()==3&&homeShown);
+        // The map's own home (F12, "hx" in the reading) wins over the pattern's.
+        walked=false;
+        bounded([&]{walked=walked||holds(R,280)>=1;at(walked?690:500,walked?MOB_READ|MOB_RIGHT:MOB_READ,700);});
+        assert(walked&&holds(L,280)==0&&attacks()==3);
+        // Fights what's around on the way, then goes back to it (hunting around home).
+        bool back=false;uint32_t homeAgainAt=0;
+        bounded([&]{if(attacks()<1){at(380,MOB_READ|MOB_RIGHT);return;}   // a mob 8% from home: fought where it is
+                 if(!back&&holds(L,280)>=1){back=true;homeAgainAt=millis();}
+                 at(back?300:380,back?MOB_READ|MOB_LEFT:MOB_READ);});        // then none: walks home, and the rest are fought there
+        {uint32_t later=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5&&e.at>=homeAgainAt)++later;assert(back&&attacks()==3&&later==2);}
+        // A set home it can't reach (a wall, another platform) isn't moved: it tries again after 10 s.
+        uint32_t from=millis();stopAt=from+23000;
+        bounded([&]{at(500,MOB_READ);if(millis()>=stopAt)engine.stopFlag_=true;});
+        bool again=false;{uint32_t down=0;for(auto e:hidEvents)if(e.key==L){if(e.down)down=e.at;else if(e.at-down==280&&down>=from+20000)again=true;}}
+        assert(again&&attacks()==0&&patternViewSnapshot().active==false);engine.stopFlag_=false;
+        q.homeAtPermille=-1;aware.setPattern(q);
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

@@ -227,6 +227,7 @@ the game has focus:
 | F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, with how well its PNG matched, e.g. *red-snail 98%*), clumps of mob colour that aren't a mob (grey, *not a mob 31%*), the minimap and where it reads your dot (cyan), the map name area |
 | F11 | hide or show the layer |
 | F6 / F7 | **looser / stricter** mob colours on this map (tolerance ±5, saved straight away; the strip shows it). Watch the F10 outlines while you press |
+| F12 | **set home** on this map where you stand: your dot's place across the minimap goes into `mobs/map.json` as `"home"` (a taught map; press again to move it). Smart patterns hunt around it on this map |
 
 **Or press them on the pad.** In the editor, **Recordings → 🍁 Setup layer**
 adds two layers whose buttons are those keys:
@@ -234,7 +235,7 @@ adds two layers whose buttons are those keys:
 | Layer | 1 | 2 | 3 | 4 | 5 | 6 |
 | --- | --- | --- | --- | --- | --- | --- |
 | *MS🍁 Setup* | Mark (F8) | Skip (Esc) | Which map (F9) | Outlines (F10) | Tune ▸ | Back |
-| *MS🍁 Tune* | Looser (F6) | Stricter (F7) | Outlines (F10) | Hide layer (F11) | ◂ Setup | Back |
+| *MS🍁 Tune* | Looser (F6) | Stricter (F7) | Set home (F12) | Hide layer (F11) | ◂ Setup | Back |
 
 and puts a **🍁 Setup** button on a free key of the layer you were on, to get
 there. (Made a Setup layer with 1.17.0-1.17.2? Press the button again for the
@@ -536,10 +537,13 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
 - XP is a percentage of the bar, not points: exact XP numbers would need text
   reading (OCR), which isn't light.
 - **Death and disconnects stop playback at once**, and a pattern won't start
-  until the game is back. Dead means the HP bar reads 0% twice in a row (or the
-  `--mark death` spot shows); disconnected means the bars and the minimap have
-  gone (or the `--mark login` spot shows). The Buttons screen says why it
-  stopped. Without a minimap set up, disconnects show up as death.
+  until the game is back. Dead means the HP bar has stayed under 5% for 2 s
+  with the minimap still showing (or the `--mark death` spot shows);
+  disconnected means the bars and the minimap have been gone for 10 s (or the
+  `--mark login` spot shows). Changing maps fades the screen to black, which
+  empties the HP bar and hides the minimap for a moment: that's neither. The
+  Buttons screen says why it stopped. Without a minimap set up, dead also
+  needs the Mana bar still showing (a dark screen empties both).
 - **The game's test popup stops playback too.** Now and then MapleStory asks
   a question only a person can answer ("Please find the beautiful Violetta
   wearing make-up. A correct answer will pass the test.", with a mushroom,
@@ -602,11 +606,20 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
       anyway to finish off the last few. The "most seen lately" drops by one
       every 30 s it isn't reached, so one crowded moment doesn't hold it up;
     - **Home range** (50% of the minimap by default, up to 50%; 0 = no home):
-      home is where you stood when the pattern started, or where you arrived
-      on a new map (with mobs per map set up). Drift further than that with no
-      mobs in reach, or twice that whatever's around, and it walks back until
-      it's within half the range. If it can't get there in 10 s, that spot
-      becomes home;
+      how far from home it may go. Drift further than that with no mobs in
+      reach, or twice that whatever's around, and it walks back;
+    - **Where home is**, first that applies: this map's own home, set with
+      **F12** (or the pad's **Set home**) where you stand, kept in
+      `mobs/map.json`; the pattern's **Home at (% across the minimap)**, for
+      every map (0 = the left edge, 50 = the middle); else where you stood when
+      the pattern started, or where you arrived on a new map;
+    - **It hunts around home**: it fights mobs in reach where they are and
+      walks to ones in sight (within ¾ of the range), but once there's
+      nothing to fight it walks back to home (when more than 6% of the
+      minimap away, until within 3%), and auto-pause waits there too. A set
+      home it can't reach in 10 s (a wall, another platform) stays where it
+      is: it fights where it is and tries again 10 s later. A home that was
+      just where you started moves to where you are instead;
     - **Walking strides** (280–650 ms): walking, home or to mobs, holds the
       direction key for a random time in that range, then waits the
       direction gap, and looks again; no two strides alike.

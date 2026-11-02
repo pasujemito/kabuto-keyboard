@@ -73,7 +73,12 @@ int main(){
     assert(smartAction(true,0,true,500,true,500,100,false)==SMART_ATTACK&&smartAction(false,none,true,900,true,500,100,false)==SMART_ATTACK);   // no detector / stale
     assert(smartAction(true,none,true,650,true,500,100,false)==SMART_WALK_LEFT&&smartAction(true,none,true,-200,true,-50,100,false)==SMART_WALK_RIGHT);
     assert(smartAction(true,left,true,650,true,500,100,false)==SMART_ATTACK&&smartAction(true,left,true,750,true,500,100,false)==SMART_WALK_LEFT);   // mobs keep you, unless far
-    assert(smartAction(true,none,true,560,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,540,true,500,100,true)==SMART_WAIT);   // walks until within half
+    // Nothing to fight: back home, to hunt around it. Walks when over HOME_SETTLE (6%) away, until within half that.
+    assert(smartAction(true,none,true,560,true,500,100,false)==SMART_WAIT&&smartAction(true,none,true,570,true,500,100,false)==SMART_WALK_LEFT);
+    assert(smartAction(true,none,true,540,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,525,true,500,100,true)==SMART_WAIT);
+    assert(smartAction(true,none,true,420,true,500,100,false)==SMART_WALK_RIGHT);           // either side
+    assert(smartAction(true,left,true,570,true,500,100,false)==SMART_ATTACK);               // mobs in reach: fight them first
+    assert(smartAction(true,0,true,570,true,500,100,false)==SMART_ATTACK);                  // no mob detector: can't tell, attack
     assert(smartAction(true,none,true,900,true,500,0,false)==SMART_WAIT&&smartAction(true,none,false,0,true,500,100,false)==SMART_WAIT);   // no home / no position
     // With mobs in sight (counts and distances): approach walks to the nearer
     // side's mobs when none are in reach, but not past 3/4 of the home range;
@@ -83,14 +88,19 @@ int main(){
     assert(smartDecide(in)==SMART_WAIT);                                   // approach off: as before
     in.approach=true;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
     in.nearLeft=120;assert(smartDecide(in)==SMART_APPROACH_LEFT);          // the nearer side
-    in.pos=420;assert(smartDecide(in)==SMART_WAIT);                        // 80 left of home (past 75): no further left
+    in.pos=420;assert(smartDecide(in)==SMART_WALK_RIGHT);                  // 80 left of home (past 75): no further left, back home
     in.pos=500;in.seenLeft=0;in.nearLeft=-1;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
     in.seenRight=0;in.nearRight=-1;assert(smartDecide(in)==SMART_WAIT);   // none in sight
     in.seenRight=2;in.nearRight=150;in.mobs=MOB_READ|MOB_RIGHT;assert(smartDecide(in)==SMART_ATTACK);   // in reach: attack
     in.paused=true;assert(smartDecide(in)==SMART_PAUSE);
+    in.mobs=none;in.pos=580;assert(smartDecide(in)==SMART_WALK_LEFT);     // auto-pause: waits at home, not where it was
+    in.pos=540;assert(smartDecide(in)==SMART_PAUSE);in.pos=500;in.mobs=MOB_READ|MOB_RIGHT;
     in.pos=700;in.mobs=none;assert(smartDecide(in)==SMART_WALK_LEFT);     // drifted: home before pausing
     in.pos=500;in.paused=false;in.seenLeft=in.seenRight=-1;assert(smartDecide(in)==SMART_WAIT);   // no counts: as before
     in.haveHome=false;in.seenRight=1;in.nearRight=300;assert(smartDecide(in)==SMART_APPROACH_RIGHT);   // no home: no limit
+    // A map's home comes in the reading as "hx" (% across the minimap); the pad button "home" sets it (F12).
+    assert(parseStatsForm("hx=42.5&x=40").homeX==425&&parseStatsForm("x=40").homeX==-1&&parseStatsForm("hx=abc").homeX==-1);
+    assert(toolKeyFromName("home")==TOOL_HOME&&std::string(toolKeyName(TOOL_HOME))=="home");
     // Auto-pause at 30%: 6 seen sets the bar; 1 left (under 1.8) pauses, 4
     // (60%+) resumes; a pause lasts at most AUTO_PAUSE_MAX_MS, then the
     // stragglers are fought until the mobs are back.

@@ -295,6 +295,17 @@
   .live-mobs b{color:var(--ink);font-weight:500}
   .live-warn{color:var(--amber)}
   .live-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+  .notices{display:grid;gap:6px;margin:10px 0 2px;padding:10px 12px;border:1px solid var(--edge);border-radius:var(--r);background:var(--panel);font-size:12px;color:var(--muted)}
+  .notices[hidden]{display:none}
+  .notices.alert{border-color:var(--stop);box-shadow:0 0 0 1px var(--stop),0 0 12px rgba(255,93,93,.35)}
+  .notices-head{display:flex;align-items:center;gap:8px}
+  .notices-head h2{margin:0}
+  .notices-head .btn{margin-left:auto}
+  .notice{display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:baseline}
+  .notice b{color:var(--ink);font-weight:500}
+  .notice span{display:block}
+  .notice time{font-family:var(--mono);color:var(--faint);white-space:nowrap}
+  .notice.now b,.notice.now time{color:var(--stop)}
   .live-foot .btn{margin-left:auto}
   .update-release{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--edge)}
   .update-release span{font-family:var(--mono);color:var(--ink)}
@@ -358,6 +369,7 @@
       </div>
     </div>
     <div class="grid" id="grid"></div>
+    <div class="notices" id="notices" aria-label="Notifications" aria-live="polite" hidden></div>
     <div class="live-stats" id="liveStats" aria-label="Live stats" hidden></div>
     <details class="monitor"><summary>Device activity</summary><div id="monitor">
       <div class="monitor-head">
@@ -1996,6 +2008,54 @@ function renderLiveStats(live,pattern=status.pattern){
   if(live.xp>=0){const reset=el('button','btn sm');reset.type='button';reset.textContent='Reset XP rate';reset.onclick=()=>api('/api/stats/reset',{method:'POST'}).catch(()=>{});foot.appendChild(reset);}
   box.appendChild(foot);
 }
+// Notifications from the pad: each time the game turned to a stop state (its
+// test popup, a death, a disconnect), oldest first. A new one buzzes the phone.
+const NOTICES={test:['🧩','Test popup in the game','Answer it yourself; the pad stopped playing.'],
+  dead:['💀','You died','The pad stopped playing.'],offline:['🔌','Game disconnected','Disconnected or at the login screen; the pad stopped playing.']};
+// A soft chime with a new one, the same as the PC's: two plucked notes, rising
+// for the test popup, falling for the rest. Browsers allow sound only after a
+// tap on the page, so the first tap turns it on.
+let audio=null;
+const unlockAudio=()=>{try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();audio.resume();}catch(e){}};
+for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,unlockAudio,{once:true});
+function chime(kind){
+  if(!audio||audio.state!=='running')return;
+  const now=audio.currentTime;
+  for(const [hz,at] of kind==='test'?[[659.25,0],[987.77,.12]]:[[587.33,0],[440,.14]]){
+    const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=hz;o.connect(g);g.connect(audio.destination);
+    g.gain.setValueAtTime(0,now+at);g.gain.linearRampToValueAtTime(.2,now+at+.005);g.gain.exponentialRampToValueAtTime(.0001,now+at+.55);
+    o.start(now+at);o.stop(now+at+.6);
+  }
+}
+let noticeSeen=0;try{noticeSeen=+localStorage.getItem('kabutoNoticeSeen')||0;}catch(e){}
+const agoText=ms=>ms<60000?Math.round(ms/1000)+' s ago':ms<3600000?Math.round(ms/60000)+' min ago':Math.floor(ms/3600000)+' h '+Math.floor(ms%3600000/60000)+' min ago';
+function renderNotices(list=[],live){
+  const box=$('#notices');box.hidden=!list.length;box.replaceChildren();
+  const newest=list.length?list[list.length-1]:null;
+  if(newest&&newest.id<noticeSeen)noticeSeen=0;   // the pad restarted: its ids did too
+  if(newest&&newest.id>noticeSeen){
+    noticeSeen=newest.id;try{localStorage.setItem('kabutoNoticeSeen',noticeSeen);}catch(e){}
+    const [icon,label]=NOTICES[newest.kind]||['🔔',newest.text];toast(icon+' '+label,true);
+    try{navigator.vibrate&&navigator.vibrate([300,150,300,150,300]);}catch(e){}
+    try{chime(newest.kind);}catch(e){}
+  }
+  if(!newest)return;
+  // Still on screen: the newest of its kind while the reader says so.
+  const now=live&&live.fresh&&live.state?live.state:null;
+  box.classList.toggle('alert',!!now&&list.some(n=>n.kind===now));
+  const head=el('div','notices-head'),title=el('h2'),clear=el('button','btn sm');
+  title.textContent='🔔 Notifications';clear.type='button';clear.textContent='Clear';
+  clear.onclick=()=>api('/api/notices/clear',{method:'POST'}).then(()=>renderNotices([])).catch(()=>{});
+  head.append(title,clear);box.appendChild(head);
+  const nowId=now?Math.max(...list.filter(n=>n.kind===now).map(n=>n.id)):-1;
+  for(const n of [...list].reverse()){
+    const [icon,label,help]=NOTICES[n.kind]||['🔔',n.text,''],row=el('div','notice'+(n.id===nowId?' now':''));
+    const i=el('span'),text=el('div'),b=el('b'),more=el('span'),time=el('time');
+    i.textContent=icon;b.textContent=label+(n.id===nowId?' · on screen now':'');more.textContent=help;
+    time.textContent=agoText(n.agoMs);time.title=new Date(Date.now()-n.agoMs).toLocaleString();
+    text.append(b,more);row.append(i,text,time);box.appendChild(row);
+  }
+}
 async function pollStatus(){
   try{
     status=await(await api("/api/status")).json();
@@ -2006,6 +2066,7 @@ async function pollStatus(){
     const down=[];for(let i=0;i<meta.keyCount;i++)if(status.keyMask&(1<<i))down.push("#"+i);
     $("#monDown").textContent=down.length?down.join(" "):"none";
     renderLiveStats(status.live);
+    renderNotices(status.notices,status.live);
     renderGrid();updateDirty();
   }catch(e){}
   setTimeout(pollStatus,700);

@@ -61,6 +61,9 @@ map's mobs are looked for. Changed a map's list? Teach it again.
 Optional, while that screen is showing, for exact detection:
     python screen_stats.py --mark death    # e.g. hover the respawn button
     python screen_stats.py --mark login    # e.g. hover the login box
+    python screen_stats.py --mark test     # another game's test window
+MapleStory's test popup (a question only you can answer, bottom right) is
+found by itself: the pad stops playing and lists it under Notifications.
 
 Run: it finds the pad on the USB cable by itself. Without a cable it uses
 Wi-Fi: the pad on your home Wi-Fi with "Stay connected" (PIN needed), or this
@@ -95,7 +98,10 @@ GAMES = {
                    "minimap_at": (0, 0), "minimap_header": 72,
                    # The map's name in the header (from the minimap's corner): the line under the region's,
                    # from just past the region icon; read up to the minimap's right edge, wherever that is.
-                   "name_area": (47, 43, 246, 56)},
+                   "name_area": (47, 43, 246, 56),
+                   # Its test popup (find_test_popup) is looked for each reading ("test_popup": false in the
+                   # setup file turns that off).
+                   "test_popup": True},
 }
 
 def minimap_corner(game, monitor):
@@ -802,15 +808,98 @@ def patch_matches(raw, reference, tolerance=30):
     total = sum(abs(a - b) for a, b in zip(raw, reference))
     return total / len(raw) <= tolerance
 
+# ---- the game's test popup ----------------------------------------------------
+# Now and then MapleStory stops you with a test, a question only a person can
+# answer ("Please find the beautiful Violetta wearing make-up. A correct answer
+# will pass the test.", a mushroom beside it, bottom right). Its window is
+# dark with a light rim and a teal panel at the top, and that panel framed so
+# is what's looked for, anywhere on screen. Seen twice in a row the state is
+# "test": the pad stops playing and lists it under Notifications. Nothing here
+# answers it; that's for you. --mark test captures a spot of another test
+# window to watch for instead (any game).
+TEST_STEP = 6            # px between the samples looking for the teal panel
+TEST_PANEL = (150, 40)   # px: the least width and height of the panel
+TEST_FILL = 0.5          # share of the panel's box that must be teal (its text is the rest)
+TEST_FRAME = 24          # px out from the panel's edge the window's dark band and light rim must be
+
+def test_teal(r, g, b):
+    """The test panel's teal (dark blue-green at the top, lighter lower down)."""
+    return r < 70 and 90 <= g <= 190 and 115 <= b <= 205 and b >= g - 15 and g - r >= 60
+
+def test_frame(raw, w, h, x, y, dx, dy, reach=TEST_FRAME):
+    """From a spot just inside the panel's edge, going out (dx, dy): the panel
+    ends, then the window's dark grey band, then its light rim."""
+    px = lambda x, y: raw[(y * w + x) * 3:(y * w + x) * 3 + 3]
+    while 0 <= x < w and 0 <= y < h and test_teal(*px(x, y)):
+        x, y = x + dx, y + dy
+    dark = False
+    for _ in range(reach):
+        if not (0 <= x < w and 0 <= y < h):
+            return False
+        r, g, b = px(x, y)
+        hi, lo = max(r, g, b), min(r, g, b)
+        if hi - lo <= 40 and lo >= 150:
+            return dark
+        dark = dark or (hi < 100 and hi - lo <= 30)
+        x, y = x + dx, y + dy
+    return False
+
+def find_test_popup(raw, w, h, step=TEST_STEP, least=TEST_PANEL):
+    """The test popup's teal panel on screen, (x0, y0, x1, y1), or None."""
+    teal, stride = set(), 3 * step
+    for gy in range(h // step):
+        row = raw[gy * step * w * 3:(gy * step + 1) * w * 3]
+        for gx, rgb in enumerate(zip(row[0::stride], row[1::stride], row[2::stride])):
+            if test_teal(*rgb):
+                teal.add((gx, gy))
+    while teal:   # each clump of teal samples (gaps of a sample allowed: the text)
+        todo, cells = [teal.pop()], []
+        while todo:
+            cx, cy = todo.pop()
+            cells.append((cx, cy))
+            for nx in range(cx - 2, cx + 3):
+                for ny in range(cy - 2, cy + 3):
+                    if (nx, ny) in teal:
+                        teal.remove((nx, ny))
+                        todo.append((nx, ny))
+        xs, ys = [c[0] for c in cells], [c[1] for c in cells]
+        gx0, gx1, gy0, gy1 = min(xs), max(xs), min(ys), max(ys)
+        if (gx1 - gx0) * step < least[0] or (gy1 - gy0) * step < least[1]:
+            continue
+        if len(cells) < TEST_FILL * (gx1 - gx0 + 1) * (gy1 - gy0 + 1):
+            continue
+        # The window around it, from the rows (columns) whose teal reaches the
+        # panel's edge (text can cut others short): two each side and the top.
+        by_row, by_col = {}, {}
+        for cx, cy in cells:
+            by_row.setdefault(cy, []).append(cx)
+            by_col.setdefault(cx, []).append(cy)
+        def framed(lines, edge, start, dx, dy):
+            found = 0
+            for line, at in sorted(lines.items()):
+                end = edge(at)
+                if abs(end - start) <= 1:
+                    x, y = (end, line) if dx else (line, end)
+                    found += test_frame(raw, w, h, x * step, y * step, dx, dy)
+                    if found >= 2:
+                        return True
+            return False
+        if framed(by_row, min, gx0, -1, 0) and framed(by_row, max, gx1, 1, 0) and framed(by_col, min, gy0, 0, -1):
+            return (gx0 * step, gy0 * step, gx1 * step, gy1 * step)
+    return None
+
 class GameState:
-    """ok / dead / offline from the readings, needing a couple of
+    """ok / dead / offline / test from the readings, needing a couple of
     agreeing readings so one odd frame doesn't stop the pad."""
     def __init__(self):
-        self.zero_hp = self.gone = 0
+        self.zero_hp = self.gone = self.tests = 0
 
-    def update(self, hp, mana, dot_seen, minimap_used, watches):
+    def update(self, hp, mana, dot_seen, minimap_used, watches, popup=False):
         if watches.get("login"):
             return "offline"
+        self.tests = self.tests + 1 if popup else 0
+        if watches.get("test") or self.tests >= 2:
+            return "test"
         if watches.get("death"):
             return "dead"
         no_bars = (hp in (None, 0)) and (mana in (None, 0))
@@ -1308,7 +1397,8 @@ class Screen:
         self.ground = Ground((config.get("mobs") or {}).get("settle", SETTLE_SECONDS))
         self.seen = None   # where your name tag puts your feet right now
         self.clock = time.monotonic
-        self.np, self.tag, self.pixels, self.frame_now = numpy_or_none(), None, None, False
+        self.np, self.tag, self.pixels, self.frame_now, self.raw = numpy_or_none(), None, None, False, None
+        self.popup = None     # the test popup's panel on screen last reading, else None
         tag = (config.get("mobs") or {}).get("tag")
         if self.np and tag:
             rgb = self.np.frombuffer(bytes.fromhex(tag["rgb"]), self.np.uint8).reshape(tag["h"], tag["w"], 3)
@@ -1365,15 +1455,31 @@ class Screen:
             self.shapes[key] = sprite_shapes(sprites, color_table(found["colors"], tolerance)) or None
         return self.shapes[key]
 
+    def shot(self):
+        """The whole (primary) screen's pixels, grabbed once per reading:
+        (rgb bytes, its monitor)."""
+        if self.raw is None:
+            monitors = self.sct.monitors
+            m = monitors[1] if len(monitors) > 1 else monitors[0]
+            self.raw = (grab(self.sct, m["left"], m["top"], m["width"], m["height"]), m)
+        return self.raw
+
     def screen(self):
         """The whole (primary) screen as an array, once per reading, for the
         name tag and the shape search; (array, left, top)."""
         if self.pixels is None:
-            monitors = self.sct.monitors
-            m = monitors[1] if len(monitors) > 1 else monitors[0]
-            shot = grab(self.sct, m["left"], m["top"], m["width"], m["height"])
+            shot, m = self.shot()
             self.pixels = (self.np.frombuffer(shot, self.np.uint8).reshape(m["height"], m["width"], 3), m["left"], m["top"])
         return self.pixels
+
+    def test_popup(self):
+        """The game's test popup's panel on screen (x0, y0, x1, y1), or None;
+        only for a game whose popup is known, unless the setup turns it off."""
+        if not (GAMES.get(self.config.get("game")) or {}).get("test_popup") or not self.config.get("test_popup", True):
+            return None
+        shot, m = self.shot()
+        box = find_test_popup(shot, m["width"], m["height"])
+        return box and (box[0] + m["left"], box[1] + m["top"], box[2] + m["left"], box[3] + m["top"])
 
     def find_you(self, dot_y=None):
         """Where you are: your name tag's place on screen (self.seen), and the
@@ -1466,7 +1572,7 @@ class Screen:
 
     def read(self):
         c = self.config
-        self.pixels, self.frame_now = None, False   # a fresh screen this reading
+        self.pixels, self.frame_now, self.raw = None, False, None   # a fresh screen this reading
         out = read_bars(self.sct, c.get("bars", {}))
         name = self.map_name()   # first: the map decides the minimap's size
         if name != self.current:
@@ -1489,7 +1595,8 @@ class Screen:
         watches = {}
         for name, mark in c.get("watch", {}).items():
             watches[name] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
-        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches)
+        self.popup = self.test_popup()
+        out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, self.popup is not None)
         out["x"], out["y"] = dot if dot else (None, None)
         out["wx"], out["wy"] = world if world else (None, None)   # for stuck: moves even when the dot doesn't
         out["mobs"] = mobs
@@ -2271,6 +2378,93 @@ def connect(args):
     pad.where = "Wi-Fi " + args.host
     return pad
 
+STATE_TEXT = {"dead": "DEAD", "offline": "OFFLINE", "test": "TEST POPUP: answer it"}   # anything but ok
+
+# ---- alert sounds -------------------------------------------------------------
+# A soft chime on the PC when the game needs you, made here (no sound files):
+# two plucked notes, rising for the test popup (as it shows, and again every
+# TEST_REPEAT_S while it stays: it has a time limit), falling once for a death
+# or a disconnect. Your own sound instead: kabuto-test.wav / kabuto-dead.wav /
+# kabuto-offline.wav next to the setup file. --quiet, or "sound": false in the
+# setup file, for none.
+CHIMES = {"test": ((659.25, 0.0), (987.77, 0.12)),      # E5 then B5: "pop-ding"
+          "dead": ((587.33, 0.0), (440.0, 0.14)),       # D5 then A4
+          "offline": ((587.33, 0.0), (440.0, 0.14))}
+ALERT_MESSAGES = {"test": "The game is testing you: answer the popup yourself (the pad has stopped)",
+                  "dead": "You died: the pad has stopped", "offline": "The game is disconnected: the pad has stopped"}
+TEST_REPEAT_S = 10
+CHIME_VOLUME = 0.35   # 0-1
+
+def chime_wav(notes, volume=CHIME_VOLUME, rate=22050):
+    """A soft chime as WAV bytes: each (Hz, start s) a quick pluck that rings
+    out (a sine with a little of its octave, fading fast)."""
+    import io, math, struct, wave
+    ring = 0.55
+    n = int((max(start for _, start in notes) + ring) * rate)
+    samples = [0.0] * n
+    for hz, start in notes:
+        first = int(start * rate)
+        for i in range(min(int(ring * rate), n - first)):
+            t = i / rate
+            env = min(1.0, t / 0.005) * math.exp(-t * 8)
+            samples[first + i] += env * (math.sin(2 * math.pi * hz * t) + 0.2 * math.sin(4 * math.pi * hz * t))
+    peak = max(abs(v) for v in samples) or 1.0
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(v / peak * volume * 32767)) for v in samples))
+    return out.getvalue()
+
+class Alarm:
+    """When to sound: update() each reading returns the state to sound for
+    now, else None."""
+    def __init__(self, repeat=TEST_REPEAT_S):
+        self.state, self.last, self.repeat = "ok", 0.0, repeat
+
+    def update(self, state, now):
+        was, self.state = self.state, state
+        if state not in CHIMES:
+            return None
+        if state != was or (state == "test" and now - self.last >= self.repeat):
+            self.last = now
+            return state
+        return None
+
+SOUND_FILES = {}   # state -> the WAV file played (made once per run)
+
+def alert_sound(state, folder="."):
+    """The WAV file for an alert: yours next to the setup file, else the chime
+    made once into the temp folder."""
+    own = os.path.join(folder, "kabuto-%s.wav" % state)
+    if os.path.isfile(own):
+        return own
+    if state not in SOUND_FILES:
+        import tempfile
+        path = os.path.join(tempfile.gettempdir(), "kabuto-chime-%s.wav" % state)
+        with open(path, "wb") as f:
+            f.write(chime_wav(CHIMES.get(state, CHIMES["test"])))
+        SOUND_FILES[state] = path
+    return SOUND_FILES[state]
+
+def play_alert(state, folder="."):
+    """The alert's chime, without waiting for it to finish; and what happened
+    in a bubble on the game layer."""
+    say(ALERT_MESSAGES.get(state, state))
+    try:
+        path = alert_sound(state, folder)
+        if sys.platform == "win32":
+            import winsound
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        else:
+            import shutil, subprocess
+            player = shutil.which("afplay") or shutil.which("paplay") or shutil.which("aplay")
+            if player:
+                subprocess.Popen([player, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                print("\a", end="", flush=True)
+    except Exception:   # no sound device, no temp folder: the strip still says it
+        pass
+
 def describe(r, xp=""):
     parts = ["%s %5.1f%%" % (label, r[name]) for name, label in BARS if r.get(name) is not None]
     if xp:
@@ -2287,7 +2481,7 @@ def describe(r, xp=""):
     if r.get("map") is not None:
         parts.append("map " + (r["map"] if r["map"] != "-" else "not taught"))
     if r.get("state", "ok") != "ok":
-        parts.append("!! " + r["state"].upper())
+        parts.append("!! " + STATE_TEXT.get(r["state"], r["state"].upper()))
     return "  ".join(parts)
 
 # ---- getting ready: what this version needs, offered once at start ----------
@@ -2448,6 +2642,7 @@ def run(args):
         config["game"] = args.game
         save_config(args.config, config)
     screen, pad, link, xp_rate = Screen(sct, config, args.sprites), None, None, XpRate()
+    alarm = Alarm() if not getattr(args, "quiet", False) and config.get("sound", True) else None
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         maps = map_list.get()
@@ -2477,6 +2672,8 @@ def run(args):
                         say("No mob colours here to tune: teach this map first (F9)")
         started = time.time()
         readings = screen.read()
+        if alarm and alarm.update(readings.get("state", "ok"), started):
+            play_alert(readings.get("state"), os.path.dirname(os.path.abspath(args.config)))
         if readings.get("state", "ok") == "ok":   # a death or login screen isn't XP news
             xp_rate.add(readings.get("xp"), started)
         line = describe(readings, xp_text(xp_rate)) + "  %d ms" % ((time.time() - started) * 1000)   # how long a reading takes here
@@ -2542,24 +2739,49 @@ def pick_list(names, query="", taught=None, changed=()):
     return [(n, note(n)) for n in hits]
 
 class XpRate:
-    """XP per hour from the XP bar (% of a level per hour), as the pad works it
-    out: shown after a minute of readings; a level-up (the bar dropping from
-    high to near empty) starts it afresh for the new level and is counted;
-    smaller drops (death, a misread) are ignored."""
-    MIN_S = 60
+    """XP per hour from the XP bar (% of a level per hour), worked out as the
+    pad does (XpTracker, stats_logic.h): shown after a minute of readings. A
+    rise of up to STEP % counts at once; anything else only once the bar has
+    stayed there (within SLACK) for HOLD_S, so a bar misread as the screen
+    fades between maps isn't a level-up and a huge gain. Then: a drop of over
+    half the bar is a level-up (counted; the rate starts afresh), a drop of
+    up to DROP (death) is where the bar is now, a bigger rise is gained, and a
+    drop in between only starts afresh after RESET_S (another character?)."""
+    MIN_S, STEP, DROP, SLACK, HOLD_S, RESET_S = 60, 10.0, 15.0, 2.0, 10, 60
 
     def __init__(self):
         self.last, self.start, self.at, self.gained, self.levels = None, 0.0, 0.0, 0.0, 0
+        self.held = self.held_at = None   # a change waiting to hold
 
     def add(self, xp, now):
         if xp is None or not 0 <= xp <= 100:
             return
-        if self.last is None or xp - self.last < -50:   # first reading, or a level up: afresh
-            self.levels += self.last is not None
-            self.last, self.start, self.at, self.gained = xp, now, now, 0.0
+        if self.last is None:
+            self.last, self.start, self.at = xp, now, now
             return
-        self.gained += max(0.0, xp - self.last)
-        self.last, self.at = xp, now
+        self.at = now
+        if 0 <= xp - self.last <= self.STEP:
+            self.gained += xp - self.last
+            self.last, self.held = xp, None
+            return
+        if self.held is None or abs(xp - self.held) > self.SLACK:
+            self.held, self.held_at = xp, now
+            return
+        if now - self.held_at < self.HOLD_S:
+            return
+        to, drop = self.held, self.last - self.held   # it held: the bar went there, and has moved on to xp since
+        if self.DROP < drop <= 50 and now - self.held_at < self.RESET_S:
+            return   # no game event drops it so far: wait
+        self.held = None
+        if drop > self.DROP:   # a level up (or a reset): afresh
+            self.levels += drop > 50
+            self.gained, self.start = 0.0, now
+        elif to > self.last:
+            self.gained += to - self.last
+        self.last = to
+        if xp > self.last:
+            self.gained += xp - self.last
+            self.last = xp
 
     def per_hour(self):
         """% of a level per hour, or None until a minute of readings."""
@@ -2581,37 +2803,46 @@ def xp_text(rate):
     return "+%.1f%%/h%s" % (per, when)
 
 def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp=""):
-    """The strip's first line from a reading: [(text, colour), ...]."""
+    """The strip's items from a reading: [(text, colour), ...], Cells with a
+    fixed width where their text changes reading to reading, and an icon and
+    a shorter text for the strip's one row."""
     known = GAMES.get(game)
-    out = [("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER),
-           (link or "starting", RED if link and link.startswith("can't") else DIM)]
+    out = [Cell("Kabuto" + (" \u00b7 " + ("MS" if game == "maplestory" else known["label"]) if known else ""), AMBER)]
+    if link and link.startswith("can't"):
+        out.append(Cell(link, RED, 72, "warn", "no pad"))
+    else:
+        how, _, where = (link or "starting").partition(" ")
+        out.append(Cell(link or "starting", DIM, 72, {"USB": "usb", "Wi-Fi": "wifi"}.get(how),
+                        where if how in ("USB", "Wi-Fi") else None))
     for name, label in BARS:
         if r.get(name) is not None:
-            out.append(("%s %.0f%%" % ("MP" if name == "mana" else label, r[name]), BAR_COLORS[name]))
-            if name == "xp" and xp:
-                out.append((xp, BAR_COLORS["xp"]))
-    if r.get("state", "ok") != "ok":
-        out.append((r["state"].upper(), RED))
+            out.append(Cell("%s %.0f%%" % ("MP" if name == "mana" else label, r[name]), BAR_COLORS[name], 52))
+            if name == "xp":   # its slot even before there's a rate, so the rest keeps its place
+                out.append(Cell(xp, BAR_COLORS["xp"], 136))
+    if r.get("state", "ok") != "ok":   # first after the bars: the rest (mobs, map) may be cut
+        out.append(Cell(STATE_TEXT.get(r["state"], r["state"].upper()), RED, None, "warn"))
     if r.get("map") == "-":
-        out.append(("new map, mobs not seen: F9" if maps else "map not taught", RED))
+        out.append(Cell("new map, mobs not seen: F9" if maps else "map not taught", RED, 186, "pin",
+                        "new map: F9" if maps else "map not taught"))
     elif r.get("map"):
-        out.append((r["map"].replace("_", " "), INK))
-    if hint:
-        out.append((hint, AMBER))
+        out.append(Cell(r["map"].replace("_", " "), INK, 186, "pin"))
     if r.get("ml") is not None:
         near = [(r["d" + side], side) for side in "lr" if r.get("d" + side) is not None]
-        out.append(("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK))
+        out.append(Cell("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK, 60, "mob", "%d\u25c0 \u25b6%d" % (r["ml"], r["mr"])))
         if near:
             d, side = min(near)
-            out.append(("%s %s %d%%" % ("target" if d <= 100 else "nearest", r.get("mn") or ("left" if side == "l" else "right"), d),
-                        RED if d <= 100 else DIM))
+            who = (r.get("mn") or ("left" if side == "l" else "right")).replace("_", " ")
+            out.append(Cell("%s %s %d%%" % ("target" if d <= 100 else "nearest", r.get("mn") or ("left" if side == "l" else "right"), d),
+                            RED if d <= 100 else DIM, 156, "target", "%s %d%%" % (who, d)))
     elif r.get("mobs") is not None:
-        out.append(("mobs " + (r["mobs"] or "-"), INK))
+        out.append(Cell("mobs " + (r["mobs"] or "-"), INK, 60, "mob", r["mobs"] or "-"))
     elif r.get("map") != "-":   # nothing to say how many: smart can't stop for them
-        out.append(("not looking for mobs" + (": F9 on this map" if maps else ""), RED))
+        out.append(Cell("not looking for mobs" + (": F9 on this map" if maps else ""), RED, None, "mob",
+                        "no mobs" + (": F9" if maps else "")))
     if tol is not None:   # how close a colour must be to a mob's (F6 looser, F7 stricter)
-        out.append(("tolerance %d" % tol, DIM))
-    out.append(("F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", DIM))
+        out.append(Cell("tolerance %d" % tol, DIM, 40, None, "\u00b1%d" % tol))
+    if hint:
+        out.append(Cell(hint, AMBER, None, "warn"))
     return out
 
 def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
@@ -2649,6 +2880,124 @@ def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
         out.append((a["x1"] - 2, a["y1"] - 2, a["x2"] + 2, a["y2"] + 2, "#c084fc", "map name"))
     return out
 
+# The layer's look is MapleStory's own windows: a white rim with rounded
+# bottom corners around a pane of white at BACKDROP_ALPHA over the game, one
+# row of small drawn icons and dark bold text outlined in white, an orange
+# maple leaf, warnings on red tags, mob names on dark name tags. Tk can't fade
+# part of a window, so on Windows the pane is a window of its own behind the
+# layer (white, faded, click-through, rounded by a window region).
+MS = {"rim": "#ffffff", "edge": "#6f767e", "ink": "#262626", "muted": "#55595e", "line": "#c3c7cc",
+      "orange": "#f6921e", "orange_ink": "#3a1d00", "orange_edge": "#a85400", "alert": "#d8263a", "alert_edge": "#8c0f1c",
+      "hp": "#d9202a", "mp": "#1b62d6", "xp": "#4a7000", "gold": "#a65a00", "tag": "#1a1c20", "green": "#2f9e1f",
+      "title": "#5b7189", "title_top": "#93a9bf", "body": "#f1f3f5", "field": "#ffffff", "teal": "#1d93ab"}
+BACKDROP_ALPHA = 0.2     # how white the pane behind the strip is (0 clear, 1 solid white)
+UI_FONT = "Arial"        # what the game's windows use (small and bold)
+STRIP_MARGIN = 240       # px kept clear either side of the strip: the minimap (and its map name) is at the top left
+STRIP_WIDTH = 880        # px: the strip's width (at most the screen's less the margins); fixed, so it doesn't jump
+STRIP_HEIGHT = 26        # px: its one row
+GAUGE = re.compile(r"^(HP|MP|XP) (\d+)%$")
+XP_RATE = re.compile(r"^\+([\d.]+%/h)(?:, level in (.+))?$")
+
+class Cell(tuple):
+    """One item on the strip: (text, colour), with the width it's given (px,
+    None for as wide as it is) so its neighbours don't move as it changes, the
+    icon drawn before it and, if shorter, the text shown."""
+    def __new__(cls, text, color, slot=None, icon=None, show=None):
+        cell = super().__new__(cls, (text, color))
+        cell.slot, cell.icon, cell.show = slot, icon, show
+        return cell
+
+def mix(a, b, t):
+    """The colour t (0-1) of the way from a to b ("#rrggbb")."""
+    ca, cb = [int(a[i:i + 2], 16) for i in (1, 3, 5)], [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(round(x + (y - x) * t) for x, y in zip(ca, cb))
+
+def fit(text, width, measure):
+    """The text cut (with "...") to fit `width` px by `measure` (text -> px)."""
+    if measure(text) <= width:
+        return text
+    while text and measure(text + "\u2026") > width:
+        text = text[:-1]
+    return text.rstrip() + "\u2026"
+
+def round_rect(c, x0, y0, x1, y1, r, **kw):
+    """A rectangle with rounded corners on a tk canvas (a polygon)."""
+    r = max(0, min(r, (x1 - x0) // 2, (y1 - y0) // 2))
+    pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r,
+           x0, y0 + r, x0, y0]
+    return c.create_polygon(pts, smooth=True, **kw)
+
+def shade(c, x0, y0, x1, y1, top, bottom, tags=()):
+    """A top-to-bottom gradient (the title bars)."""
+    for y in range(y0, y1):
+        c.create_line(x0, y, x1, y, fill=mix(top, bottom, (y - y0) / max(1, y1 - y0 - 1)), tags=tags)
+
+LEAF = ((.50, 0), (.58, .18), (.70, .12), (.66, .36), (.86, .24), (.82, .36), (1, .42), (.86, .52), (.92, .60), (.62, .62),
+        (.66, .74), (.53, .70), (.53, 1), (.47, 1), (.47, .70), (.34, .74), (.38, .62), (.08, .60), (.14, .52), (0, .42),
+        (.18, .36), (.14, .24), (.34, .36), (.30, .12), (.42, .18))
+
+def ms_leaf(c, x, y, size, fill="#f6921e", tags=()):
+    """A maple leaf, its middle at (x, y) (drawn: Tk can't show emoji everywhere)."""
+    pts = [v for px, py in LEAF for v in (x + (px - .5) * size, y + (py - .5) * size)]
+    return c.create_polygon(pts, fill=fill, outline=mix(fill, "#000000", 0.45), tags=tags)
+
+def outlined(c, x, y, text, fill, font, anchor="w", tags=(), halo="#ffffff"):
+    """Text with a 1 px outline all round, as the game draws it over busy
+    scenery; returns the text's item."""
+    for dx, dy in ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)):
+        c.create_text(x + dx, y + dy, text=text, fill=halo, anchor=anchor, font=font, tags=tags)
+    return c.create_text(x, y, text=text, fill=fill, anchor=anchor, font=font, tags=tags)
+
+ICON = 14   # px an icon takes, with the gap after it
+
+def draw_icon(c, kind, x, y, color=None, tags=()):
+    """A small icon (12 px) with its left edge at x, middle at y: usb, wifi,
+    pin (the map), mob (a mushroom), target, up (XP rate), clock (to the next
+    level), warn. Outlined dark so it shows on any scenery."""
+    o = {"outline": "#2b2b2b", "tags": tags}
+    if kind == "usb":
+        c.create_line(x + 4, y - 6, x + 4, y - 2, fill="#2b2b2b", width=2, tags=tags)
+        c.create_line(x + 8, y - 6, x + 8, y - 2, fill="#2b2b2b", width=2, tags=tags)
+        c.create_rectangle(x + 2, y - 2, x + 10, y + 4, fill=color or "#8a96a3", **o)
+        c.create_line(x + 6, y + 4, x + 6, y + 7, fill="#2b2b2b", width=2, tags=tags)
+    elif kind == "wifi":
+        for r in (3, 6, 9):
+            c.create_arc(x + 6 - r, y + 5 - r, x + 6 + r, y + 5 + r, start=50, extent=80, style="arc", width=2,
+                         outline=color or "#1b62d6", tags=tags)
+        c.create_oval(x + 5, y + 4, x + 7, y + 6, fill=color or "#1b62d6", outline="", tags=tags)
+    elif kind == "pin":
+        c.create_polygon(x + 3, y - 1, x + 9, y - 1, x + 6, y + 7, fill=color or "#d9202a", **o)
+        c.create_oval(x + 2, y - 7, x + 10, y + 1, fill=color or "#d9202a", **o)
+        c.create_oval(x + 5, y - 4, x + 7, y - 2, fill="#ffffff", outline="", tags=tags)
+    elif kind == "mob":
+        c.create_rectangle(x + 4, y, x + 8, y + 6, fill="#f3e3c3", **o)
+        c.create_arc(x, y - 6, x + 12, y + 6, start=0, extent=180, style="chord", fill=color or "#f08a24", **o)
+        for dx, dy in ((3, -3), (7, -4), (9, -1)):
+            c.create_oval(x + dx - 1, y + dy - 1, x + dx + 1, y + dy + 1, fill="#ffffff", outline="", tags=tags)
+    elif kind == "target":
+        ring = color or "#2b2b2b"
+        c.create_oval(x + 1, y - 5, x + 11, y + 5, outline=ring, width=2, tags=tags)
+        c.create_line(x + 6, y - 7, x + 6, y + 7, fill=ring, width=1, tags=tags)
+        c.create_line(x - 1, y, x + 13, y, fill=ring, width=1, tags=tags)
+    elif kind == "up":
+        c.create_polygon(x + 1, y + 4, x + 6, y - 5, x + 11, y + 4, fill=color or MS["green"], **o)
+    elif kind == "clock":
+        c.create_oval(x + 1, y - 5, x + 11, y + 5, fill="#ffffff", **o)
+        c.create_line(x + 6, y, x + 6, y - 3, fill="#2b2b2b", width=1, tags=tags)
+        c.create_line(x + 6, y, x + 9, y, fill="#2b2b2b", width=1, tags=tags)
+    elif kind == "warn":
+        c.create_polygon(x, y + 5, x + 6, y - 6, x + 12, y + 5, fill=color or "#ffd34d", **o)
+        c.create_text(x + 6, y + 1, text="!", fill="#2b2b2b", font=(UI_FONT, 7, "bold"), tags=tags)
+    return x + ICON
+
+def ms_tag(c, x, y, text, color, anchor, tags=()):
+    """A name tag as the game puts under characters and mobs: dark, rounded,
+    its text in the outline's colour."""
+    item = c.create_text(x, y, text=text, fill=color, anchor=anchor, font=(UI_FONT, 8, "bold"), tags=tags)
+    x0, y0, x1, y1 = c.bbox(item)
+    back = round_rect(c, x0 - 4, y0, x1 + 4, y1, 4, fill=MS["tag"], outline=mix(color, MS["tag"], 0.5), tags=tags)
+    c.tag_raise(item, back)
+
 class Layer:
     KEY = "#010203"   # drawn in this colour = see-through (Windows)
 
@@ -2662,28 +3011,40 @@ class Layer:
         root.attributes("-topmost", True)
         # Windows: the whole screen, see-through but for what's drawn. Elsewhere
         # there's no see-through colour, so just the strip.
-        w, h = (monitor["width"], monitor["height"]) if self.windows else (monitor["width"], 44)
+        w, h = (monitor["width"], monitor["height"]) if self.windows else (monitor["width"], 60)
         root.geometry("%dx%d+%d+%d" % (w, h, monitor["left"], monitor["top"]))
-        bg = self.KEY if self.windows else "#16181d"
+        bg = self.KEY if self.windows else MS["body"]
         if self.windows:
             root.attributes("-transparentcolor", self.KEY)
         self.canvas = tk.Canvas(root, width=w, height=h, bg=bg, highlightthickness=0)
         self.canvas.pack()
         root.update_idletasks()
-        self.unseen = self._click_through() if self.windows else True
+        self.unseen = self._click_through(root) if self.windows else True
+        self.backdrop, self.placed = None, None
+        if self.windows:   # the strip's faded white pane: a window of its own, under the layer
+            pane = self.backdrop = tk.Toplevel(root)
+            pane.overrideredirect(True)
+            pane.attributes("-topmost", True)
+            pane.attributes("-alpha", BACKDROP_ALPHA)
+            pane.configure(bg="#ffffff")
+            pane.geometry("1x1+%d+%d" % (monitor["left"] - 10, monitor["top"] - 10))
+            pane.update_idletasks()
+            self._click_through(pane)
+            root.lift()
         root.report_callback_exception = self._error
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
-        self.status, self.shapes, self.message, self.until = [("Kabuto", AMBER), ("starting", DIM)], [], "", 0
+        self.status, self.shapes = [("Kabuto", AMBER), ("starting", DIM)], []
+        self.message, self.until = "F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", time.time() + 20
         self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], {}, None
         self.changed = set()
         self.unlisten = listen(self.keys.put)
 
-    def _click_through(self):
+    def _click_through(self, window):
         """Clicks pass through to the game, no taskbar button, never focused;
         and left out of screen captures. False if Windows can't leave it out."""
         import ctypes
         user32 = ctypes.windll.user32
-        hwnd = user32.GetParent(self.root.winfo_id())
+        hwnd = user32.GetParent(window.winfo_id())
         style = user32.GetWindowLongW(hwnd, -20)   # GWL_EXSTYLE
         user32.SetWindowLongW(hwnd, -20, style | 0x80000 | 0x20 | 0x80 | 0x8000000)   # layered, transparent, tool, no-activate
         return bool(user32.SetWindowDisplayAffinity(hwnd, 0x11))   # WDA_EXCLUDEFROMCAPTURE
@@ -2752,27 +3113,113 @@ class Layer:
         c, ox, oy = self.canvas, self.monitor["left"], self.monitor["top"]
         c.delete("all")
         if self.hidden:
+            if self.backdrop and self.placed:
+                self.backdrop.geometry("1x1+%d+%d" % (self.monitor["left"] - 10, self.monitor["top"] - 10))
+                self.placed = None
             return
         for x0, y0, x1, y1, color, label in shapes:
             c.create_rectangle(x0 - ox, y0 - oy, x1 - ox, y1 - oy, outline=color, width=2)
             if label == "minimap":   # under it: the map name is usually just above
-                c.create_text(x0 - ox + 3, y1 - oy + 2, text=label, fill=color, anchor="nw", font=("Segoe UI", 9, "bold"))
+                ms_tag(c, x0 - ox + 4, y1 - oy + 4, label, color, "nw")
             elif label and label != "you":
-                c.create_text(x0 - ox + 3, y0 - oy - 2, text=label, fill=color, anchor="sw", font=("Segoe UI", 9, "bold"))
-        x, font = 0, ("Segoe UI", 10)
-        items = []
-        for text, color in status:
-            item = c.create_text(x, 12, text=text, fill=color, anchor="w", font=font)
-            items.append(item)
-            x = c.bbox(item)[2] + 14
-        if message:
-            items.append(c.create_text(0, 32, text=message, fill=AMBER, anchor="w", font=font))
-        right = max(c.bbox(i)[2] for i in items)
-        shift = max(0, (int(c["width"]) - right) // 2)
-        for i in items:
-            c.move(i, shift, 0)
-        bg = c.create_rectangle(shift - 10, 0, shift + right + 10, 44 if message else 24, fill="#16181d", outline="#2b2f39")
-        c.tag_lower(bg)
+                ms_tag(c, x0 - ox + 4, y0 - oy - 4, label, color, "sw")
+        # The strip: one row hanging from the top of the screen, its width
+        # fixed, clear of the minimap at the top left (and the game's windows
+        # at the top right). Items with a slot keep their place; what doesn't
+        # fit at the end is cut.
+        margin = min(STRIP_MARGIN, int(c["width"]) // 6)
+        width = min(STRIP_WIDTH, int(c["width"]) - 2 * margin)
+        bold = (UI_FONT, 9, "bold")
+        if not getattr(self, "measure", None):
+            import tkinter.font as tkfont
+            self.measure = tkfont.Font(root=self.root, family=UI_FONT, size=9, weight="bold").measure
+        x, y = 0, STRIP_HEIGHT // 2
+        for i, cell in enumerate(status):
+            text, color = cell
+            slot, icon, show = getattr(cell, "slot", None), getattr(cell, "icon", None), getattr(cell, "show", None)
+            text, tags, start = text if show is None else show, "strip", x
+            room = width - x - (ICON if icon else 0)
+            if room < 30:
+                break   # no room left on the row
+            gauge, rate = GAUGE.match(text), XP_RATE.match(text)
+            if i == 0:   # Kabuto: the maple leaf
+                ms_leaf(c, x + 8, y, 16, tags=tags)
+                x += 18
+            elif gauge and color in BAR_COLORS.values():   # just the %: the game's own bars are at the bottom
+                name = outlined(c, x, y, gauge.group(1), MS[gauge.group(1).lower()], bold, tags=tags)
+                outlined(c, c.bbox(name)[2] + 3, y, gauge.group(2) + "%", MS["ink"], bold, tags=tags)
+                x += slot or 54
+            elif rate:   # XP per hour, then the time to the next level
+                x = draw_icon(c, "up", x, y, tags=tags)
+                x = c.bbox(outlined(c, x, y, rate.group(1), MS["xp"], bold, tags=tags))[2] + 6
+                if rate.group(2):
+                    x = draw_icon(c, "clock", x, y, tags=tags)
+                    outlined(c, x, y, rate.group(2), MS["ink"], bold, tags=tags)
+                x = start + (slot or 0) if slot else c.bbox("strip")[2]
+            elif color == RED:   # what needs you: a red tag
+                label = text if slot is None else fit(text, slot - 12 - (ICON if icon else 0), self.measure)
+                label = fit(label, room - 12, self.measure)
+                inner = x + 6
+                right = (x + slot) if slot else inner + (ICON if icon else 0) + self.measure(label) + 6
+                box = round_rect(c, x, y - 9, right, y + 9, 5, fill=MS["alert"], outline=MS["alert_edge"], tags=tags)
+                if icon:
+                    inner = draw_icon(c, icon, inner, y, "#ffd34d" if icon == "warn" else "#ffffff", tags=tags)
+                c.tag_raise(c.create_text(inner, y, text=label, fill="#ffffff", anchor="w", font=bold, tags=tags), box)
+                x = right
+            else:
+                if icon:
+                    x = draw_icon(c, icon, x, y, tags=tags)
+                ink = {DIM: MS["muted"], AMBER: MS["gold"], BAR_COLORS["xp"]: MS["xp"]}.get(color, MS["ink"])
+                label = fit(text, min(slot - (x - start) if slot else room, room), self.measure)
+                item = outlined(c, x, y, label, ink, bold, tags=tags)
+                x = start + slot if slot else c.bbox(item)[2]
+            x += 10
+        shift = max(margin, (int(c["width"]) - width) // 2)
+        c.move("strip", shift, 0)
+        panes = [(shift - 12, 0, shift + width + 12, STRIP_HEIGHT + 4)]
+        if message:   # what to do next: a bubble under the strip, while there is something to say
+            text = fit(message, int(c["width"]) - 2 * margin - 24, self.measure)
+            w = self.measure(text)
+            x0 = (int(c["width"]) - w) // 2
+            outlined(c, x0, STRIP_HEIGHT + 20, text, MS["gold"], bold, tags="bubble")
+            panes.append((x0 - 12, STRIP_HEIGHT + 9, x0 + w + 12, STRIP_HEIGHT + 31))
+        for i, (x0, y0, x1, y1) in enumerate(panes):   # the white rim (top corners off the screen for the strip)
+            top = y0 - 10 if i == 0 else y0
+            if not self.backdrop:   # no faded pane (not Windows): a solid one
+                round_rect(c, x0, top, x1, y1, 8, fill=MS["body"], outline="", tags="pane")
+            round_rect(c, x0 - 1, top - 1, x1 + 1, y1 + 1, 9, fill="", outline=MS["edge"], tags="pane")
+            round_rect(c, x0, top, x1, y1, 8, fill="", outline=MS["rim"], width=2, tags="pane")
+        c.tag_lower("pane")
+        self._place_backdrop(panes)
+
+    def _place_backdrop(self, panes):
+        """The faded white pane behind the strip (and the bubble): one window,
+        cut to their rounded shapes by a window region (Windows only)."""
+        if not self.backdrop or panes == self.placed:
+            return
+        self.placed = panes
+        import ctypes
+        user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+        handle = ctypes.c_void_p   # 64-bit handles
+        gdi32.CreateRoundRectRgn.restype = handle
+        gdi32.CombineRgn.argtypes = (handle, handle, handle, ctypes.c_int)
+        gdi32.DeleteObject.argtypes = (handle,)
+        user32.SetWindowRgn.argtypes = (handle, handle, ctypes.c_bool)
+        ox, oy = self.monitor["left"], self.monitor["top"]
+        x0, y0 = min(p[0] for p in panes), min(p[1] for p in panes)
+        x1, y1 = max(p[2] for p in panes), max(p[3] for p in panes)
+        self.backdrop.geometry("%dx%d+%d+%d" % (x1 - x0 + 1, y1 - y0 + 1, ox + x0, oy + y0))
+        self.backdrop.update_idletasks()
+        region = None
+        for i, (a, b, c_, d) in enumerate(panes):
+            top = b - y0 - (10 if i == 0 else 0)   # the strip's top corners off the screen: square
+            part = gdi32.CreateRoundRectRgn(a - x0, top, c_ - x0 + 1, d - y0 + 1, 16, 16)
+            if region is None:
+                region = part
+            else:
+                gdi32.CombineRgn(region, region, part, 2)   # RGN_OR
+                gdi32.DeleteObject(part)
+        user32.SetWindowRgn(user32.GetParent(self.backdrop.winfo_id()), region, True)   # Windows owns the region now
 
     def _pick_map(self):
         """Which map (from map.json) this is: a searchable list. Type to
@@ -2789,32 +3236,43 @@ class Layer:
         if not self.maps:
             self.say('List your maps in mobs/%s, e.g. [{"name": "Henesys", "mobs": ["snail.png"]}], with the PNGs in mobs, then F9' % MAP_LIST)
             return
-        panel, field, font = "#1e2128", "#16181d", "Segoe UI"
+        # Light, like the game's own windows: a title bar like the minimap's, a
+        # white field to type in, the list on pale paper, orange to pick.
+        body_bg, ink, font = MS["body"], MS["ink"], UI_FONT
         win = self.picker = tk.Toplevel(self.root)
         win.title("Which map is this?")
         win.attributes("-topmost", True)
-        win.configure(bg=panel, padx=16, pady=14)
-        w, h = 460, 540
+        win.configure(bg=MS["edge"], padx=1, pady=1)
+        w, h = 440, 540
         win.geometry("%dx%d+%d+%d" % (w, h, self.monitor["left"] + (self.monitor["width"] - w) // 2,
                                       self.monitor["top"] + max(40, (self.monitor["height"] - h) // 3)))
-        tk.Label(win, text="Which map are you on?", bg=panel, fg=INK, font=(font, 14, "bold")).pack(anchor="w")
-        tk.Label(win, text="Type to search  \u00b7  \u2191\u2193 to move  \u00b7  Enter picks  \u00b7  Esc closes",
-                 bg=panel, fg=DIM, font=(font, 9)).pack(anchor="w", pady=(2, 10))
+        title = tk.Canvas(win, height=22, bg=MS["title"], highlightthickness=0)
+        title.pack(fill="x")
+        title.bind("<Configure>", lambda e: (title.delete("all"), shade(title, 0, 0, e.width, 22, MS["title_top"], MS["title"]),
+                                             ms_leaf(title, 14, 11, 12),
+                                             title.create_text(26, 11, text="MAP LIST", fill="#ffffff", anchor="w",
+                                                               font=(font, 9, "bold"))))
+        body = tk.Frame(win, bg=body_bg, padx=12, pady=10)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="Which map are you on?", bg=body_bg, fg=ink, font=(font, 12, "bold")).pack(anchor="w")
+        tk.Label(body, text="Type to search  \u00b7  \u2191\u2193 to move  \u00b7  Enter picks  \u00b7  Esc closes",
+                 bg=body_bg, fg=MS["muted"], font=(font, 8)).pack(anchor="w", pady=(2, 0))
         query = tk.StringVar()
-        entry = tk.Entry(win, textvariable=query, bg=field, fg=INK, insertbackground=INK, relief="flat", font=(font, 12),
-                         highlightthickness=1, highlightbackground="#2b2f39", highlightcolor=AMBER)
-        entry.pack(fill="x", ipady=7)
-        box = tk.Frame(win, bg=panel)
-        box.pack(fill="both", expand=True, pady=(10, 6))
-        bar = tk.Scrollbar(box, orient="vertical")
-        rows = tk.Listbox(box, bg=field, fg=INK, font=(font, 11), activestyle="none", relief="flat", highlightthickness=0,
-                          selectbackground=AMBER, selectforeground=field, borderwidth=0, yscrollcommand=bar.set)
+        entry = tk.Entry(body, textvariable=query, bg=MS["field"], fg=ink, insertbackground=ink, relief="flat",
+                         font=(font, 11), highlightthickness=1, highlightbackground=MS["edge"], highlightcolor=MS["orange"])
+        entry.pack(fill="x", ipady=5, pady=(10, 0))
+        box = tk.Frame(body, bg=MS["edge"], padx=1, pady=1)
+        box.pack(fill="both", expand=True, pady=(8, 8))
+        bar = tk.Scrollbar(box, orient="vertical", relief="flat", borderwidth=0)
+        rows = tk.Listbox(box, bg=MS["field"], fg=ink, font=(font, 10), activestyle="none", relief="flat", highlightthickness=0,
+                          selectbackground=MS["orange"], selectforeground=MS["orange_ink"], borderwidth=0,
+                          yscrollcommand=bar.set)
         bar.config(command=rows.yview)
         bar.pack(side="right", fill="y")
         rows.pack(side="left", fill="both", expand=True)
-        foot = tk.Frame(win, bg=panel)
+        foot = tk.Frame(body, bg=body_bg)
         foot.pack(fill="x")
-        count = tk.Label(foot, bg=panel, fg=DIM, font=(font, 9))
+        count = tk.Label(foot, bg=body_bg, fg=MS["muted"], font=(font, 8))
         count.pack(side="left")
         shown = []
         def close(_=None):
@@ -2838,16 +3296,18 @@ class Layer:
             for i, (name, note) in enumerate(shown):
                 rows.insert("end", "  %s%s" % (name, "     " + note if note else ""))
                 if note:
-                    rows.itemconfig(i, fg=AMBER if note.startswith("changed") else "#45d6b5")
+                    rows.itemconfig(i, fg=MS["gold"] if note.startswith("changed") else MS["teal"])
             if shown:
                 rows.selection_set(0); rows.see(0)
             total = len(self.maps)
             count.config(text=("%d of %d maps" % (len(shown), total) if query.get().strip() else "%d maps" % total)
                          + ("" if shown else "  \u00b7  no match"))
-        tk.Button(foot, text="Cancel", command=close, bg=field, fg=INK, relief="flat", padx=12,
-                  activebackground="#2b2f39", activeforeground=INK).pack(side="right")
-        tk.Button(foot, text="Teach this map", command=choose, bg=AMBER, fg=field, relief="flat", padx=12,
-                  activebackground="#ffc04d", activeforeground=field, font=(font, 10, "bold")).pack(side="right", padx=(0, 8))
+        tk.Button(foot, text="Cancel", command=close, bg="#ffffff", fg=ink, relief="flat", padx=12, pady=2,
+                  activebackground="#e4e7ea", activeforeground=ink, font=(font, 9, "bold"), cursor="hand2",
+                  highlightthickness=1, highlightbackground=MS["edge"]).pack(side="right")
+        tk.Button(foot, text="Teach this map", command=choose, bg=MS["orange"], fg=MS["orange_ink"], relief="flat", padx=12,
+                  pady=2, activebackground="#ffb04d", activeforeground=MS["orange_ink"], font=(font, 9, "bold"),
+                  cursor="hand2", highlightthickness=1, highlightbackground=MS["orange_edge"]).pack(side="right", padx=(0, 8))
         query.trace_add("write", refresh)
         for key, step in (("<Down>", 1), ("<Up>", -1), ("<Next>", 10), ("<Prior>", -10)):
             entry.bind(key, lambda e, s=step: move(s))
@@ -3135,6 +3595,37 @@ def selftest():
     assert GameState().update(80, 50, True, True, {"death": True}) == "dead"
     assert GameState().update(80, 50, True, True, {"login": True, "death": True}) == "offline"
     assert GameState().update(None, None, False, False, {}) == "ok"   # nothing set up: no false alarms
+    g = GameState()   # the test popup: two readings in a row; a mark at once; the login screen still wins
+    assert [g.update(80, 50, True, True, {}, p) for p in (True, False, True, True, True)] == ["ok", "ok", "ok", "test", "test"]
+    assert g.update(0, 50, True, True, {}) == "ok" and GameState().update(80, 50, True, True, {"test": True}) == "test"
+    assert GameState().update(80, 50, True, True, {"login": True, "test": True}) == "offline"
+    # The test popup: a teal panel (with text) in a dark window with a light rim.
+    def popup(raw, w, x, y, rim=(220, 220, 222), band=(48, 48, 48)):
+        paint(raw, w, x, y, x + 262, y + 188, rim)
+        paint(raw, w, x + 4, y + 4, x + 258, y + 184, band)
+        for k in range(17):   # the panel darkens to the top, as the game's does
+            paint(raw, w, x + 12, y + 13 + k * 4, x + 252, y + 17 + k * 4, (30, 112 + k * 3, 142 + k * 2))
+        for line in (24, 40, 56):   # its words
+            for word in range(14, 230, 26):
+                paint(raw, w, x + word, y + line, x + word + 20, y + line + 9, (250, 250, 250))
+        paint(raw, w, x + 12, y + 90, x + 150, y + 175, (120, 120, 120))   # the box under it
+    scene = canvas(800, 600, (150, 110, 60))
+    assert find_test_popup(bytes(scene), 800, 600) is None
+    popup(scene, 800, 520, 380)
+    box = find_test_popup(bytes(scene), 800, 600)
+    assert box and abs(box[0] - 532) <= TEST_STEP and abs(box[1] - 393) <= TEST_STEP and abs(box[2] - 768) <= TEST_STEP, box
+    popup(scene, 800, 0, 0)   # anywhere on screen, even at its edge
+    assert find_test_popup(bytes(scene), 800, 600)
+    sea = canvas(800, 600, (150, 110, 60))
+    paint(sea, 800, 100, 100, 700, 400, (30, 140, 170))   # teal water: no window around it
+    assert find_test_popup(bytes(sea), 800, 600) is None
+    paint(sea, 800, 90, 90, 710, 100, (48, 48, 48))       # a dark band but no light rim
+    assert find_test_popup(bytes(sea), 800, 600) is None
+    small = canvas(800, 600, (150, 110, 60))
+    popup(small, 800, 100, 100)
+    paint(small, 800, 100, 100, 362, 288, (150, 110, 60)); paint(small, 800, 100, 100, 200, 140, (220, 220, 222))
+    paint(small, 800, 104, 104, 196, 136, (48, 48, 48)); paint(small, 800, 110, 110, 190, 130, (30, 130, 160))
+    assert find_test_popup(bytes(small), 800, 600) is None   # a small teal box in a window: not the panel
     # What's posted: unread values left out, state always sent, mobs (even
     # empty: "none around") only with a mob detector.
     assert form_fields({"hp": 72.0, "mana": None, "xp": 63.2, "x": None, "y": None, "mobs": "", "state": "ok"}) == \
@@ -3177,6 +3668,34 @@ def selftest():
     paint(fake.px, 800, 600, 10, 760, 90, (220, 220, 230))   # another map: no stop, the new view is followed
     paint(fake.px, 800, 680, 50, 684, 54, yellow)
     assert [screen.read()["state"] for _ in range(3)] == ["ok"] * 3
+    # MapleStory's test popup on screen: "test" from the second reading, then
+    # "ok" once it's answered. A setup for another game doesn't look for it.
+    popup(fake.px, 800, 520, 380)
+    ms = Screen(fake, {"game": "maplestory"})
+    assert [ms.read()["state"] for _ in range(2)] == ["ok", "test"] and ms.popup, ms.popup
+    assert screen.read()["state"] == "ok" and screen.popup is None
+    assert Screen(fake, {"game": "maplestory", "test_popup": False}).test_popup() is None
+    paint(fake.px, 800, 520, 380, 782, 568, grey)
+    assert ms.read()["state"] == "ok" and ms.popup is None
+    # Alert sounds: the test popup as it shows and every 5 s while it stays; a death once.
+    alarm = Alarm()
+    heard = [alarm.update(state, t) for t, state in ((0, "ok"), (1, "test"), (2, "test"), (5.9, "test"), (6, "test"),
+                                                     (7, "ok"), (8, "dead"), (20, "dead"), (21, "offline"), (22, "ok"))]
+    assert heard == [None, "test", None, None, None, None, "dead", None, "offline", None], heard
+    assert Alarm().update("test", 0) == "test" and [Alarm(10).update("test", t) for t in (0,)] == ["test"]
+    a10 = Alarm(); a10.update("test", 0); assert a10.update("test", 9.9) is None and a10.update("test", 10) == "test"
+    import io, tempfile, wave
+    with wave.open(io.BytesIO(chime_wav(CHIMES["test"])), "rb") as w:   # the chime: short, soft, not clipped
+        frames = w.readframes(w.getnframes())
+        assert w.getframerate() == 22050 and 0.5 < w.getnframes() / 22050 < 1.0, w.getnframes()
+        loudest = max(abs(int.from_bytes(frames[i:i + 2], "little", signed=True)) for i in range(0, len(frames), 2))
+        assert 0.3 * 32767 < loudest <= CHIME_VOLUME * 32767 + 1, loudest
+    with tempfile.TemporaryDirectory() as own:
+        open(os.path.join(own, "kabuto-test.wav"), "wb").close()
+        assert alert_sound("test", own) == os.path.join(own, "kabuto-test.wav")   # yours wins
+        made = alert_sound("dead", own)
+        assert made.endswith("kabuto-chime-dead.wav") and os.path.getsize(made) > 1000
+    assert "!! TEST POPUP: answer it" in describe({"state": "test"}) and ("TEST POPUP: answer it", RED) in layer_status({"state": "test"}, "USB")
     assert "map" not in r and "ml" not in r   # no map library, an older mob setup: sides only
 
     # A taught map: its name picks its mobs, which are counted out of reach
@@ -3383,11 +3902,22 @@ def selftest():
     assert rate.per_hour() is None and xp_text(rate) == ""
     rate.add(30.0, 60)
     assert abs(rate.per_hour() - 600) < 1e-9 and xp_text(rate) == "+600.0%/h, level in 7m"   # 70% left at 600%/h
-    rate.add(28.0, 70); assert rate.levels == 0 and abs(rate.gained - 10) < 1e-9             # a small drop: ignored
-    rate.add(98.0, 80); rate.add(2.0, 90)
-    assert rate.levels == 1 and rate.per_hour() is None and rate.last == 2.0 and rate.gained == 0   # level up (98% -> 2%): afresh
-    rate.add(3.0, 150); assert abs(rate.per_hour() - 60) < 1e-9 and "level in" in xp_text(rate)
-    rate.add(None, 160); rate.add(140.0, 160); assert rate.last == 3.0                       # unread or impossible: ignored
+    rate.add(28.0, 70); assert rate.levels == 0 and abs(rate.gained - 10) < 1e-9 and rate.last == 30.0   # a small drop: not yet
+    rate.add(4.0, 71); rate.add(0.0, 72); rate.add(31.0, 73)   # changing maps: misread as the screen fades, then right
+    assert rate.levels == 0 and abs(rate.gained - 11) < 1e-9 and rate.last == 31.0
+    for t in range(74, 104):
+        rate.add(0.0, t)                                       # a 30 s load reading 0%: no death or level does that
+    rate.add(32.0, 104); assert rate.levels == 0 and abs(rate.gained - 12) < 1e-9
+    for t, xp in ((110, 40.0), (120, 50.0), (130, 60.0), (140, 70.0), (150, 80.0), (160, 90.0), (170, 98.0)):
+        rate.add(xp, t)
+    rate.add(2.0, 180); assert rate.levels == 0                # a level up must hold...
+    rate.add(2.0, 190)
+    assert rate.levels == 1 and rate.per_hour() is None and rate.last == 2.0 and rate.gained == 0   # ...then afresh
+    rate.add(3.0, 250); assert abs(rate.per_hour() - 60) < 1e-9 and "level in" in xp_text(rate)
+    rate.add(None, 260); rate.add(140.0, 260); assert rate.last == 3.0                       # unread or impossible: ignored
+    quest = XpRate(); quest.add(30.0, 0); quest.add(98.0, 1); quest.add(30.5, 2)             # misread high: not gained
+    assert abs(quest.gained - 0.5) < 1e-9
+    quest.add(60.0, 3); quest.add(60.5, 13); assert abs(quest.gained - 30.5) < 1e-9 and quest.last == 60.5   # a quest: gained
     assert ("+60.0%/h, level in 1.6h", BAR_COLORS["xp"]) in layer_status({"xp": 3.0}, "USB", xp=xp_text(rate))
     assert "XP +60.0%/h" in describe({"xp": 3.0}, xp_text(rate))
     # Getting ready: packages and frames offered once; a no is remembered.
@@ -3525,6 +4055,10 @@ def selftest():
     assert ("DEAD", RED) in strip and ("new map, mobs not seen: F9", RED) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
     assert ("map not taught", RED) in layer_status({"map": "-"}, "USB", None, [])
     assert ("tolerance 45", DIM) in layer_status({"mobs": "R"}, "USB", tol=45) and not any(t.startswith("tolerance") for t, _ in layer_status({"mobs": "R"}, "USB"))
+    # The layer's MapleStory look: colours mixed for its gradients; bars drawn as gauges.
+    assert mix("#000000", "#ffffff", 0.5) == "#808080" and mix("#f6921e", "#f6921e", 0.3) == "#f6921e"
+    assert GAUGE.match("HP 72%").groups() == ("HP", "72") and not GAUGE.match("+3.2%/h, level in 25.4h")
+    assert [t for t, c in layer_status({"hp": 72.4, "mana": 40.0, "xp": 63.2}, "USB") if GAUGE.match(t)] == ["HP 72%", "MP 40%", "XP 63%"]
     # No mob readings on a taught map (or without maps): said in red, since smart can't stop for mobs then.
     assert ("not looking for mobs: F9 on this map", RED) in layer_status({"map": "Henesys", "mobs": None}, "USB", None, ["Henesys"])
     assert ("not looking for mobs", RED) in layer_status({"hp": 50.0}, "USB") and not any("not looking" in t for t, _ in layer_status({"mobs": ""}, "USB"))
@@ -3659,7 +4193,7 @@ def main():
     ap.add_argument("--sprites", default="mobs", help="folder of mob sprite PNGs and map.json (default mobs)")
     ap.add_argument("--map", nargs="?", const="", metavar="MAP",
                     help="teach the map you're on, with its mobs from map.json; asks which without one")
-    ap.add_argument("--mark", choices=["death", "login"], help="capture a spot only that screen has")
+    ap.add_argument("--mark", choices=["death", "login", "test"], help="capture a spot only that screen has")
     ap.add_argument("--tag", action="store_true", help="mark just your name tag (so you're followed on screen)")
     ap.add_argument("--via", choices=["auto", "usb", "wifi"], default="auto",
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
@@ -3671,6 +4205,7 @@ def main():
     ap.add_argument("--game", choices=sorted(GAMES) + ["other"],
                     help="the game's built-in colours (default maplestory for a new setup); other: sample them")
     ap.add_argument("--no-layer", action="store_true", help="no game layer over the game; the terminal only")
+    ap.add_argument("--quiet", action="store_true", help="no sound when the game needs you (test popup, death, disconnect)")
     ap.add_argument("--selftest", action="store_true", help="run built-in tests and exit")
     a = ap.parse_args()
     global ERROR_LOG

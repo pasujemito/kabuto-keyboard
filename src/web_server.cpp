@@ -116,9 +116,21 @@ static void handleStatus(AsyncWebServerRequest* req) {
         l["ml"] = live.ml; l["mr"] = live.mr; l["dl"] = live.dl; l["dr"] = live.dr;
         if (live.mob[0]) l["mob"] = live.mob;
         if (live.map[0]) l["map"] = live.map;
-        if (const char* reason = liveStopReason(live.state)) l["stopped"] = reason;
+        if (const char* reason = liveStopReason(live.state)) { l["stopped"] = reason; l["state"] = liveStateName(live.state); }
         l["ageMs"] = live.ageMs; l["fresh"] = live.fresh;
         l["xpPerHour"] = live.xpPerHour; l["minutesToLevel"] = live.minutesToLevel; l["levels"] = live.levels;
+    }
+    // Notifications: the game turning to a stop state (test popup, death,
+    // disconnect), oldest first, with how long ago.
+    Notices notices = noticesSnapshot();
+    if (notices.count) {
+        uint32_t now = millis();
+        JsonArray list = d["notices"].to<JsonArray>();
+        for (uint8_t i = 0; i < notices.count; ++i) {
+            JsonObject n = list.add<JsonObject>();
+            n["id"] = notices.id(i); n["kind"] = liveStateName(notices.kind[i]);
+            n["text"] = liveStopReason(notices.kind[i]); n["agoMs"] = now - notices.at[i];
+        }
     }
     // What a playing dynamic pattern is doing (the dashboard).
     PatternView view = patternViewSnapshot();
@@ -318,6 +330,10 @@ void webServerBegin() {
     });
     api("/api/stats/reset", HTTP_POST, [](AsyncWebServerRequest* req) {
         liveStatsReset();
+        sendJson(req, 200, "{\"ok\":true}");
+    });
+    api("/api/notices/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
+        noticesClear();
         sendJson(req, 200, "{\"ok\":true}");
     });
     api("/api/log/clear", HTTP_POST, [](AsyncWebServerRequest* req) {

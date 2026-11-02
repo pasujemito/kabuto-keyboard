@@ -10,22 +10,43 @@ const uint32_t LIVE_STATS_STALE_MS = 5000;   // older readings fall back to poti
 const uint32_t LIVE_POTION_GAP_MS = 3000;    // let a potion land before drinking again
 const uint32_t XP_RATE_MIN_MS = 60000;       // a minute of readings before showing a rate
 
-// XP gained from the XP bar. A level-up (the bar dropping from high to near
-// empty) starts the rate afresh, for the new level (its % are of a bigger
-// level), and is counted in `levels`. Smaller drops (death penalty, a
-// misread) are ignored rather than subtracted.
+// XP gained from the XP bar. A rise of up to XP_STEP_MAX at once counts
+// straight away. Anything else (a drop, a bigger rise) only counts once the
+// bar has stayed there (within XP_HOLD_SLACK) for XP_HOLD_MS: changing maps
+// fades the screen, and a bar misread low then read right again must not
+// look like a level-up followed by a huge gain. Once it holds: a drop of
+// over half the bar is a level-up (counted in `levels`; the rate starts
+// afresh for the new level, whose % are of a bigger level), a drop of up to
+// XP_DROP_MAX (the death penalty) is just where the bar is now, a bigger rise
+// (a quest) is gained. A drop in between can't happen in the game: only if it
+// stays XP_RESET_MS (another character?) does the rate start afresh there.
+const int XP_STEP_MAX = 100;          // tenths: 10% of a level in one reading
+const int XP_DROP_MAX = 150;          // tenths: 15%
+const uint32_t XP_HOLD_MS = 10000;
+const uint32_t XP_RESET_MS = 60000;
+const int XP_HOLD_SLACK = 20;         // tenths: 2%
 struct XpTracker {
     uint32_t startMs = 0, lastMs = 0, levels = 0;
     uint64_t gained = 0;   // tenths of a percent of a level
     int lastXp = -1;
+    int heldXp = -1;       // a change waiting to hold (-1: none)
+    uint32_t heldMs = 0;
 
     void add(int xp, uint32_t nowMs) {
         if (xp < 0 || xp > 1000) return;
         if (lastXp < 0) { lastXp = xp; startMs = lastMs = nowMs; return; }
+        lastMs = nowMs;
         int delta = xp - lastXp;
-        if (delta < -500) { ++levels; gained = 0; lastXp = xp; startMs = lastMs = nowMs; return; }   // level up: afresh
-        if (delta < 0) delta = 0;
-        gained += (uint64_t)delta; lastXp = xp; lastMs = nowMs;
+        if (delta >= 0 && delta <= XP_STEP_MAX) { gained += (uint64_t)delta; lastXp = xp; heldXp = -1; return; }
+        if (heldXp < 0 || xp - heldXp > XP_HOLD_SLACK || heldXp - xp > XP_HOLD_SLACK) { heldXp = xp; heldMs = nowMs; return; }
+        if (nowMs - heldMs < XP_HOLD_MS) return;
+        int to = heldXp, drop = lastXp - to;   // it held: the bar went there, and has moved on to xp since
+        if (drop > XP_DROP_MAX && drop <= 500 && nowMs - heldMs < XP_RESET_MS) return;   // can't be: wait
+        heldXp = -1;
+        if (drop > XP_DROP_MAX) { levels += drop > 500; gained = 0; startMs = nowMs; }   // level up (or a reset): afresh
+        else if (to > lastXp) gained += (uint64_t)(to - lastXp);
+        lastXp = to;
+        if (xp > lastXp) { gained += (uint64_t)(xp - lastXp); lastXp = xp; }
     }
     // Tenths of a percent of a level per hour, or -1 until there's a minute of data.
     int32_t perHour() const {
@@ -57,14 +78,44 @@ inline bool liveWantsPotion(uint8_t belowPercent, int valueTenths, bool drunkBef
 }
 
 // Game state reported by the screen reader. Anything but OK stops playback.
-enum LiveState : uint8_t { LIVE_OK = 0, LIVE_DEAD = 1, LIVE_OFFLINE = 2 };
+// TEST: the game's test popup is on screen (a quiz only you can answer).
+enum LiveState : uint8_t { LIVE_OK = 0, LIVE_DEAD = 1, LIVE_OFFLINE = 2, LIVE_TEST = 3 };
 inline const char* liveStopReason(uint8_t state) {
     switch (state) {
         case LIVE_DEAD: return "you died";
         case LIVE_OFFLINE: return "the game is disconnected or at the login screen";
+        case LIVE_TEST: return "a test popup is on screen: answer it in the game";
         default: return nullptr;
     }
 }
+// The state as the screen reader spells it ("ok", "dead", "offline", "test").
+inline const char* liveStateName(uint8_t state) {
+    static const char* const names[] = {"ok", "dead", "offline", "test"};
+    return state <= LIVE_TEST ? names[state] : "ok";
+}
+
+// ---- notifications ------------------------------------------------------------
+// What the pad's page lists under Notifications: each time the game turns to
+// a stop state it wasn't in (a test popup, death, a disconnect), with when.
+// The newest CAP are kept (the oldest goes); ids count up from 1 and survive
+// clear(), so the page can tell a new one (buzz the phone) from one it showed.
+struct Notices {
+    static const uint8_t CAP = 8;
+    uint8_t kind[CAP] = {};     // LiveState
+    uint32_t at[CAP] = {};
+    uint8_t count = 0;
+    uint32_t last = 0;          // the newest one's id (0: none yet)
+    // A reading's state, after `before` (LIVE_OK when there was no fresh one).
+    // True when it was noted.
+    bool note(uint8_t state, uint8_t before, uint32_t now) {
+        if (state == LIVE_OK || state == before || !liveStopReason(state)) return false;
+        if (count == CAP) { memmove(kind, kind + 1, CAP - 1); memmove(at, at + 1, (CAP - 1) * sizeof(uint32_t)); --count; }
+        kind[count] = state; at[count++] = now; ++last;
+        return true;
+    }
+    uint32_t id(uint8_t i) const { return last - (count - 1 - i); }   // i: 0 = the oldest kept
+    void clear() { count = 0; }
+};
 
 // Mob sides from the screen reader: bit 0 = left of you, bit 1 = right,
 // bit 2 = with both, the right one is nearer (sent as "RL"; "LR" = left
@@ -233,7 +284,8 @@ struct ToolKeys {
 // &ml=1&mr=3&dl=192&dr=52&mn=Slime&map=Henesys") comes over Wi-Fi (POST
 // /api/stats) or the USB cable ("KABUTO stats <form>"). ml/mr: mobs seen each
 // side; dl/dr: the nearest each side in % of your reach; mn: its name; map:
-// the map's name ("-" for one the script wasn't taught).
+// the map's name ("-" for one the script wasn't taught). state: ok, dead,
+// offline or test (the game's test popup).
 
 // "72.5" -> 725 tenths. Empty, not a number or outside 0-100 -> -1 (not read):
 // a blank must never look like an empty HP bar, which would trigger a potion.
@@ -256,6 +308,7 @@ inline uint8_t statsState(const char* text) {
     if (!text) return LIVE_OK;
     if (!strcmp(text, "dead")) return LIVE_DEAD;
     if (!strcmp(text, "offline")) return LIVE_OFFLINE;
+    if (!strcmp(text, "test")) return LIVE_TEST;
     return LIVE_OK;
 }
 // A count or distance: a whole number 0-9999, else -1 (not read).

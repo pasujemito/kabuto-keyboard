@@ -3,6 +3,46 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.4
+
+- 🧩 **The game's test popup stops the pad**: the screen reader spots
+  MapleStory's test window (the question only you can answer, bottom right:
+  its teal panel in a dark window with a light rim) and sends `state=test`;
+  the pad stops playing, as for a death, and the strip says **TEST POPUP:
+  answer it**. Nothing answers it for you. `--mark test` watches another
+  game's test window; `"test_popup": false` turns the check off
+- 🔔 **Notifications** on the Buttons screen: each test popup, death and
+  disconnect, newest first with how long ago, the one still on screen in red.
+  A new one shows a message and buzzes the phone. The pad keeps the last 8;
+  **Clear** empties them
+- 🍁 **The game layer looks like MapleStory's own windows**: one row with
+  a white rim and rounded bottom corners over a pane of 20% white (on Windows
+  a faded window of its own behind the strip, click-through and left out of
+  screen captures), bold text outlined in white and small drawn icons: a
+  maple leaf, USB plug or Wi-Fi, a map pin, a mushroom for the mobs seen
+  each side, a crosshair for the target, ▲ for XP per hour and a clock for
+  the time to the next level. HP, MP and XP are just their % (your bars are
+  at the bottom of the screen). Warnings are red tags. The strip has a fixed
+  width and the changing parts fixed slots (long map names cut with "..."),
+  so it no longer grows and shrinks; it keeps clear of the minimap. Setup
+  steps show in a bubble under it; the keys show there for 20 s at start.
+  F10 labels are name tags; the F9 map list is a light window with a title
+  bar like the minimap's
+- 🔔 **A soft chime when the game needs you**, on the PC and on the pad's
+  page: two plucked notes made by the script (no sound files), rising
+  ("pop-ding") as the test popup shows and every 10 s while it stays,
+  falling once for a death or a disconnect, with a bubble on the game layer
+  saying what happened. Your own sound instead: `kabuto-test.wav` (or
+  `kabuto-dead.wav`, `kabuto-offline.wav`) next to the setup file. `--quiet`
+  (or `"sound": false` in `kabuto-bars.json`) turns it off. The page chimes
+  with a new notification once you've tapped it (browsers' rule)
+- 📈 **XP per hour survives changing maps**: as the screen fades the XP bar
+  was misread low (counted as a level-up), then the jump back counted as a
+  huge gain (thousands of %/h). Now a rise of up to 10% counts at once; any
+  drop or bigger rise only once the bar has stayed there 10 s, and only drops
+  the game makes count (over half the bar: a level-up; up to 15%: a death).
+  On the pad and on the strip
+
 ## 1.18.3
 
 - 📈 **XP per hour starts afresh at each level-up**: when the XP bar drops

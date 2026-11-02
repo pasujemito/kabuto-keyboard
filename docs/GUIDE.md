@@ -197,10 +197,21 @@ plugged in is the permission. Without a cable, it uses Wi-Fi instead.
 
 **The game layer** keeps you in the game. While the script runs, a strip
 across the top of the screen shows what it reads and sends (USB or Wi-Fi, HP,
-MP, XP, dead or offline), the map ("new map: F9" for one you haven't taught),
+MP, XP, dead, offline or a test popup), the map ("new map: F9" for one you haven't taught),
 the mobs (◀ left · right ▶ counts) and the target: the nearest mob, named,
 with its distance in % of your reach (red when in reach). Setup steps show on
-it too, so you can set up without leaving the game. Keys, which work while
+it too, so you can set up without leaving the game. It's drawn like
+MapleStory's own windows: one row with a white rim and rounded bottom corners
+over a pane of 20% white (`BACKDROP_ALPHA` in the script), bold outlined text
+and small icons: 🍁 Kabuto, a plug (USB) or Wi-Fi, HP/MP/XP % (your bars are at
+the bottom), ▲ XP per hour and a clock for the time to the next level, a pin
+and the map, a mushroom with the mobs seen each side, a crosshair and the
+target (red when in reach), ± the colour tolerance. Warnings (a test popup,
+death, no pad) are red tags. Its width is fixed and the changing parts keep
+their places, so it doesn't jump about; it sits at the top middle, clear of
+the minimap. Setup steps show in a bubble under it (the keys, for 20 s at
+start). F10 labels are name tags; the F9 map list is a light window too.
+Keys, which work while
 the game has focus:
 
 | Key | Does |
@@ -475,6 +486,8 @@ on its own and use **Save image as**).
 
 Optionally, while that screen is showing, run `--mark death` (hover e.g. the
 respawn button) or `--mark login` (e.g. the login box) for exact detection.
+MapleStory's test popup is found without marking anything (see below); for
+another game's test window, `--mark test` while it shows.
 Everything goes in `kabuto-bars.json` (gitignored). If something reads wrong,
 raise its `tolerance` there, or check Windows display scaling. `--dry-run`
 prints readings without sending.
@@ -497,8 +510,10 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   minute (in % of a level), time to the next level and level-ups. The rate
   appears after a minute of readings; **Reset XP rate** starts it afresh, and
   so does every level-up (the bar dropping back to near 0), since a new
-  level's % are of a bigger level. Small XP drops (death, a misread) are
-  ignored. The game layer's strip (and the console) show it too:
+  level's % are of a bigger level. A drop or a big jump only counts once the
+  bar has stayed there 10 s, so the bar misread while the screen fades
+  between maps doesn't count as a level-up and a huge gain; a death's drop
+  isn't counted as XP lost. The game layer's strip (and the console) show it too:
   `XP 18% +3.2%/h, level in 25.4h`.
 - Each HP/Mana potion has **Drink below (%)**: HP defaults to 50%, Mana to
   30%. While fresh readings arrive, a potion drinks as soon as its bar is under
@@ -520,6 +535,27 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   `--mark death` spot shows); disconnected means the bars and the minimap have
   gone (or the `--mark login` spot shows). The Buttons screen says why it
   stopped. Without a minimap set up, disconnects show up as death.
+- **The game's test popup stops playback too.** Now and then MapleStory asks
+  a question only a person can answer ("Please find the beautiful Violetta
+  wearing make-up. A correct answer will pass the test.", with a mushroom,
+  bottom right). The screen reader spots its window (the teal panel framed in
+  the dark window with a light rim, anywhere on screen) in two readings in a
+  row, the pad stops, and the strip says **TEST POPUP: answer it**. Nothing
+  answers it for you. Once you have, start the pattern again. `"test_popup":
+  false` in `kabuto-bars.json` turns the check off.
+- **A soft chime** when the game needs you: two plucked notes, rising as the
+  test popup shows (and every 10 s while it stays), falling once for a death
+  or a disconnect, with a bubble on the game layer saying what happened. The
+  script makes the sound itself; to use your own, put `kabuto-test.wav`
+  (`kabuto-dead.wav`, `kabuto-offline.wav`) next to `kabuto-bars.json`. Run
+  with `--quiet`, or set `"sound": false` in `kabuto-bars.json`, for silence.
+  `CHIME_VOLUME` in the script sets how loud.
+- **🔔 Notifications**, above the dashboard, list each time the game turned
+  to one of those: 🧩 test popup, 💀 death, 🔌 disconnect, newest first with
+  how long ago (hover for the time). One still on screen is red ("on screen
+  now"). A new one shows a message and buzzes the phone (Android; the page
+  must be open). The pad keeps the last 8 until it restarts; **Clear** empties
+  them.
 - Under the buttons, a **dashboard** shows what's going on:
   - what the playing pattern is doing (⚔ attacking, ⏳ waiting for mobs,
     ⏸ auto-pause, 🏠 walking home, 🚶 walking to mobs), which way it faces,

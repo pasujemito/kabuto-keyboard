@@ -23,8 +23,8 @@ firmware updates from this repo's GitHub releases.
 | `src/access.*` | access PIN (salted hash) and login sessions |
 | `src/access_logic.h` | PIN rules, login lockout, cookie parsing (pure) |
 | `src/update_logic.h` | version/payload/rollback rules (pure) |
-| `src/live_stats.*` | latest readings from the PC (bars, game state, minimap x/y and map position, mob sides/counts/distances, map name) and what a playing pattern is doing (dashboard) |
-| `src/stats_logic.h` | XP rate, live potions, stop reasons, edge/mob facing, stuck, smart decisions, auto-pause (pure) |
+| `src/live_stats.*` | latest readings from the PC (bars, game state incl. the test popup, minimap x/y and map position, mob sides/counts/distances, map name) and what a playing pattern is doing (dashboard) |
+| `src/stats_logic.h` | XP rate, live potions, stop reasons, notifications, edge/mob facing, stuck, smart decisions, auto-pause (pure) |
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |

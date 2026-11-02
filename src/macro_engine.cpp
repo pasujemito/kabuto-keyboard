@@ -423,7 +423,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 if (!pattern || depth>=8 || hasHeldInput() || state.combat) {
                     logStep(s,pc,stepStartedAt,0,true,"skipped: dynamic needs neutral input");break;
                 }
-                // Don't start attacking a death or login screen.
+                // Don't start attacking a death, login or test screen.
                 {LiveStats live=liveStatsSnapshot();const char* reason=live.fresh?liveStopReason(live.state):nullptr;
                  if(reason){char label[80];std::snprintf(label,sizeof(label),"skipped: %s",reason);logStep(s,pc,stepStartedAt,0,true,label);break;}}
                 auto sample=[](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L));};

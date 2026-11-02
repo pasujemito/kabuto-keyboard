@@ -8,15 +8,31 @@ int main(){
     t.add(200,0);t.add(250,30000);assert(t.perHour()==-1);
     t.add(300,60000);assert(t.perHour()==6000);              // +10% in a minute = 600%/h
     assert(t.minutesToLevel()==7);                            // 70% left at 600%/h
-    // A level-up (95% -> 3%) counts a level and starts the rate afresh for the new level:
-    // nothing to show until a minute into it, then only what was gained since.
+    // A level-up (95% -> 3%), once it has held 10 s, counts a level and starts the rate
+    // afresh for the new level: nothing to show until a minute into it, then only what
+    // was gained since.
     XpTracker w;w.add(900,0);w.add(950,60000);assert(w.perHour()==3000);
-    w.add(30,90000);assert(w.levels==1&&w.gained==0&&w.lastXp==30&&w.perHour()==-1&&w.minutesToLevel()==-1);
-    w.add(60,120000);assert(w.perHour()==-1);                 // 30 s into the new level
-    w.add(90,150000);assert(w.perHour()==3600&&w.levels==1);  // +6% in its first minute = 360%/h
-    w.add(5,160000);assert(w.levels==1&&w.gained==6*10);      // a drop from 9%: not a level (death, misread)
-    // A small drop (death, misread) adds nothing and isn't a level.
-    XpTracker d;d.add(500,0);d.add(450,30000);d.add(470,60000);assert(d.levels==0&&d.gained==20);
+    w.add(30,90000);w.add(31,95000);assert(w.levels==0&&w.lastXp==950);   // not yet: it must hold
+    w.add(30,100000);assert(w.levels==1&&w.gained==0&&w.lastXp==30&&w.perHour()==-1&&w.minutesToLevel()==-1);
+    w.add(60,130000);assert(w.perHour()==-1);                 // 30 s into the new level
+    w.add(90,160000);assert(w.perHour()==3600&&w.levels==1);  // +6% in its first minute = 360%/h
+    w.add(5,170000);w.add(5,180000);assert(w.levels==1&&w.gained==6*10&&w.lastXp==5);   // a drop from 9%: not a level (death)
+    // A small drop (death) adds nothing and isn't a level; what's gained after it counts.
+    XpTracker d;d.add(500,0);d.add(450,30000);d.add(470,60000);assert(d.levels==0&&d.gained==20&&d.lastXp==470);
+    // Changing maps: the bar misread low as the screen fades, then right again. No
+    // level-up, no gain, and the rate stays what it was (it once went to 1000s %/h).
+    XpTracker m;m.add(320,0);m.add(330,60000);assert(m.perHour()==600);
+    m.add(40,60500);m.add(15,61000);m.add(0,61500);m.add(0,62000);m.add(250,62500);m.add(330,63000);m.add(331,64000);
+    assert(m.levels==0&&m.gained==11&&m.lastXp==331&&m.perHour()==618);
+    // ...even when a long load reads 0% for 30 s: from 33% that can't be a level-up or a death.
+    for(uint32_t t=65000;t<95000;t+=500)m.add(0,t);
+    m.add(332,95500);assert(m.levels==0&&m.gained==12&&m.lastXp==332);
+    // Another character (a drop no game event makes, kept for a minute): afresh, no level.
+    XpTracker other;other.add(600,0);for(uint32_t t=1000;t<=61000;t+=1000)other.add(300,t);
+    assert(other.levels==0&&other.lastXp==300&&other.gained==0&&other.startMs==61000);
+    // A misread high for a moment isn't gained; a big rise that holds (a quest) is.
+    XpTracker q;q.add(300,0);q.add(980,500);q.add(305,1000);assert(q.gained==5&&q.lastXp==305);
+    q.add(600,2000);q.add(605,12000);assert(q.gained==305&&q.lastXp==605&&q.levels==0);
     // Out-of-range readings are ignored.
     XpTracker o;o.add(-1,0);o.add(1001,0);assert(o.lastXp==-1);
     // Clock wraparound keeps the elapsed time right.
@@ -31,7 +47,18 @@ int main(){
     assert(livePotionTaps(0,100000,100)==LIVE_POTION_MAX_TAPS&&livePotionTaps(400,0,800)==0&&livePotionTaps(400,5000,0)==0&&livePotionTaps(-1,5000,800)==0);
     assert(livePotionTaps(1000,10000000,1)==1);   // full bar (no overflow on big totals)
     // Game state: anything but OK names a stop reason.
-    assert(!liveStopReason(LIVE_OK)&&std::string(liveStopReason(LIVE_DEAD))=="you died"&&liveStopReason(LIVE_OFFLINE));
+    assert(!liveStopReason(LIVE_OK)&&std::string(liveStopReason(LIVE_DEAD))=="you died"&&liveStopReason(LIVE_OFFLINE)&&liveStopReason(LIVE_TEST));
+    assert(std::string(liveStateName(LIVE_TEST))=="test"&&std::string(liveStateName(LIVE_OFFLINE))=="offline"&&std::string(liveStateName(99))=="ok");
+    // Notifications: a turn to a stop state is noted once (not each reading).
+    {
+        Notices n;
+        assert(!n.note(LIVE_OK,LIVE_OK,10)&&n.count==0&&n.last==0);
+        assert(n.note(LIVE_TEST,LIVE_OK,20)&&!n.note(LIVE_TEST,LIVE_TEST,30)&&n.count==1&&n.kind[0]==LIVE_TEST&&n.at[0]==20&&n.id(0)==1);
+        assert(n.note(LIVE_DEAD,LIVE_TEST,40)&&n.count==2&&n.id(1)==2&&!n.note(99,LIVE_OK,50));   // test, then died: both
+        for(uint32_t t=0;t<10;++t)n.note(t%2?LIVE_OFFLINE:LIVE_TEST,LIVE_OK,100+t);
+        assert(n.count==Notices::CAP&&n.last==12&&n.id(0)==5&&n.id(Notices::CAP-1)==12&&n.at[0]==102&&n.kind[Notices::CAP-1]==LIVE_OFFLINE);   // the newest 8
+        n.clear();assert(n.count==0&&n.note(LIVE_TEST,LIVE_OK,200)&&n.id(0)==13);   // ids go on counting
+    }
     // Facing: map edges first, then mobs on one side only; stale data has no opinion.
     assert(liveFacing(true,50,120,true,MOB_LEFT)==1);      // near the left edge: face right, even with a mob left
     assert(liveFacing(true,950,120,true,MOB_RIGHT)==-1);   // near the right edge
@@ -84,7 +111,7 @@ int main(){
     // Readings: Wi-Fi and USB share one parser; blanks and junk are "not read".
     assert(statsTenths("72.5")==725&&statsTenths("0")==0&&statsTenths("100")==1000);
     assert(statsTenths("")==-1&&statsTenths(nullptr)==-1&&statsTenths("abc")==-1&&statsTenths("7x")==-1&&statsTenths("101")==-1&&statsTenths("-1")==-1&&statsTenths("nan")==-1);
-    assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("map")==LIVE_OK&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
+    assert(statsState("dead")==LIVE_DEAD&&statsState("offline")==LIVE_OFFLINE&&statsState("test")==LIVE_TEST&&statsState("map")==LIVE_OK&&statsState("ok")==LIVE_OK&&statsState("??")==LIVE_OK);
     assert(statsMobs("LR")==(MOB_READ|MOB_LEFT|MOB_RIGHT)&&statsMobs("RL")==(MOB_READ|MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER));
     assert(statsMobs("R")==(MOB_READ|MOB_RIGHT)&&statsMobs("")==MOB_READ&&statsMobs(nullptr)==0);   // empty = looked, none; absent = not looking
     assert(statsPos("1415")==1415&&statsPos("-250")==-250&&statsPos("0")==0&&statsPos("100000")==100000);

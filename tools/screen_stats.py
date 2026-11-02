@@ -2380,6 +2380,40 @@ def connect(args):
 
 STATE_TEXT = {"dead": "DEAD", "offline": "OFFLINE", "test": "TEST POPUP: answer it"}   # anything but ok
 
+# ---- alert sounds -------------------------------------------------------------
+# A sound on the PC when the game needs you: the test popup chimes as it shows
+# and again every TEST_REPEAT_S while it stays (it has a time limit); a death
+# or a disconnect chimes once. Windows' own sounds (Exclamation, Hand), so
+# they follow your sound settings; elsewhere the terminal's bell. --quiet, or
+# "sound": false in the setup file, turns them off.
+ALERT_SOUNDS = {"test": "SystemExclamation", "dead": "SystemHand", "offline": "SystemHand"}
+TEST_REPEAT_S = 5
+
+class Alarm:
+    """When to sound: update() each reading returns the state to sound for
+    now, else None."""
+    def __init__(self, repeat=TEST_REPEAT_S):
+        self.state, self.last, self.repeat = "ok", 0.0, repeat
+
+    def update(self, state, now):
+        was, self.state = self.state, state
+        if state not in ALERT_SOUNDS:
+            return None
+        if state != was or (state == "test" and now - self.last >= self.repeat):
+            self.last = now
+            return state
+        return None
+
+def play_alert(state):
+    """The alert's sound, without waiting for it to finish."""
+    try:
+        import winsound
+        winsound.PlaySound(ALERT_SOUNDS.get(state, "SystemExclamation"), winsound.SND_ALIAS | winsound.SND_ASYNC)
+    except ImportError:   # not Windows
+        print("\a", end="", flush=True)
+    except Exception:   # no sound device: the strip still says it
+        pass
+
 def describe(r, xp=""):
     parts = ["%s %5.1f%%" % (label, r[name]) for name, label in BARS if r.get(name) is not None]
     if xp:
@@ -2557,6 +2591,7 @@ def run(args):
         config["game"] = args.game
         save_config(args.config, config)
     screen, pad, link, xp_rate = Screen(sct, config, args.sprites), None, None, XpRate()
+    alarm = Alarm() if not getattr(args, "quiet", False) and config.get("sound", True) else None
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
     while True:
         maps = map_list.get()
@@ -2586,6 +2621,8 @@ def run(args):
                         say("No mob colours here to tune: teach this map first (F9)")
         started = time.time()
         readings = screen.read()
+        if alarm and alarm.update(readings.get("state", "ok"), started):
+            play_alert(readings.get("state"))
         if readings.get("state", "ok") == "ok":   # a death or login screen isn't XP news
             xp_rate.add(readings.get("xp"), started)
         line = describe(readings, xp_text(xp_rate)) + "  %d ms" % ((time.time() - started) * 1000)   # how long a reading takes here
@@ -3589,6 +3626,11 @@ def selftest():
     assert Screen(fake, {"game": "maplestory", "test_popup": False}).test_popup() is None
     paint(fake.px, 800, 520, 380, 782, 568, grey)
     assert ms.read()["state"] == "ok" and ms.popup is None
+    # Alert sounds: the test popup as it shows and every 5 s while it stays; a death once.
+    alarm = Alarm()
+    heard = [alarm.update(state, t) for t, state in ((0, "ok"), (1, "test"), (2, "test"), (5.9, "test"), (6, "test"),
+                                                     (7, "ok"), (8, "dead"), (20, "dead"), (21, "offline"), (22, "ok"))]
+    assert heard == [None, "test", None, None, "test", None, "dead", None, "offline", None], heard
     assert "!! TEST POPUP: answer it" in describe({"state": "test"}) and ("TEST POPUP: answer it", RED) in layer_status({"state": "test"}, "USB")
     assert "map" not in r and "ml" not in r   # no map library, an older mob setup: sides only
 
@@ -4099,6 +4141,7 @@ def main():
     ap.add_argument("--game", choices=sorted(GAMES) + ["other"],
                     help="the game's built-in colours (default maplestory for a new setup); other: sample them")
     ap.add_argument("--no-layer", action="store_true", help="no game layer over the game; the terminal only")
+    ap.add_argument("--quiet", action="store_true", help="no sound when the game needs you (test popup, death, disconnect)")
     ap.add_argument("--selftest", action="store_true", help="run built-in tests and exit")
     a = ap.parse_args()
     global ERROR_LOG

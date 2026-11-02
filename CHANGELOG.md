@@ -28,6 +28,11 @@ and show up in the pad's **Updates** panel.
   steps show in a bubble under it; the keys show there for 20 s at start.
   F10 labels are name tags; the F9 map list is a light window with a title
   bar like the minimap's
+- 🔊 **A sound on the PC when the game needs you**: the test popup plays
+  Windows' Exclamation sound as it shows and again every 5 s while it stays;
+  a death or a disconnect plays Critical Stop once. Windows' own sounds, so
+  they follow your sound settings. `--quiet` (or `"sound": false` in
+  `kabuto-bars.json`) turns them off
 - 📈 **XP per hour survives changing maps**: as the screen fades the XP bar
   was misread low (counted as a level-up), then the jump back counted as a
   huge gain (thousands of %/h). Now a rise of up to 10% counts at once; any

@@ -15,13 +15,21 @@ and show up in the pad's **Updates** panel.
   disconnect, newest first with how long ago, the one still on screen in red.
   A new one shows a message and buzzes the phone. The pad keeps the last 8;
   **Clear** empties them
-- 🍁 **The game layer looks like MapleStory**: the strip is a MapleStory
-  window (light rim, dark slate), with an orange Kabuto badge and maple leaf,
-  HP/MP/XP as gauges like the game's status bar, warnings as red pills and
-  the next step on a teal panel. It wraps onto more rows instead of running
-  off the screen, and keeps clear of the minimap. F10 labels are name tags;
-  the F9 map list is a MapleStory window with a title bar, a white search
-  field and an orange **Teach this map** button
+- 🍁 **The game layer looks like MapleStory's own windows**: the strip is
+  light, see-through paper (a pixel dither the game shows through) with a thin
+  grey edge and square-cut corners, bold text with a white outline, an orange
+  KABUTO tab with a maple leaf, and warnings as red tags. HP, MP and XP are
+  just their % (your bars are at the bottom of the screen). The strip has a
+  fixed width and the map name, %, XP rate, mobs and target fixed slots (long
+  names cut with "..."), so it no longer grows and shrinks; it keeps clear of
+  the minimap. F10 labels are see-through name tags; the F9 map list is a light
+  window with a title bar like the minimap's
+- 📈 **XP per hour survives changing maps**: as the screen fades the XP bar
+  was misread low (counted as a level-up), then the jump back counted as a
+  huge gain (thousands of %/h). Now a rise of up to 10% counts at once; any
+  drop or bigger rise only once the bar has stayed there 10 s, and only drops
+  the game makes count (over half the bar: a level-up; up to 15%: a death).
+  On the pad and on the strip
 
 ## 1.18.3
 

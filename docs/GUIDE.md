@@ -201,12 +201,13 @@ MP, XP, dead, offline or a test popup), the map ("new map: F9" for one you haven
 the mobs (◀ left · right ▶ counts) and the target: the nearest mob, named,
 with its distance in % of your reach (red when in reach). Setup steps show on
 it too, so you can set up without leaving the game. It's drawn like
-MapleStory's own windows: a light rim around dark slate, an orange Kabuto
-badge with a maple leaf, HP/MP/XP as gauges like the status bar, anything
-that needs you as a red pill, and the next step on a teal panel. It sits in
-the middle of the top of the screen (wrapping onto more rows if it must), so
-the minimap and the windows at the top right stay visible. Outline labels
-(F10) are name tags, and the F9 map list is a MapleStory window too. Keys, which work while
+MapleStory's own windows (the Quest Helper): light, see-through paper with
+square-cut corners, bold outlined text, an orange KABUTO tab, warnings as red
+tags. HP, MP and XP are just their % (your bars are at the bottom). Its width
+is fixed and the changing parts (map name, %, XP rate, mobs, target) have
+fixed places, so it doesn't jump about; it sits at the top middle, clear of
+the minimap. F10 labels are name tags; the F9 map list is a light window too.
+`SEE_THROUGH` in the script sets how see-through the strip is. Keys, which work while
 the game has focus:
 
 | Key | Does |
@@ -505,8 +506,10 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   minute (in % of a level), time to the next level and level-ups. The rate
   appears after a minute of readings; **Reset XP rate** starts it afresh, and
   so does every level-up (the bar dropping back to near 0), since a new
-  level's % are of a bigger level. Small XP drops (death, a misread) are
-  ignored. The game layer's strip (and the console) show it too:
+  level's % are of a bigger level. A drop or a big jump only counts once the
+  bar has stayed there 10 s, so the bar misread while the screen fades
+  between maps doesn't count as a level-up and a huge gain; a death's drop
+  isn't counted as XP lost. The game layer's strip (and the console) show it too:
   `XP 18% +3.2%/h, level in 25.4h`.
 - Each HP/Mana potion has **Drink below (%)**: HP defaults to 50%, Mana to
   30%. While fresh readings arrive, a potion drinks as soon as its bar is under

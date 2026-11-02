@@ -8,15 +8,31 @@ int main(){
     t.add(200,0);t.add(250,30000);assert(t.perHour()==-1);
     t.add(300,60000);assert(t.perHour()==6000);              // +10% in a minute = 600%/h
     assert(t.minutesToLevel()==7);                            // 70% left at 600%/h
-    // A level-up (95% -> 3%) counts a level and starts the rate afresh for the new level:
-    // nothing to show until a minute into it, then only what was gained since.
+    // A level-up (95% -> 3%), once it has held 10 s, counts a level and starts the rate
+    // afresh for the new level: nothing to show until a minute into it, then only what
+    // was gained since.
     XpTracker w;w.add(900,0);w.add(950,60000);assert(w.perHour()==3000);
-    w.add(30,90000);assert(w.levels==1&&w.gained==0&&w.lastXp==30&&w.perHour()==-1&&w.minutesToLevel()==-1);
-    w.add(60,120000);assert(w.perHour()==-1);                 // 30 s into the new level
-    w.add(90,150000);assert(w.perHour()==3600&&w.levels==1);  // +6% in its first minute = 360%/h
-    w.add(5,160000);assert(w.levels==1&&w.gained==6*10);      // a drop from 9%: not a level (death, misread)
-    // A small drop (death, misread) adds nothing and isn't a level.
-    XpTracker d;d.add(500,0);d.add(450,30000);d.add(470,60000);assert(d.levels==0&&d.gained==20);
+    w.add(30,90000);w.add(31,95000);assert(w.levels==0&&w.lastXp==950);   // not yet: it must hold
+    w.add(30,100000);assert(w.levels==1&&w.gained==0&&w.lastXp==30&&w.perHour()==-1&&w.minutesToLevel()==-1);
+    w.add(60,130000);assert(w.perHour()==-1);                 // 30 s into the new level
+    w.add(90,160000);assert(w.perHour()==3600&&w.levels==1);  // +6% in its first minute = 360%/h
+    w.add(5,170000);w.add(5,180000);assert(w.levels==1&&w.gained==6*10&&w.lastXp==5);   // a drop from 9%: not a level (death)
+    // A small drop (death) adds nothing and isn't a level; what's gained after it counts.
+    XpTracker d;d.add(500,0);d.add(450,30000);d.add(470,60000);assert(d.levels==0&&d.gained==20&&d.lastXp==470);
+    // Changing maps: the bar misread low as the screen fades, then right again. No
+    // level-up, no gain, and the rate stays what it was (it once went to 1000s %/h).
+    XpTracker m;m.add(320,0);m.add(330,60000);assert(m.perHour()==600);
+    m.add(40,60500);m.add(15,61000);m.add(0,61500);m.add(0,62000);m.add(250,62500);m.add(330,63000);m.add(331,64000);
+    assert(m.levels==0&&m.gained==11&&m.lastXp==331&&m.perHour()==618);
+    // ...even when a long load reads 0% for 30 s: from 33% that can't be a level-up or a death.
+    for(uint32_t t=65000;t<95000;t+=500)m.add(0,t);
+    m.add(332,95500);assert(m.levels==0&&m.gained==12&&m.lastXp==332);
+    // Another character (a drop no game event makes, kept for a minute): afresh, no level.
+    XpTracker other;other.add(600,0);for(uint32_t t=1000;t<=61000;t+=1000)other.add(300,t);
+    assert(other.levels==0&&other.lastXp==300&&other.gained==0&&other.startMs==61000);
+    // A misread high for a moment isn't gained; a big rise that holds (a quest) is.
+    XpTracker q;q.add(300,0);q.add(980,500);q.add(305,1000);assert(q.gained==5&&q.lastXp==305);
+    q.add(600,2000);q.add(605,12000);assert(q.gained==305&&q.lastXp==605&&q.levels==0);
     // Out-of-range readings are ignored.
     XpTracker o;o.add(-1,0);o.add(1001,0);assert(o.lastXp==-1);
     // Clock wraparound keeps the elapsed time right.

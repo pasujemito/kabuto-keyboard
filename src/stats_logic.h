@@ -10,22 +10,43 @@ const uint32_t LIVE_STATS_STALE_MS = 5000;   // older readings fall back to poti
 const uint32_t LIVE_POTION_GAP_MS = 3000;    // let a potion land before drinking again
 const uint32_t XP_RATE_MIN_MS = 60000;       // a minute of readings before showing a rate
 
-// XP gained from the XP bar. A level-up (the bar dropping from high to near
-// empty) starts the rate afresh, for the new level (its % are of a bigger
-// level), and is counted in `levels`. Smaller drops (death penalty, a
-// misread) are ignored rather than subtracted.
+// XP gained from the XP bar. A rise of up to XP_STEP_MAX at once counts
+// straight away. Anything else (a drop, a bigger rise) only counts once the
+// bar has stayed there (within XP_HOLD_SLACK) for XP_HOLD_MS: changing maps
+// fades the screen, and a bar misread low then read right again must not
+// look like a level-up followed by a huge gain. Once it holds: a drop of
+// over half the bar is a level-up (counted in `levels`; the rate starts
+// afresh for the new level, whose % are of a bigger level), a drop of up to
+// XP_DROP_MAX (the death penalty) is just where the bar is now, a bigger rise
+// (a quest) is gained. A drop in between can't happen in the game: only if it
+// stays XP_RESET_MS (another character?) does the rate start afresh there.
+const int XP_STEP_MAX = 100;          // tenths: 10% of a level in one reading
+const int XP_DROP_MAX = 150;          // tenths: 15%
+const uint32_t XP_HOLD_MS = 10000;
+const uint32_t XP_RESET_MS = 60000;
+const int XP_HOLD_SLACK = 20;         // tenths: 2%
 struct XpTracker {
     uint32_t startMs = 0, lastMs = 0, levels = 0;
     uint64_t gained = 0;   // tenths of a percent of a level
     int lastXp = -1;
+    int heldXp = -1;       // a change waiting to hold (-1: none)
+    uint32_t heldMs = 0;
 
     void add(int xp, uint32_t nowMs) {
         if (xp < 0 || xp > 1000) return;
         if (lastXp < 0) { lastXp = xp; startMs = lastMs = nowMs; return; }
+        lastMs = nowMs;
         int delta = xp - lastXp;
-        if (delta < -500) { ++levels; gained = 0; lastXp = xp; startMs = lastMs = nowMs; return; }   // level up: afresh
-        if (delta < 0) delta = 0;
-        gained += (uint64_t)delta; lastXp = xp; lastMs = nowMs;
+        if (delta >= 0 && delta <= XP_STEP_MAX) { gained += (uint64_t)delta; lastXp = xp; heldXp = -1; return; }
+        if (heldXp < 0 || xp - heldXp > XP_HOLD_SLACK || heldXp - xp > XP_HOLD_SLACK) { heldXp = xp; heldMs = nowMs; return; }
+        if (nowMs - heldMs < XP_HOLD_MS) return;
+        int to = heldXp, drop = lastXp - to;   // it held: the bar went there, and has moved on to xp since
+        if (drop > XP_DROP_MAX && drop <= 500 && nowMs - heldMs < XP_RESET_MS) return;   // can't be: wait
+        heldXp = -1;
+        if (drop > XP_DROP_MAX) { levels += drop > 500; gained = 0; startMs = nowMs; }   // level up (or a reset): afresh
+        else if (to > lastXp) gained += (uint64_t)(to - lastXp);
+        lastXp = to;
+        if (xp > lastXp) { gained += (uint64_t)(xp - lastXp); lastXp = xp; }
     }
     // Tenths of a percent of a level per hour, or -1 until there's a minute of data.
     int32_t perHour() const {

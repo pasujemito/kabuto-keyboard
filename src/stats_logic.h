@@ -244,7 +244,7 @@ struct StuckWatch {
 // ---- the screen reader's keys, pressed on the pad ---------------------------
 // "tool" steps press tools/screen_stats.py's keys from the pad: mark (its F8),
 // skip (Esc), map (F9), outlines (F10), hide (F11), looser (F6) and stricter
-// (F7) mob colours, home (F12: this map's home is where you stand), so setup, tuning and the game layer need no keyboard and
+// (F7) mob colours, home (1.18.6's F12, no longer used: kept so saved buttons load), so setup, tuning and the game layer need no keyboard and
 // work whatever has focus. They wait here until the
 // script asks (USB "KABUTO keys", Wi-Fi POST /api/tool/keys); ones older than
 // TOOL_KEY_MAX_AGE_MS are dropped, so presses with no script running don't
@@ -291,8 +291,7 @@ struct ToolKeys {
 // &ml=1&mr=3&dl=192&dr=52&mn=Slime&map=Henesys") comes over Wi-Fi (POST
 // /api/stats) or the USB cable ("KABUTO stats <form>"). ml/mr: mobs seen each
 // side; dl/dr: the nearest each side in % of your reach; mn: its name; map:
-// the map's name ("-" for one the script wasn't taught). hx: the map's home
-// (set with F12), % across its minimap. state: ok, dead,
+// the map's name ("-" for one the script wasn't taught). state: ok, dead,
 // offline or test (the game's test popup).
 
 // "72.5" -> 725 tenths. Empty, not a number or outside 0-100 -> -1 (not read):
@@ -349,7 +348,6 @@ struct StatsReading {
     uint8_t state = LIVE_OK, mobs = 0;   // no "mobs" field: 0, no detector
     int ml = -1, mr = -1, dl = -1, dr = -1;
     char map[LIVE_NAME_LEN] = {}, mob[LIVE_NAME_LEN] = {};   // "": not sent
-    int homeX = -1;   // this map's home, tenths of the minimap's width (-1: none set)
 };
 
 // One field of a reading; unknown keys are ignored.
@@ -369,7 +367,6 @@ inline void statsField(StatsReading& r, const char* key, const char* value) {
     else if (!strcmp(key, "dr")) r.dr = statsCount(value);
     else if (!strcmp(key, "mn")) statsName(value, r.mob);
     else if (!strcmp(key, "map")) statsName(value, r.map);
-    else if (!strcmp(key, "hx")) r.homeX = statsTenths(value);
 }
 
 // Parses the form without allocating. Values the script sends never need

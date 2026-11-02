@@ -227,7 +227,6 @@ the game has focus:
 | F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, with how well its PNG matched, e.g. *red-snail 98%*), clumps of mob colour that aren't a mob (grey, *not a mob 31%*), the minimap and where it reads your dot (cyan), the map name area |
 | F11 | hide or show the layer |
 | F6 / F7 | **looser / stricter** mob colours on this map (tolerance ±5, saved straight away; the strip shows it). Watch the F10 outlines while you press |
-| F12 | **set home** on this map where you stand: your dot's place across the minimap goes into `mobs/map.json` as `"home"` (a taught map; press again to move it). Smart patterns hunt around it on this map |
 
 **Or press them on the pad.** In the editor, **Recordings → 🍁 Setup layer**
 adds two layers whose buttons are those keys:
@@ -235,7 +234,7 @@ adds two layers whose buttons are those keys:
 | Layer | 1 | 2 | 3 | 4 | 5 | 6 |
 | --- | --- | --- | --- | --- | --- | --- |
 | *MS🍁 Setup* | Mark (F8) | Skip (Esc) | Which map (F9) | Outlines (F10) | Tune ▸ | Back |
-| *MS🍁 Tune* | Looser (F6) | Stricter (F7) | Set home (F12) | Hide layer (F11) | ◂ Setup | Back |
+| *MS🍁 Tune* | Looser (F6) | Stricter (F7) | Outlines (F10) | Hide layer (F11) | ◂ Setup | Back |
 
 and puts a **🍁 Setup** button on a free key of the layer you were on, to get
 there. (Made a Setup layer with 1.17.0-1.17.2? Press the button again for the
@@ -608,21 +607,19 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
     - **Home range** (50% of the minimap by default, up to 50%; 0 = no home):
       how far from home it may go. Drift further than that with no mobs in
       reach, or twice that whatever's around, and it walks back;
-    - **Where home is**, first that applies: this map's own home, set with
-      **F12** (or the pad's **Set home**) where you stand, kept in
-      `mobs/map.json`; the pattern's **Home at (% across the minimap)**, for
-      every map (0 = the left edge, 50 = the middle); else where you stood when
-      the pattern started, or where you arrived on a new map;
+    - **Home is where you press the button**: where you stand when the
+      pattern starts (or where you arrive on a new map). To hunt somewhere
+      else, walk there and press it again;
     - **It hunts around home**: it fights mobs in reach where they are and
       walks to ones in sight (within ¾ of the range), but once there's
       nothing to fight it walks back to home (when more than 6% of the
-      minimap away, until within 3%), and auto-pause waits there too. A set
-      home it can't reach in 10 s (a wall, another platform) stays where it
-      is: it fights where it is and tries again 10 s later. A home that was
-      just where you started moves to where you are instead;
-    - **Walking strides** (280–650 ms): walking, home or to mobs, holds the
-      direction key for a random time in that range, then waits the
-      direction gap, and looks again; no two strides alike.
+      minimap away, until within 3%), and auto-pause waits there too. If it
+      can't get home in 10 s (a wall, another platform), home moves to where
+      it is;
+    - **Walking: hop every** (600–1300 ms for new patterns): walking, home or
+      to mobs, holds the arrow key down the whole way and hops (a quick jump)
+      after each random time in that range, as you would. The arrow is let go
+      before it attacks, waits or turns round.
     It needs the mob detector set up in the script; without it, or without
     fresh readings, the pattern plays as normal. Walking to mobs and
     auto-pause need mob sprites (the counts); older patterns have both off.

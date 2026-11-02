@@ -88,8 +88,7 @@ int main(){
     assert(pattern->potions[0].belowPercent==35&&pattern->potions[0].barMax==5000&&pattern->potions[0].perTap==800);
     assert(pattern->edgeMarginPermille==120&&pattern->stuckAfterMs==20000&&pattern->faceMobs&&pattern->smart&&pattern->homeRangePermille==100);
     assert(pattern->autoPausePermille==300&&pattern->approach&&pattern->walkHold.min==300&&pattern->walkHold.max==700);
-    assert(pattern->homeAtPermille==425);   // a set home, across the minimap
-    {std::string saved=readRawJson();assert(saved.find("\"home_at\":0.425")!=std::string::npos);}
+    {std::string saved=readRawJson();assert(saved.find("home_at")==std::string::npos);}   // 1.18.6's home_at: loads, ignored, dropped
     assert(pattern->skills[0].keycode==0x14&&pattern->skills[0].cooldown.min==3000&&pattern->skills[0].chancePermille==500);
     {std::string saved=readRawJson();assert(saved.find("\"jump\":\"SPACE\"")!=std::string::npos&&saved.find("\"every_ms\"")!=std::string::npos);}
     // Presets saved with the old batch keys keep their values and are rewritten with the new names.
@@ -98,7 +97,6 @@ int main(){
     pattern=cfg.layers[0].keys[0].steps[0].pattern();
     assert(pattern&&pattern->attacksPerSet.min==3&&pattern->attacksPerSet.max==4&&pattern->sets.min==5&&pattern->sets.max==6);
     assert(!pattern->autoPausePermille&&!pattern->approach&&pattern->walkHold.min==280&&pattern->walkHold.max==650);   // saved before these: off, default strides
-    assert(pattern->homeAtPermille==-1);   // no home_at: home is where it starts, as before
     assert(saveConfig(cfg));
     {std::string saved=readRawJson();assert(saved.find("\"attacks_per_set\"")!=std::string::npos&&saved.find("sides")==std::string::npos);}
     assert(pattern->tempoDriftPermille==0); // absent in older presets: no drift
@@ -158,8 +156,6 @@ int main(){
       R"({"id":"p","face_mobs":"yes","skills":[]})",
       R"({"id":"p","smart":1,"skills":[]})",
       R"({"id":"p","home_range":0.6,"skills":[]})",
-      R"({"id":"p","home_at":1.5,"skills":[]})",
-      R"({"id":"p","home_at":"left","skills":[]})",
       R"({"id":"p","auto_pause":0.95,"skills":[]})",
       R"({"id":"p","approach":"yes","skills":[]})",
       R"({"id":"p","walk_hold":[20,400],"skills":[]})",

@@ -3,6 +3,21 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.7
+
+- 🏠 **Home is where you press the button**: a smart pattern hunts around
+  the spot you started it from (or where you arrive on a new map); to hunt
+  somewhere else, walk there and press it again. 1.18.6's **Home at %** and
+  F12 **Set home** are gone (patterns, `map.json` entries and pad buttons
+  saved with them still load; the button does nothing now, and the Setup
+  layer's Tune row has Outlines back). It still walks back home once
+  there's nothing to fight nearby
+- 🚶 **Walking like a player**: walking home or to mobs holds the arrow key
+  down the whole way and hops (a quick jump) every so often, instead of
+  separate taps with gaps. **Walking: hop every** (was Walking strides) sets
+  the time between hops: 600-1300 ms for new patterns. The arrow is always
+  let go before attacking, waiting or turning, and when you stop
+
 ## 1.18.6
 
 - 🏠 **Set where home is, and hunt around it**: a smart pattern's home can

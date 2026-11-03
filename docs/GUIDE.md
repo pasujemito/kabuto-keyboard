@@ -419,14 +419,16 @@ reading; 5 frames: about 200 ms; 5 frames, sight 1.5: about 145 ms; 3
 frames, sight 1.5: about 100 ms. Looser/Stricter (F6/F7) move the colour tolerance here too, and a
 map's `shape` (0.6 by default) sets how well a frame must match.
 
-**Mobs are followed between searches.** That whole search runs once a second
-(`FULL_SEARCH_S`). In between, each mob it found is looked for only in a small
-window round where it was (60 px either side, 30 px above and below: its walk
-and the camera's), with only its own frames, the one it matched last first.
-That takes a few ms a mob instead of the whole search, so readings come every
-0.2 s and the pad hears of a mob walking off, turning or dying almost at once.
-A mob not found again is let go; a new one shows up at the next whole search,
-within a second.
+**Mobs are followed between searches.** That whole search runs every 0.5 s
+(`FULL_SEARCH_S`), once you've landed: mid-jump the camera has moved up or
+down, so the band at your platform's height would miss the mobs (in the air
+over 2 s, it searches anyway). In between, each mob it found is looked for
+only in a small window round where it was (60 px either side, 50 px above and
+below: its walk and the camera's bobbing), with only its own frames, the one
+it matched last first. That takes a few ms a mob instead of the whole search,
+so readings come every 0.2 s and the pad hears of a mob walking off, turning
+or dying almost at once. A mob not found again is let go; a respawn shows up
+at the next whole search, within about half a second.
 
 **Mobs per map:** keep every mob's PNG once, in `mobs`, and describe each map
 in `mobs/map.json`: its name (as you like; the in-game name reads best) and

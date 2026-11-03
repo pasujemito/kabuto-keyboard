@@ -6,13 +6,16 @@ and show up in the pad's **Updates** panel.
 ## Screen reader (with the next release)
 
 - ⚡ **Mobs followed between searches**: the whole mob search (about
-  150-270 ms a reading) now runs once a second; in between, each mob it
-  found is looked for only in a small window round where it was, with only
-  its own frames (the one it matched last first): a few ms a mob (on a test
-  screen with 5 mobs of 3 kinds, 13 ms instead of 92 ms). Readings come every
-  0.2 s instead of 0.5 s, so the pad hears of a mob moving, turning or dying
-  almost at once; a new mob shows up within a second. `--interval 0.5` sends
-  fewer
+  150-270 ms a reading) now runs every 0.5 s, and only once you've landed:
+  the pattern jump-attacks all the time and the camera bobs with each jump,
+  so a search mid-jump looked at the wrong height and missed mobs (in the
+  air over 2 s, it searches anyway). In between, each mob found is looked for
+  only in a small window round where it was (60 px either side, 50 px up and
+  down), with only its own frames, the one it matched last first: a few ms a
+  mob (on a test screen with 5 mobs of 3 kinds, 13 ms instead of 92 ms).
+  Readings come every 0.2 s instead of 0.5 s, so the pad hears of a mob
+  moving, turning or dying almost at once, and a respawn within about half a
+  second. `--interval 0.5` sends fewer
 
 ## 1.18.7
 

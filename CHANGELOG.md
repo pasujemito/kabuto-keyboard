@@ -3,6 +3,17 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## Screen reader (with the next release)
+
+- ⚡ **Mobs followed between searches**: the whole mob search (about
+  150-270 ms a reading) now runs once a second; in between, each mob it
+  found is looked for only in a small window round where it was, with only
+  its own frames (the one it matched last first): a few ms a mob (on a test
+  screen with 5 mobs of 3 kinds, 13 ms instead of 92 ms). Readings come every
+  0.2 s instead of 0.5 s, so the pad hears of a mob moving, turning or dying
+  almost at once; a new mob shows up within a second. `--interval 0.5` sends
+  fewer
+
 ## 1.18.7
 
 - 🏠 **Home is where you press the button**: a smart pattern hunts around

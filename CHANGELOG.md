@@ -5,6 +5,12 @@ and show up in the pad's **Updates** panel.
 
 ## Screen reader (with the next release)
 
+- 🕵️ **The Lie Detector mini-game counts as a test too**: its notice ("The
+  Lie Detector Mini-game ... the mini-game will start soon", a blue panel in
+  a light rim) stops the pad, shows under Notifications and chimes, like the
+  test popup. Checked on your screenshot, with no false alarms on 294 frames
+  of three Perion videos and the six scene screenshots
+
 - 🔎 **Mobs searched for on every reading again**: replaying three Perion
   videos (with your name tag found right) showed following the mobs between
   searches every 0.5 s, and holding searches back mid-jump, made new mobs

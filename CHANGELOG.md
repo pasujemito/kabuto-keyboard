@@ -5,6 +5,16 @@ and show up in the pad's **Updates** panel.
 
 ## Screen reader (with the next release)
 
+- 🔎 **Mobs searched for on every reading again**: replaying three Perion
+  videos (with your name tag found right) showed following the mobs between
+  searches every 0.5 s, and holding searches back mid-jump, made new mobs
+  wait 0.1-0.25 s on average and up to 1 s (and missed some altogether);
+  searching every reading reports each on the first reading that can see it.
+  Mid-jump is searched too (as many mobs found in the air as on the ground).
+  `"search_every"` (seconds, in `mobs`) brings back following in between for
+  a slow PC. The rest after each reading is 0.05 s (was 0.15 s), so a slow
+  reading isn't followed by a long pause
+
 - 🎥 **Tuned on a real Perion video** (The Burnt Land III, 74 s, replayed at
   the reading rate):
   - mobs partly off the screen's edge were found but never followed (the

@@ -1076,22 +1076,20 @@ def part_edges(np, m):
     """A part's edge: its pixels with a neighbour outside it."""
     return m * grown(np, 1 - m, 1)
 
-FULL_SEARCH_S = 0.5   # the whole field of view searched this often (mobs respawn fast); in between, followed (track)
-FULL_SEARCH_MAX_S = 2.0   # ...once you've landed: mid-jump the camera has moved, so the band at your platform's
-                          # height is off. In the air longer than this, it searches anyway
-AIRBORNE_PX = 8       # your name tag this far above (or below) the platform you stood on: in the air
+FULL_SEARCH_S = 0.0   # the whole field of view searched this often ("search_every" in mobs); 0: every reading. In
+                      # between, the mobs found are followed (track): quicker, but a new mob waits for the next
+                      # search. Replayed videos: searching every reading spots mobs soonest; following in between
+                      # cost 0.1-0.25 s on average, up to 1 s
 TRACK_REACH = 60      # px either side of where a mob was that it's looked for when followed (its walk, the camera's)
 TRACK_RISE = 50       # ...and above and below (a jump moves the camera up and down)
 TRACK_NEED = 0.75     # a mob just seen there needs this share of the usual match to be followed (hit effects cover it)
 
-def search_due(now, searched_at, following, airborne):
+def search_due(now, searched_at, following, every=FULL_SEARCH_S):
     """Whether this reading runs the whole mob search: nothing being followed,
-    or FULL_SEARCH_S since the last one with you on the ground, or
-    FULL_SEARCH_MAX_S whatever. Otherwise the mobs found are followed."""
-    if not following or searched_at is None:
-        return True
-    since = now - searched_at
-    return since >= FULL_SEARCH_MAX_S or (since >= FULL_SEARCH_S and not airborne)
+    or `every` seconds since the last (0: every reading). Otherwise the mobs
+    found are followed. (Mid-jump is searched too: replayed videos found as
+    many mobs in the air as on the ground.)"""
+    return not following or searched_at is None or now - searched_at >= every
 
 class ShapeSearch:
     """A map's mob frames (both facings, near-duplicates dropped), searched for
@@ -1655,8 +1653,7 @@ class Screen:
             recent = self.memory.recent(now, name)
             look = [(sc, mob, left - ox, top - oy, w, h) for sc, mob, left, top, w, h in recent]
             tolerance, need = mob_tolerance(self.config, name) + 10, entry.get("shape", SHAPE_MIN)
-            airborne = bool(self.seen and self.you and abs(self.seen[1] - self.you[1]) > AIRBORNE_PX)
-            if search_due(now, search.searched_at, bool(search.last), airborne):
+            if search_due(now, search.searched_at, bool(search.last), mb.get("search_every", FULL_SEARCH_S)):
                 found = search.search(pixels, x - ox, feet - oy, tolerance, need, look)
                 search.searched_at = now
             else:
@@ -2753,7 +2750,7 @@ def layer_maps(maps, config):
     """For the F9 list: every map in map.json, and when each taught one was taught."""
     return sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items() if name_taught(m)}
 
-REST = 0.15   # s: at least this between readings, so the game keeps the CPU it needs
+REST = 0.05   # s: at least this between readings, so the game keeps some CPU (more: slower readings on a slow PC)
 
 def run(args):
     import mss
@@ -3714,10 +3711,9 @@ def selftest():
     ref = bytes([10, 20, 30] * 25)
     assert patch_matches(bytes([12, 18, 33] * 25), ref) and not patch_matches(bytes([200, 200, 200] * 25), ref)
     assert not patch_matches(b"", ref)
-    # The whole mob search: with nothing followed, else every 0.5 s once you've landed, else every 2 s.
-    assert search_due(0, None, False, False) and search_due(5, 4.9, False, True)          # nothing followed: always
-    assert not search_due(5, 4.7, True, False) and search_due(5, 4.5, True, False)       # following: every 0.5 s...
-    assert not search_due(5, 4.0, True, True) and search_due(5, 3.0, True, True)         # ...but not mid-jump, up to 2 s
+    # The whole mob search: every reading by default; with "search_every", followed in between.
+    assert search_due(5, 4.8, True) and search_due(0, None, False, 0.5) and search_due(5, 4.9, False, 0.5)
+    assert not search_due(5, 4.7, True, 0.5) and search_due(5, 4.5, True, 0.5)
     # Game state needs agreeing readings; marks win straight away.
     # Dead: HP under 5% for 2 s with the minimap still showing.
     g = GameState()

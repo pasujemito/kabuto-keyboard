@@ -86,22 +86,14 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (!o["smart"].isNull() && !o["smart"].is<bool>()) return false;
     p.smart = o["smart"] | false;
     if (!chance(o["home_range"],p.homeRangePermille) || p.homeRangePermille>500) return false;
-    // "home_at": where home is, as a fraction across the minimap (absent or
-    // null: where the pattern starts). A map's own home, set with F12 on the
-    // PC, comes in the readings and wins.
-    p.homeAtPermille = -1;
-    if (!o["home_at"].isNull()) {
-        uint16_t at=0;
-        if (!chance(o["home_at"],at)) return false;
-        p.homeAtPermille = (int16_t)at;
-    }
+    // (1.18.6's "home_at" is ignored: home is where the pattern starts.)
     // "auto_pause": with fewer than this share (up to 90%; 0 = off) of the most
     // mobs seen lately left, wait for respawn. "approach": walk to mobs in
     // sight but out of reach. "walk_hold": each stride's hold when walking.
     if (!chance(o["auto_pause"],p.autoPausePermille) || p.autoPausePermille>900) return false;
     if (!o["approach"].isNull() && !o["approach"].is<bool>()) return false;
     p.approach = o["approach"] | false;
-    if (!range(o["walk_hold"],p.walkHold,50,5000)) return false;
+    if (!range(o["walk_hold"],p.walkHold,50,5000)) return false;   // walking: time between jumps, arrow held
     // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
     // keys keep the defaults, so older patterns play exactly as before.
     auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
@@ -418,7 +410,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
-            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;if(p->homeAtPermille>=0)d["home_at"]=p->homeAtPermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;
+            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;
             range(d,"walk_hold",p->walkHold);
             auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
             JsonObject keys=d["keys"].to<JsonObject>();

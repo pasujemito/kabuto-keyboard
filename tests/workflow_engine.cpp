@@ -427,26 +427,34 @@ int main() {
             StatsReading r;r.hp=r.mana=500;r.x=r.y=500;r.mobs=mobs;r.ml=ml;r.mr=mr;r.dl=dl;r.dr=dr;r.wx=wx;r.wy=wx==LIVE_NO_POS?LIVE_NO_POS:500;
             statsName(map,r.map);liveStatsUpdate(r);};
         auto holds=[&](uint8_t key,uint32_t ms){int n=0;uint32_t at=0;for(auto e:hidEvents)if(e.key==key){if(e.down)at=e.at;else if(e.at-at==ms)++n;}return n;};
+        // Walking holds the arrow (presses at least ms long, or still down) and hops (Alt alone) while it's down.
+        auto heldFor=[&](uint8_t key,uint32_t ms){int n=0;bool down=false;uint32_t at=0;
+            for(auto e:hidEvents)if(e.key==key){if(e.down){down=true;at=e.at;}else if(down){if(e.at-at>=ms)++n;down=false;}}
+            if(down&&millis()-at>=ms){++n;}
+            return n;};
+        auto hopsWhileHeld=[&](uint8_t key){int n=0;bool down=false;for(auto e:hidEvents){if(e.key==key)down=e.down;else if(down&&e.down&&e.key==0&&e.mods==4)++n;}return n;};
         // A broken change fails these rather than hanging: each run is stopped after 60 s.
         auto bounded=[&](std::function<void()> each){uint32_t giveUp=millis()+60000;play([&,each]{each();if(millis()>=giveUp)engine.stopFlag_=true;});};
-        // Walking home takes strides of walk_hold (the test's draws give its
-        // minimum), not fixed 250 ms taps.
+        // Walking home holds the arrow the whole way, hopping every walk_hold
+        // (the test's draws give its minimum), not separate taps; it's let go
+        // before attacking.
         q.walkHold={400,900};aware.setPattern(q);walked=false;calls=0;
         bounded([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}
-                 walked=walked||holds(L,400)>=2;
+                 walked=walked||hopsWhileHeld(L)>=2;
                  liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});
-        assert(walked&&holds(L,250)==0&&attacks()==3);
+        assert(walked&&heldFor(L,800)==1&&holds(L,250)==0&&attacks()==3&&held.empty());
+        {bool down=false;for(auto e:hidEvents){if(e.key==L)down=e.down;if(e.down&&e.key==0&&e.mods==5)assert(!down);}}   // never attacks with the arrow held
         // Approach: mobs in sight on the right, none in reach: walks right
         // until they're in reach, then attacks. The dashboard sees it.
         q.walkHold={280,650};q.approach=true;aware.setPattern(q);
         bool viewed=false;
-        bounded([&]{bool near=holds(R,280)>=2;seen(near?MOB_READ|MOB_RIGHT:MOB_READ,0,2,-1,near?60:180);
+        bounded([&]{bool near=hopsWhileHeld(R)>=2;seen(near?MOB_READ|MOB_RIGHT:MOB_READ,0,2,-1,near?60:180);
                  PatternView v=patternViewSnapshot();viewed=viewed||(v.active&&v.smart&&v.action==SMART_APPROACH_RIGHT&&!v.facingLeft);});
-        assert(holds(R,280)>=2&&attacks()==3&&firstAttack()>0&&viewed&&!patternViewSnapshot().active);
+        assert(hopsWhileHeld(R)>=2&&attacks()==3&&firstAttack()>0&&viewed&&!patternViewSnapshot().active);
         // Approach off: the same mobs out of reach are waited for, not walked to.
         q.approach=false;aware.setPattern(q);stopAt=millis()+3000;
         bounded([&]{seen(MOB_READ,0,2,-1,180);if(millis()>=stopAt)engine.stopFlag_=true;});
-        assert(holds(R,280)==0&&attacks()==0&&engine.stopFlag_);engine.stopFlag_=false;
+        assert(heldFor(R,250)==0&&attacks()==0&&engine.stopFlag_);engine.stopFlag_=false;
         // Auto-pause at 30%: 6 mobs, then 1 left (in reach): waits for respawn,
         // and attacks again once they're back.
         q.autoPausePermille=300;q.attacksPerSet={6,6};aware.setPattern(q);
@@ -467,36 +475,26 @@ int main() {
         q.autoPausePermille=0;q.attacksPerSet={3,3};aware.setPattern(q);calls=0;mobsAt=millis()+2500;
         bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
                  seen(millis()>=mobsAt?MOB_READ|MOB_LEFT:MOB_READ,millis()>=mobsAt,0,millis()>=mobsAt?40:-1,-1,900,"Ellinia");});
-        assert(holds(L,280)==0&&holds(R,280)==0&&attacks()==3&&firstAttack()>=mobsAt);
+        assert(heldFor(L,250)==0&&heldFor(R,250)==0&&attacks()==3&&firstAttack()>=mobsAt);
         // Same map, same drift: walks home.
         calls=0;walked=false;
         bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
-                 walked=walked||holds(L,280)>=1;seen(walked?MOB_READ|MOB_LEFT:MOB_READ,walked,0,walked?40:-1,-1,walked?320:900,"Henesys");});
+                 walked=walked||heldFor(L,250)>=1;seen(walked?MOB_READ|MOB_LEFT:MOB_READ,walked,0,walked?40:-1,-1,walked?320:900,"Henesys");});
         assert(walked&&attacks()==3);
-        // A set home (the pattern's home_at, across the minimap): walks there from wherever it starts, then hunts.
-        auto at=[&](int x,uint8_t mobs,int homeX=-1){
+        // Hunting around home (where the button started it): a mob nearby is fought
+        // where it is; with none left it walks back home, arrow held, and fights there.
+        auto at=[&](int x,uint8_t mobs){
             StatsReading r;r.hp=r.mana=500;r.x=x;r.y=500;r.mobs=mobs;r.ml=(mobs&MOB_LEFT)?1:0;r.mr=(mobs&MOB_RIGHT)?1:0;
-            r.dl=(mobs&MOB_LEFT)?40:-1;r.dr=(mobs&MOB_RIGHT)?40:-1;r.homeX=homeX;liveStatsUpdate(r);};
-        q.homeAtPermille=300;aware.setPattern(q);walked=false;bool homeShown=false;
-        bounded([&]{walked=walked||holds(L,280)>=1;at(walked?310:500,walked?MOB_READ|MOB_LEFT:MOB_READ);
-                 PatternView v=patternViewSnapshot();homeShown=homeShown||(v.haveHome&&v.home==300&&!v.homeOnMap);});
-        assert(walked&&holds(R,280)==0&&attacks()==3&&homeShown);
-        // The map's own home (F12, "hx" in the reading) wins over the pattern's.
-        walked=false;
-        bounded([&]{walked=walked||holds(R,280)>=1;at(walked?690:500,walked?MOB_READ|MOB_RIGHT:MOB_READ,700);});
-        assert(walked&&holds(L,280)==0&&attacks()==3);
-        // Fights what's around on the way, then goes back to it (hunting around home).
-        bool back=false;uint32_t homeAgainAt=0;
-        bounded([&]{if(attacks()<1){at(380,MOB_READ|MOB_RIGHT);return;}   // a mob 8% from home: fought where it is
-                 if(!back&&holds(L,280)>=1){back=true;homeAgainAt=millis();}
-                 at(back?300:380,back?MOB_READ|MOB_LEFT:MOB_READ);});        // then none: walks home, and the rest are fought there
-        {uint32_t later=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5&&e.at>=homeAgainAt)++later;assert(back&&attacks()==3&&later==2);}
-        // A set home it can't reach (a wall, another platform) isn't moved: it tries again after 10 s.
-        uint32_t from=millis();stopAt=from+23000;
-        bounded([&]{at(500,MOB_READ);if(millis()>=stopAt)engine.stopFlag_=true;});
-        bool again=false;{uint32_t down=0;for(auto e:hidEvents)if(e.key==L){if(e.down)down=e.at;else if(e.at-down==280&&down>=from+20000)again=true;}}
-        assert(again&&attacks()==0&&patternViewSnapshot().active==false);engine.stopFlag_=false;
-        q.homeAtPermille=-1;aware.setPattern(q);
+            r.dl=(mobs&MOB_LEFT)?40:-1;r.dr=(mobs&MOB_RIGHT)?40:-1;liveStatsUpdate(r);};
+        q.walkHold={280,650};aware.setPattern(q);calls=0;
+        bool back=false;uint32_t homeAgainAt=0,homeShownAt=0;
+        bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);return;}      // pressed here: home is 30%
+                 PatternView v=patternViewSnapshot();if(v.haveHome&&v.home==300&&!v.homeOnMap)homeShownAt=millis();
+                 if(attacks()<1){at(380,MOB_READ|MOB_RIGHT);return;}          // a mob 8% from home: fought where it is
+                 if(!back&&hopsWhileHeld(L)>=1){back=true;homeAgainAt=millis();}
+                 at(back?300:380,back?MOB_READ|MOB_LEFT:MOB_READ);});         // then none: walks home, and the rest are fought there
+        {uint32_t later=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5&&e.at>=homeAgainAt)++later;
+         assert(back&&attacks()==3&&later==2&&homeShownAt&&held.empty());}
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

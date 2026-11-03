@@ -98,8 +98,7 @@ int main(){
     in.pos=700;in.mobs=none;assert(smartDecide(in)==SMART_WALK_LEFT);     // drifted: home before pausing
     in.pos=500;in.paused=false;in.seenLeft=in.seenRight=-1;assert(smartDecide(in)==SMART_WAIT);   // no counts: as before
     in.haveHome=false;in.seenRight=1;in.nearRight=300;assert(smartDecide(in)==SMART_APPROACH_RIGHT);   // no home: no limit
-    // A map's home comes in the reading as "hx" (% across the minimap); the pad button "home" sets it (F12).
-    assert(parseStatsForm("hx=42.5&x=40").homeX==425&&parseStatsForm("x=40").homeX==-1&&parseStatsForm("hx=abc").homeX==-1);
+    // 1.18.6's "home" button still loads (saved buttons keep working), though nothing uses it now.
     assert(toolKeyFromName("home")==TOOL_HOME&&std::string(toolKeyName(TOOL_HOME))=="home");
     // Auto-pause at 30%: 6 seen sets the bar; 1 left (under 1.8) pauses, 4
     // (60%+) resumes; a pause lasts at most AUTO_PAUSE_MAX_MS, then the

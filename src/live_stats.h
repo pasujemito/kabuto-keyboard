@@ -17,7 +17,6 @@ struct LiveStats {
     int dl = -1, dr = -1;        // nearest each side, % of your reach (-1: none)
     char mob[LIVE_NAME_LEN] = {};   // the nearest mob's name ("" unknown)
     char map[LIVE_NAME_LEN] = {};   // the map's name ("-" not taught, "" no map library)
-    int homeX = -1;              // the map's home set on the PC (F12), tenths of the minimap (-1: none)
     uint32_t ageMs = 0;          // since the last reading
     bool fresh = false;          // a reading within LIVE_STATS_STALE_MS
     int32_t xpPerHour = -1;      // tenths of a percent of a level per hour

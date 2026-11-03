@@ -143,13 +143,13 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Home range (%)',{exact:true}).fill('10');
   assert.equal(await page.getByLabel('Auto-pause (%)',{exact:true}).inputValue(),'30');
   assert(await page.getByLabel('Walk to mobs',{exact:true}).isChecked());
-  assert.equal(await page.getByLabel('Walking strides (ms) minimum',{exact:true}).inputValue(),'280');
+  assert.equal(await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).inputValue(),'600');
   await page.getByLabel('Auto-pause (%)',{exact:true}).fill('95');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'Auto-pause: enter a percentage from 0 to 90.');
   await page.getByLabel('Auto-pause (%)',{exact:true}).fill('25');
-  await page.getByLabel('Walking strides (ms) minimum',{exact:true}).fill('20');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
-  assert.equal(await page.locator('#dynamicError').textContent(),'Walking strides: enter an ordered range from 50 to 5000.');
-  await page.getByLabel('Walking strides (ms) minimum',{exact:true}).fill('300');
+  await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).fill('20');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'Walking hops: enter an ordered range from 50 to 5000.');
+  await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).fill('300');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
@@ -286,15 +286,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.deepEqual(await layerKeys(layersBefore),{name:'MS🍁 Setup',keys:[['Mark (F8)',{type:'tool',key:'mark'}],['Skip (Esc)',{type:'tool',key:'skip'}],
     ['Which map (F9)',{type:'tool',key:'map'}],['Outlines (F10)',{type:'tool',key:'outlines'}],['Tune ▸',{type:'layer',layer:layersBefore+1}],['Back',{type:'layer',layer:0}]]});
   assert.deepEqual(await layerKeys(layersBefore+1),{name:'MS🍁 Tune',keys:[['Looser (F6)',{type:'tool',key:'looser'}],['Stricter (F7)',{type:'tool',key:'stricter'}],
-    ['Set home (F12)',{type:'tool',key:'home'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['◂ Setup',{type:'layer',layer:layersBefore}],['Back',{type:'layer',layer:0}]]});
+    ['Outlines (F10)',{type:'tool',key:'outlines'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['◂ Setup',{type:'layer',layer:layersBefore}],['Back',{type:'layer',layer:0}]]});
   assert.deepEqual(await page.evaluate(n=>cfg.layers[0].keys.filter(k=>k.name==='🍁 Setup').map(k=>cfg.workflows.find(w=>w.id===k.steps[0].workflow).steps[0]),layersBefore),[{type:'layer',layer:layersBefore}]);
   assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Mark \(F8\)/);
   assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Looser \(F6\)/);
   const toolCount=await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length);
-  assert.equal(toolCount,8);   // mark, skip, map, outlines, looser, stricter, home, hide
+  assert.equal(toolCount,7);
   if(await page.evaluate(()=>cfg.layers.length+2<=meta.maxLayers)){
     await page.locator('#newSetupLayer').click();   // again: the same recordings are reused
-    assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),8);
+    assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),7);
   }
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();

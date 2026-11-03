@@ -477,30 +477,20 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // Between attacks: stop on a death or login screen,
                 // turn for map edges and mobs, and turn (then stop) when stuck.
                 StuckWatch stuck;
-                // Smart mode: home is the map's own (set with F12 on the PC, in the
-                // readings), else the pattern's home_at, both across the minimap (the
-                // dot); else where you were when the pattern started or reached a new
-                // map (map position if the script sends it, else the minimap dot).
-                bool haveHome=false,homing=false,homeOnMap=false,homeFixed=false,homeOff=false;int home=0;uint32_t homeOffAt=0;
+                // Smart mode: home is where you were when the button started the
+                // pattern, or where you arrived on a new map (map position if the
+                // script sends it, else the minimap dot).
+                bool haveHome=false,homing=false,homeOnMap=false;int home=0;
                 std::string lastMap;
                 AutoPause autoPause;
                 bool approachOff=false;uint32_t approachOffAt=0;
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
-                auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;homeFixed=false;};
-                // Where you are and where home is this reading; false without a position.
-                auto homeNow=[&](const LiveStats& live,int& pos){
-                    int fixed=live.fresh&&live.homeX>=0?live.homeX:pattern->homeAtPermille;
-                    if(fixed>=0){haveHome=true;home=fixed;homeOnMap=false;homeFixed=true;pos=live.x;return live.fresh&&live.x>=0;}
-                    if(homeFixed)haveHome=homeFixed=false;   // the fixed home is gone (another map): here is home
-                    bool have=livePos(live,pos);
-                    if(have&&!haveHome)setHome(live,pos);
-                    return have;
-                };
+                auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;};
                 // The map's name changed: home is wherever you arrive.
                 auto mapCheck=[&](const LiveStats& live){
                     if(!live.fresh||!live.map[0]||lastMap==live.map)return;
                     bool moved=!lastMap.empty();lastMap=live.map;
-                    if(moved&&haveHome){haveHome=false;homeOff=false;logStep(s,pc,millis(),0,true,"smart: new map, new home");}
+                    if(moved&&haveHome){haveHome=false;logStep(s,pc,millis(),0,true,"smart: new map, new home");}
                 };
                 // What the dashboard shows.
                 auto publish=[&](uint8_t action){
@@ -510,8 +500,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 };
                 auto smartInput=[&](const LiveStats& live,bool havePos,int pos){
                     SmartInput in;in.fresh=live.fresh;in.mobs=live.mobs;in.seenLeft=live.ml;in.seenRight=live.mr;in.nearLeft=live.dl;in.nearRight=live.dr;
-                    if(homeOff&&millis()-homeOffAt>=10000)homeOff=false;
-                    in.havePos=havePos;in.pos=pos;in.haveHome=haveHome&&!homeOff;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;
+                    in.havePos=havePos;in.pos=pos;in.haveHome=haveHome;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;
                     in.approach=pattern->approach&&(!approachOff||millis()-approachOffAt>=10000);
                     in.paused=autoPause.update(live.fresh&&live.ml>=0&&live.mr>=0?live.ml+live.mr:-1,pattern->autoPausePermille,millis());
                     return in;
@@ -523,10 +512,26 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 };
                 // No mobs in reach: wait (drinking live potions) until some
                 // come, or walk to ones in sight (approach). Most killed: wait for
-                // respawn (auto-pause). Drifted from home: walk back. Walking takes
-                // strides of walk_hold, then dir_after. Gives up on a home it can't
+                // respawn (auto-pause). Drifted from home, or nothing to fight away
+                // from it: walk back (the arrow held, hopping). Gives up on a home it can't
                 // reach in 10 s and makes this spot home instead, and on mobs it
                 // can't reach in 6 s (no walking to mobs for 10 s).
+                // Walking (home or to mobs) holds the arrow the whole way and hops
+                // (a quick jump) after each walk_hold, as a player walks. The arrow
+                // is let go when the walk ends: to attack, wait or turn round.
+                const DynamicRange WALK_JUMP_HOLD{60,140};
+                DynamicKey walking;   // the arrow held (empty: none)
+                auto stopWalking=[&]{
+                    if(walking.empty())return;
+                    volatile bool letGo=false;   // let go even when stopping
+                    std::vector<Step> up{edge(false,walking.keycode,walking.mods)};executeSteps(up,letGo,state,depth+1);
+                    walking=DynamicKey();
+                };
+                auto walk=[&](DynamicKey key){
+                    if(walking!=key){stopWalking();std::vector<Step> down{edge(true,key.keycode,key.mods)};executeSteps(down,stop,state,depth+1);walking=key;}
+                    std::vector<Step> hop{delay(sample(pattern->walkHold)),edge(true,jump.keycode,jump.mods),delay(sample(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
+                    executeSteps(hop,stop,state,depth+1);
+                };
                 auto smartWait=[&]{
                     static const char* const labels[]={"","smart: waiting for mobs","smart: walking home","smart: walking home",
                         "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs"};
@@ -535,7 +540,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         LiveStats live=liveStatsSnapshot();
                         if(stopReason(live))return;
                         mapCheck(live);
-                        int pos=0;bool havePos=homeNow(live,pos);
+                        int pos=0;bool havePos=livePos(live,pos);
+                        if(havePos&&!haveHome)setHome(live,pos);
                         uint8_t act=smartDecide(smartInput(live,havePos,pos));
                         publish(act);
                         if(act==SMART_ATTACK)break;
@@ -543,17 +549,13 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         bool toMobs=act==SMART_APPROACH_LEFT||act==SMART_APPROACH_RIGHT;
                         int kind=act==SMART_WALK_RIGHT?(int)SMART_WALK_LEFT:act==SMART_APPROACH_RIGHT?(int)SMART_APPROACH_LEFT:(int)act;
                         if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
-                        if(homing&&millis()-walkStarted>10000){
-                            // A set home stays where it is: try again in 10 s. One that was just where you started moves here.
-                            if(homeFixed){logStep(s,pc,millis(),0,true,"smart: can't get home, trying again in 10 s");homeOff=true;homeOffAt=millis();doing=-1;}
-                            else{logStep(s,pc,millis(),0,true,"smart: can't get home, home is here now");setHome(live,pos);}
-                            homing=false;continue;}
+                        if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"smart: can't get home, home is here now");setHome(live,pos);homing=false;continue;}
                         if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
-                        if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;tap(facing(),pattern->walkHold,pattern->directionAfter);}
-                        else{int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
+                        if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;walk(facing());}
+                        else{stopWalking();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                              std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
                     }
-                    homing=false;
+                    stopWalking();homing=false;
                     if(doing>=0){stuck=StuckWatch();if(!stop)logStep(s,pc,millis(),0,true,"smart: mobs found");}   // standing still on purpose isn't stuck
                 };
                 auto screenCheck=[&]{
@@ -574,7 +576,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     return false;
                 };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
-                {LiveStats live=liveStatsSnapshot();int pos=0;if(pattern->smart){homeNow(live,pos);if(!homeFixed&&livePos(live,pos))setHome(live,pos);}if(live.fresh)lastMap=live.map;}
+                {LiveStats live=liveStatsSnapshot();int pos=0;if(pattern->smart&&livePos(live,pos))setHome(live,pos);if(live.fresh)lastMap=live.map;}
                 publish(SMART_ATTACK);
                 // Establish the actual initial facing before the first attack.
                 tap(facing(),pattern->directionHold,pattern->directionAfter);

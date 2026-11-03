@@ -156,7 +156,7 @@ the address shown in the panel) from any device on that Wi-Fi:
 ### Live stats and screen awareness
 
 The pad can't see your screen, so a small script on the game PC does the
-looking. Twice a second, `tools/screen_stats.py` samples a few small areas
+looking. Five times a second, `tools/screen_stats.py` samples a few small areas
 and sends a handful of numbers: HP, Mana and XP (bar fill %), your position on
 the minimap, the mobs around you (which sides are in your reach, how many you
 can see each side, how near the nearest is and its name), which map you're on,
@@ -419,6 +419,17 @@ reading; 5 frames: about 200 ms; 5 frames, sight 1.5: about 145 ms; 3
 frames, sight 1.5: about 100 ms. Looser/Stricter (F6/F7) move the colour tolerance here too, and a
 map's `shape` (0.6 by default) sets how well a frame must match.
 
+**Mobs are followed between searches.** That whole search runs every 0.5 s
+(`FULL_SEARCH_S`), once you've landed: mid-jump the camera has moved up or
+down, so the band at your platform's height would miss the mobs (in the air
+over 2 s, it searches anyway). In between, each mob it found is looked for
+only in a small window round where it was (60 px either side, 50 px above and
+below: its walk and the camera's bobbing), with only its own frames, the one
+it matched last first. That takes a few ms a mob instead of the whole search,
+so readings come every 0.2 s and the pad hears of a mob walking off, turning
+or dying almost at once. A mob not found again is let go; a respawn shows up
+at the next whole search, within about half a second.
+
 **Mobs per map:** keep every mob's PNG once, in `mobs`, and describe each map
 in `mobs/map.json`: its name (as you like; the in-game name reads best) and
 the mobs on it. A mob found on several maps is just listed under each:
@@ -627,8 +638,8 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   - **Face mobs**: turns to face mobs in your hitbox; with mobs on both
     sides, the nearer one (Smart does this too). Edges come first, then mobs, then the pattern's
     turn chance. It checks before every attack, so a mob that spawns behind
-    you is faced within about a second (readings every 0.5 s; `--interval
-    0.25` for faster).
+    you is faced within about a second (readings every 0.2 s; `--interval
+    0.5` to send fewer).
   - **Stuck after (s)**, 20 s by default: if your place on the map doesn't
     change for that long, it turns around; still stuck after another wait, it
     stops. It goes by the map position (slide plus dot), so a dot that stays

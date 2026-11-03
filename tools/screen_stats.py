@@ -2,7 +2,7 @@
 """
 screen_stats.py - read your game screen and send what matters to Kabuto.
 
-Runs on the PC with the game. Twice a second it samples a few small
+Runs on the PC with the game. Five times a second it samples a few small
 areas of the screen and sends a handful of numbers to the pad: HP, Mana and
 XP (bar fill %), your position on the minimap, the mobs around you (which
 sides are in your reach, how many you can see each side, how near the nearest
@@ -1075,6 +1075,22 @@ def part_edges(np, m):
     """A part's edge: its pixels with a neighbour outside it."""
     return m * grown(np, 1 - m, 1)
 
+FULL_SEARCH_S = 0.5   # the whole field of view searched this often (mobs respawn fast); in between, followed (track)
+FULL_SEARCH_MAX_S = 2.0   # ...once you've landed: mid-jump the camera has moved, so the band at your platform's
+                          # height is off. In the air longer than this, it searches anyway
+AIRBORNE_PX = 8       # your name tag this far above (or below) the platform you stood on: in the air
+TRACK_REACH = 60      # px either side of where a mob was that it's looked for when followed (its walk, the camera's)
+TRACK_RISE = 50       # ...and above and below (a jump moves the camera up and down)
+
+def search_due(now, searched_at, following, airborne):
+    """Whether this reading runs the whole mob search: nothing being followed,
+    or FULL_SEARCH_S since the last one with you on the ground, or
+    FULL_SEARCH_MAX_S whatever. Otherwise the mobs found are followed."""
+    if not following or searched_at is None:
+        return True
+    since = now - searched_at
+    return since >= FULL_SEARCH_MAX_S or (since >= FULL_SEARCH_S and not airborne)
+
 class ShapeSearch:
     """A map's mob frames (both facings, near-duplicates dropped), searched for
     in your field of view: the screen either side of you (as far as `sight`),
@@ -1085,6 +1101,7 @@ class ShapeSearch:
     def __init__(self, np, frames, sight, width=None, slack=FEET_SLACK, body=0, flyers=(), view="level", height=None):
         """`frames`: {mob: [rgba array, ...]}; `width`, `height`: the screen's."""
         self.np, self.sight, self.slack, self.frames, self.cache, self.cached = np, sight, slack, [], {}, 0
+        self.last, self.searched_at, self.traces = [], None, {}   # the mobs last found or followed (with their frame), and when searched
         self.body, self.flyers, self.view = body, set(flyers), ("screen" if view == "screen" and height else "level")
         self.rfft, self.irfft = ffts(np)
         for mob, images in sorted(frames.items()):
@@ -1216,6 +1233,68 @@ class ShapeSearch:
         for f in found:   # one per mob: overlapping finds are the same one
             if all(abs((f[2] + f[4] / 2.0) - (k[2] + k[4] / 2.0)) > min(f[4], k[4]) * 0.6 for k in kept):
                 kept.append(f)
+        self.last = kept
+        return [f[:6] for f in kept]
+
+    def track(self, screen, tolerance=50, need=SHAPE_MIN, reach=TRACK_REACH, rise=TRACK_RISE):
+        """Follows the mobs last found: each looked for only in a small window
+        round where it was, with only its own frames (it may have turned or
+        moved on in its walk), so a reading takes a few ms a mob instead of a
+        whole search. [(score, mob, left, top, width, height)] like search();
+        one not found again (killed, gone off, hidden) is let go, and the next
+        whole search finds whatever's new."""
+        np, H, W, t2 = self.np, screen.shape[0], screen.shape[1], float(tolerance) ** 2
+        kept = []
+        if not hasattr(self, "track_kernels"):
+            self.track_kernels = {}   # (frame, part, window shape) -> its spectrum: windows are mostly one size
+        for _, mob, left, top, w, h, last_frame in self.last:
+            x0, y0 = max(0, left - reach), max(0, top - rise)
+            x1, y1 = min(W, left + w + reach), min(H, top + h + rise)
+            if x1 - x0 < 4 or y1 - y0 < 4:
+                continue   # gone off the screen
+            win = screen[y0:y1, x0:x1].astype(np.float32)
+            pp, near, spectra, best = (win * win).sum(axis=2), {}, {}, None
+            hidden = (win.max(axis=2) >= EFFECT_BRIGHT).astype(np.float32) if EFFECT_BRIGHT else np.zeros(pp.shape, np.float32)
+            shape = (fast_len(y1 - y0), fast_len(x1 - x0))
+            # The frame it matched last first: mostly it still does, and the rest needn't be tried.
+            order = [last_frame] + [i for i, f in enumerate(self.frames) if f[0] == mob and i != last_frame]
+            for i in order:
+                other, parts, fh, fw, big, big_total, edges = self.frames[i]
+                if other != mob or fh > y1 - y0 or fw > x1 - x0:
+                    continue
+                if best and i != last_frame and best[6] == last_frame:
+                    break   # the last frame still matches: done with this mob
+                nears, F = [], None
+                for j, (rgb, m) in enumerate(parts):
+                    key = tuple(int(c) // 16 for c in rgb)
+                    if key not in near:
+                        c = np.array(rgb, np.float32)
+                        near[key] = (pp - 2 * (win @ c) <= t2 - float(c @ c)).astype(np.float32)
+                    nears.append(near[key])
+                    if j in big:
+                        if key not in spectra:
+                            spectra[key] = self.rfft(near[key], shape)
+                        kernel = self.track_kernels.get((i, j, shape))
+                        if kernel is None:
+                            if len(self.track_kernels) > 4000:
+                                self.track_kernels = {}
+                            kernel = self.track_kernels[(i, j, shape)] = self.rfft(m[::-1, ::-1], shape).astype(np.complex64)
+                        product = spectra[key] * kernel
+                        F = product if F is None else F + product
+                if F is None:
+                    continue
+                first = self.irfft(F, shape)[fh - 1:y1 - y0, fw - 1:x1 - x0] / big_total
+                if not first.size:
+                    continue
+                cy, cx = divmod(int(first.argmax()), first.shape[1])
+                if first[cy, cx] < FIRST_PASS:
+                    continue
+                score = strict_score(np, nears, parts, cx, cy, fh, fw, hidden=hidden, edges=edges)
+                if score >= need and (best is None or score > best[0]):
+                    best = (score, mob, x0 + cx, y0 + cy, fw, fh, i)
+            if best and all(abs((best[2] + best[4] / 2.0) - (k[2] + k[4] / 2.0)) > min(best[4], k[4]) * 0.6 for k in kept):
+                kept.append(best)   # two followed onto the same mob: one
+        self.last, self.traces = kept, {}
         return [f[:6] for f in kept]
 
 TAG_NEED = 0.5       # how alike (normalised correlation, 0-1) a spot must be to your name tag; elsewhere is ~0.3 at most
@@ -1552,7 +1631,13 @@ class Screen:
             now = self.clock()
             recent = self.memory.recent(now, name)
             look = [(sc, mob, left - ox, top - oy, w, h) for sc, mob, left, top, w, h in recent]
-            found = search.search(pixels, x - ox, feet - oy, mob_tolerance(self.config, name) + 10, entry.get("shape", SHAPE_MIN), look)
+            tolerance, need = mob_tolerance(self.config, name) + 10, entry.get("shape", SHAPE_MIN)
+            airborne = bool(self.seen and self.you and abs(self.seen[1] - self.you[1]) > AIRBORNE_PX)
+            if search_due(now, search.searched_at, bool(search.last), airborne):
+                found = search.search(pixels, x - ox, feet - oy, tolerance, need, look)
+                search.searched_at = now
+            else:
+                found = search.track(pixels, tolerance, need)   # between whole searches: follow the ones found (fast)
             found = [(score, mob, left + ox, top + oy, w, h) for score, mob, left, top, w, h in found]
             traces = {r: search.traces.get(k, 0.0) for r, k in zip(recent, look)}
             still = lambda k: traces.get(k, 0.0) >= HOLD_TRACE   # partly covered, not gone
@@ -3604,6 +3689,10 @@ def selftest():
     ref = bytes([10, 20, 30] * 25)
     assert patch_matches(bytes([12, 18, 33] * 25), ref) and not patch_matches(bytes([200, 200, 200] * 25), ref)
     assert not patch_matches(b"", ref)
+    # The whole mob search: with nothing followed, else every 0.5 s once you've landed, else every 2 s.
+    assert search_due(0, None, False, False) and search_due(5, 4.9, False, True)          # nothing followed: always
+    assert not search_due(5, 4.7, True, False) and search_due(5, 4.5, True, False)       # following: every 0.5 s...
+    assert not search_due(5, 4.0, True, True) and search_due(5, 3.0, True, True)         # ...but not mid-jump, up to 2 s
     # Game state needs agreeing readings; marks win straight away.
     # Dead: HP under 5% for 2 s with the minimap still showing.
     g = GameState()
@@ -3881,6 +3970,17 @@ def selftest():
         assert ("blob", 60) in found and ("blob", -6) in found, found
         hit[93:110, 60:80] = (255, 230, 80)                                  # all but its top: too little seen to say
         assert ("blob", 60) not in [(f[1], f[2]) for f in ShapeSearch(np, {"blob": [rgba]}, 200, 400).search(hit, 200, 109)]
+        # Followed between whole searches: each found mob in a small window round where it was.
+        walked = world.copy()
+        walked[90:110, 60:80] = 40                                            # the left blob walks 25 px right...
+        walked[90:110, 85:105][rgba[..., 3] > 0] = rgba[..., :3][rgba[..., 3] > 0]
+        walked[90:110, 300:320] = 40                                          # ...and the right one is killed
+        search.search(world, 200, 109)                                       # found at your level: the two blobs
+        assert sorted((f[1], f[2], f[3]) for f in search.track(walked)) == [("blob", 85, 90)]
+        assert [(f[2], f[3]) for f in search.track(walked)] == [(85, 90)] and search.last[0][6] == 0   # still followed, its frame kept
+        walked[90:110, 85:105] = 40; walked[90:110, 200:220][rgba[..., 3] > 0] = rgba[..., :3][rgba[..., 3] > 0]
+        assert search.track(walked) == [] and search.last == []              # moved further than it could: let go (the next search finds it)
+        assert sorted(f[2] for f in search.search(walked, 200, 109)) == [200]
         everything = ShapeSearch(np, frames, 200, 400, view="screen", height=120).search(world, 200, 109)
         assert sorted((f[1], f[2]) for f in everything) == [("bat", 240), ("blob", 60), ("blob", 130), ("blob", 300)], everything
         tag = np.zeros((10, 30, 3), np.uint8); tag[:] = (60, 30, 90); tag[2:8, 1:7] = (220, 40, 30); tag[3:7, 10:28] = (230, 200, 160)
@@ -4234,7 +4334,7 @@ def main():
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
     ap.add_argument("--host", default="kabuto.local", help="the pad's Wi-Fi address (default kabuto.local)")
     ap.add_argument("--pin", default=os.environ.get("KABUTO_PIN"), help="access PIN (or set KABUTO_PIN)")
-    ap.add_argument("--interval", type=float, default=0.5, help="seconds between readings (default 0.5)")
+    ap.add_argument("--interval", type=float, default=0.2, help="seconds between readings (default 0.2: mobs are followed between searches)")
     ap.add_argument("--config", default=CONFIG, help="setup file (default %s)" % CONFIG)
     ap.add_argument("--dry-run", action="store_true", help="print readings without sending")
     ap.add_argument("--game", choices=sorted(GAMES) + ["other"],

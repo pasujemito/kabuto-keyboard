@@ -559,9 +559,12 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   wearing make-up. A correct answer will pass the test.", with a mushroom,
   bottom right). The screen reader spots its window (the teal panel framed in
   the dark window with a light rim, anywhere on screen) in two readings in a
-  row, the pad stops, and the strip says **TEST POPUP: answer it**. Nothing
-  answers it for you. Once you have, start the pattern again. `"test_popup":
-  false` in `kabuto-bars.json` turns the check off.
+  row, the pad stops, and the strip says **TEST POPUP: answer it**. The **Lie
+  Detector mini-game**'s notice ("The mini-game will start soon. Go to a safe
+  place...", a blue panel in a light rim) counts the same: stop, notification
+  and chime. Nothing answers either for you. Once you have, start the pattern
+  again. They're looked for once a second. `"test_popup": false` in
+  `kabuto-bars.json` turns the check off.
 - **A soft chime** when the game needs you: two plucked notes, rising as the
   test popup shows (and every 10 s while it stays), falling once for a death
   or a disconnect, with a bubble on the game layer saying what happened. The

@@ -808,7 +808,11 @@ def patch_matches(raw, reference, tolerance=30):
     total = sum(abs(a - b) for a, b in zip(raw, reference))
     return total / len(raw) <= tolerance
 
-# ---- the game's test popup ----------------------------------------------------
+# ---- the game's test windows ---------------------------------------------------
+# Two kinds: the test popup (teal, below) and the Lie Detector mini-game's
+# notice (a blue panel in a light rim, "The Lie Detector Mini-game ... the
+# mini-game will start soon"). Either is state "test": the pad stops, says so
+# under Notifications, and the PC chimes.
 # Now and then MapleStory stops you with a test, a question only a person can
 # answer ("Please find the beautiful Violetta wearing make-up. A correct answer
 # will pass the test.", a mushroom beside it, bottom right). Its window is
@@ -819,7 +823,7 @@ def patch_matches(raw, reference, tolerance=30):
 # window to watch for instead (any game).
 TEST_STEP = 6            # px between the samples looking for the teal panel
 TEST_PANEL = (150, 40)   # px: the least width and height of the panel
-TEST_FILL = 0.5          # share of the panel's box that must be teal (its text is the rest)
+TEST_FILL = 0.4          # share of the panel's box that must be its colour (text and pictures are the rest)
 TEST_FRAME = 24          # px out from the panel's edge the window's dark band and light rim must be
 TEST_EVERY_S = 1.0       # looked for this often (it stays up for long; a whole-screen look costs ~10 ms)
 
@@ -827,11 +831,20 @@ def test_teal(r, g, b):
     """The test panel's teal (dark blue-green at the top, lighter lower down)."""
     return r < 70 and 90 <= g <= 190 and 115 <= b <= 205 and b >= g - 15 and g - r >= 60
 
-def test_frame(raw, w, h, x, y, dx, dy, reach=TEST_FRAME):
+def lie_blue(r, g, b):
+    """The Lie Detector mini-game window's blue panel (its notice, "The Lie
+    Detector Mini-game ... the mini-game will start soon")."""
+    return 45 <= r <= 110 and 100 <= g <= 160 and 150 <= b <= 220 and b - r >= 80 and g - r >= 30
+
+# The test windows looked for: each one's panel colour, and whether its frame has a dark band
+# inside the light rim (the test popup's does; the Lie Detector's rim is right round its panel).
+TEST_PANELS = ((test_teal, True), (lie_blue, False))
+
+def test_frame(raw, w, h, x, y, dx, dy, reach=TEST_FRAME, inside=test_teal, dark_band=True):
     """From a spot just inside the panel's edge, going out (dx, dy): the panel
-    ends, then the window's dark grey band, then its light rim."""
+    ends, then (if `dark_band`) the window's dark grey band, then its light rim."""
     px = lambda x, y: raw[(y * w + x) * 3:(y * w + x) * 3 + 3]
-    while 0 <= x < w and 0 <= y < h and test_teal(*px(x, y)):
+    while 0 <= x < w and 0 <= y < h and inside(*px(x, y)):
         x, y = x + dx, y + dy
     dark = False
     for _ in range(reach):
@@ -840,18 +853,28 @@ def test_frame(raw, w, h, x, y, dx, dy, reach=TEST_FRAME):
         r, g, b = px(x, y)
         hi, lo = max(r, g, b), min(r, g, b)
         if hi - lo <= 40 and lo >= 150:
-            return dark
+            return dark or not dark_band
         dark = dark or (hi < 100 and hi - lo <= 30)
         x, y = x + dx, y + dy
     return False
 
 def find_test_popup(raw, w, h, step=TEST_STEP, least=TEST_PANEL):
-    """The test popup's teal panel on screen, (x0, y0, x1, y1), or None."""
+    """A test window's panel on screen (the test popup's teal, the Lie
+    Detector's blue: TEST_PANELS), (x0, y0, x1, y1), or None."""
+    for inside, dark_band in TEST_PANELS:
+        box = find_panel(raw, w, h, inside, dark_band, step, least)
+        if box:
+            return box
+    return None
+
+def find_panel(raw, w, h, inside, dark_band, step=TEST_STEP, least=TEST_PANEL):
+    """A panel of `inside`'s colour, at least `least` px, framed by a light
+    rim (inside a dark band, if `dark_band`): (x0, y0, x1, y1), or None."""
     teal, stride = set(), 3 * step
     for gy in range(h // step):
         row = raw[gy * step * w * 3:(gy * step + 1) * w * 3]
         for gx, rgb in enumerate(zip(row[0::stride], row[1::stride], row[2::stride])):
-            if test_teal(*rgb):
+            if inside(*rgb):
                 teal.add((gx, gy))
     while teal:   # each clump of teal samples (gaps of a sample allowed: the text)
         todo, cells = [teal.pop()], []
@@ -881,7 +904,7 @@ def find_test_popup(raw, w, h, step=TEST_STEP, least=TEST_PANEL):
                 end = edge(at)
                 if abs(end - start) <= 1:
                     x, y = (end, line) if dx else (line, end)
-                    found += test_frame(raw, w, h, x * step, y * step, dx, dy)
+                    found += test_frame(raw, w, h, x * step, y * step, dx, dy, inside=inside, dark_band=dark_band)
                     if found >= 2:
                         return True
             return False
@@ -3762,6 +3785,20 @@ def selftest():
     paint(small, 800, 100, 100, 362, 288, (150, 110, 60)); paint(small, 800, 100, 100, 200, 140, (220, 220, 222))
     paint(small, 800, 104, 104, 196, 136, (48, 48, 48)); paint(small, 800, 110, 110, 190, 130, (30, 130, 160))
     assert find_test_popup(bytes(small), 800, 600) is None   # a small teal box in a window: not the panel
+    # The Lie Detector mini-game's notice: a blue panel with a light rim right round it (no dark band),
+    # its words and pictures over a good part of it.
+    lie = canvas(800, 600, (40, 70, 30))
+    paint(lie, 800, 480, 360, 790, 590, (232, 250, 250))                 # light rim
+    paint(lie, 800, 486, 366, 784, 584, (74, 130, 187))                  # blue panel
+    for line in (380, 396, 412):
+        for word in range(500, 760, 30):
+            paint(lie, 800, word, line, word + 22, line + 8, (250, 250, 250))
+    for x0 in (500, 590, 680):
+        paint(lie, 800, x0, 460, x0 + 80, 540, (170, 150, 110))          # the three star pictures
+    box = find_test_popup(bytes(lie), 800, 600)
+    assert box and abs(box[0] - 486) <= TEST_STEP and abs(box[1] - 366) <= TEST_STEP, box
+    sky = canvas(800, 600, (40, 70, 30)); paint(sky, 800, 100, 50, 700, 300, (74, 130, 187))   # blue sky: no rim
+    assert find_test_popup(bytes(sky), 800, 600) is None
     # What's posted: unread values left out, state always sent, mobs (even
     # empty: "none around") only with a mob detector.
     assert form_fields({"hp": 72.0, "mana": None, "xp": 63.2, "x": None, "y": None, "mobs": "", "state": "ok"}) == \

@@ -821,6 +821,7 @@ TEST_STEP = 6            # px between the samples looking for the teal panel
 TEST_PANEL = (150, 40)   # px: the least width and height of the panel
 TEST_FILL = 0.5          # share of the panel's box that must be teal (its text is the rest)
 TEST_FRAME = 24          # px out from the panel's edge the window's dark band and light rim must be
+TEST_EVERY_S = 1.0       # looked for this often (it stays up for long; a whole-screen look costs ~10 ms)
 
 def test_teal(r, g, b):
     """The test panel's teal (dark blue-green at the top, lighter lower down)."""
@@ -1081,6 +1082,7 @@ FULL_SEARCH_MAX_S = 2.0   # ...once you've landed: mid-jump the camera has moved
 AIRBORNE_PX = 8       # your name tag this far above (or below) the platform you stood on: in the air
 TRACK_REACH = 60      # px either side of where a mob was that it's looked for when followed (its walk, the camera's)
 TRACK_RISE = 50       # ...and above and below (a jump moves the camera up and down)
+TRACK_NEED = 0.75     # a mob just seen there needs this share of the usual match to be followed (hit effects cover it)
 
 def search_due(now, searched_at, following, airborne):
     """Whether this reading runs the whole mob search: nothing being followed,
@@ -1147,9 +1149,9 @@ class ShapeSearch:
         t2, near, loose, spectra, found, spots = float(tolerance) ** 2, {}, {}, {}, [], []
         hidden = np.ones((self.bh, self.bw), np.float32)   # off screen: not seen
         if y1 > y0 and x1 > x0:
-            hidden[y0 - top:y1 - top, x0 - left:x1 - left] = (band[y0 - top:y1 - top, x0 - left:x1 - left].max(axis=2) >= EFFECT_BRIGHT) \
-                if EFFECT_BRIGHT else 0
-        pp = (band * band).sum(axis=2)   # |p|^2 once: |p - c|^2 = |p|^2 - 2 p.c + |c|^2 per colour is then one product
+            hidden[y0 - top:y1 - top, x0 - left:x1 - left] = (screen[y0:y1, x0:x1].max(axis=2) >= EFFECT_BRIGHT) \
+                if EFFECT_BRIGHT else 0   # (on the screen's bytes: several times quicker than on the float copy)
+        pp = np.einsum("ijk,ijk->ij", band, band)   # |p|^2 once: |p - c|^2 = |p|^2 - 2 p.c + |c|^2 per colour is then one product
         for i, (mob, parts, h, w, big, big_total, edges) in enumerate(self.frames):
             nears, F = [], None
             for j, (rgb, m) in enumerate(parts):
@@ -1167,9 +1169,12 @@ class ShapeSearch:
                     kernel = self.rfft(m[::-1, ::-1], self.fft).astype(np.complex64)
                     if self.cached + kernel.nbytes <= KERNEL_MB * 1e6:
                         self.cache[(i, j)], self.cached = kernel, self.cached + kernel.nbytes
-                product = spectra[key] * kernel
-                F = product if F is None else F + product
-            first = self.irfft(F, self.fft)[h - 1:self.bh, w - 1:self.bw] / big_total
+                if F is None:
+                    F = spectra[key] * kernel
+                else:
+                    F += spectra[key] * kernel   # (in place: no new array per part)
+            first = self.irfft(F, self.fft)[h - 1:self.bh, w - 1:self.bw]
+            first /= big_total
             if self.view != "screen":   # at your level: feet level with yours, or (flying) at your height
                 lowest = self.bh - h - 2 * self.slack - (self.body if mob in self.flyers else 0)
                 first[:max(0, lowest)] = 0
@@ -1186,9 +1191,9 @@ class ShapeSearch:
                     if spot.size and spot.mean() >= 0.5:
                         trace = 1.0   # mostly hit effects there: something is being hit, not gone
                     self.traces[k] = max(self.traces.get(k, 0.0), trace)
-            ys, xs = np.nonzero(first >= FIRST_PASS)
-            if not len(ys):
+            if first.max() < FIRST_PASS:   # most frames: nowhere near (cheaper than listing the spots)
                 continue
+            ys, xs = np.nonzero(first >= FIRST_PASS)
             values = first[ys, xs]
             if len(values) > 2000:
                 best = np.argpartition(-values, 2000)[:2000]
@@ -1248,13 +1253,18 @@ class ShapeSearch:
         if not hasattr(self, "track_kernels"):
             self.track_kernels = {}   # (frame, part, window shape) -> its spectrum: windows are mostly one size
         for _, mob, left, top, w, h, last_frame in self.last:
-            x0, y0 = max(0, left - reach), max(0, top - rise)
-            x1, y1 = min(W, left + w + reach), min(H, top + h + rise)
-            if x1 - x0 < 4 or y1 - y0 < 4:
+            # The window round where it was; past the screen's edge it's blank and "not seen", as in search(), so
+            # a mob partly off the screen is still followed.
+            x0, y0, x1, y1 = left - reach, top - rise, left + w + reach, top + h + rise
+            sx0, sy0, sx1, sy1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
+            if sx1 - sx0 < 4 or sy1 - sy0 < 4:
                 continue   # gone off the screen
-            win = screen[y0:y1, x0:x1].astype(np.float32)
-            pp, near, spectra, best = (win * win).sum(axis=2), {}, {}, None
-            hidden = (win.max(axis=2) >= EFFECT_BRIGHT).astype(np.float32) if EFFECT_BRIGHT else np.zeros(pp.shape, np.float32)
+            win = np.zeros((y1 - y0, x1 - x0, 3), np.float32)
+            win[sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = screen[sy0:sy1, sx0:sx1]
+            bright = (win.max(axis=2) >= EFFECT_BRIGHT).astype(np.float32) if EFFECT_BRIGHT else np.zeros(win.shape[:2], np.float32)
+            hidden = np.ones(win.shape[:2], np.float32)   # off the screen: not seen; on it, hit effects aren't either
+            hidden[sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = bright[sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0]
+            pp, near, spectra, loose, best = (win * win).sum(axis=2), {}, {}, {}, None
             shape = (fast_len(y1 - y0), fast_len(x1 - x0))
             # The frame it matched last first: mostly it still does, and the rest needn't be tried.
             order = [last_frame] + [i for i, f in enumerate(self.frames) if f[0] == mob and i != last_frame]
@@ -1289,9 +1299,21 @@ class ShapeSearch:
                 cy, cx = divmod(int(first.argmax()), first.shape[1])
                 if first[cy, cx] < FIRST_PASS:
                     continue
-                score = strict_score(np, nears, parts, cx, cy, fh, fw, hidden=hidden, edges=edges)
-                if score >= need and (best is None or score > best[0]):
+                def grown_nears(parts=parts):   # the edge allowance, as in search()
+                    out = []
+                    for rgb, _ in parts:
+                        key = tuple(int(c) // 16 for c in rgb)
+                        if key not in loose:
+                            loose[key] = grown(np, near[key], MATCH_SLACK)
+                        out.append(loose[key])
+                    return out
+                score = strict_score(np, nears, parts, cx, cy, fh, fw, hidden=hidden,
+                                     loose=grown_nears if MATCH_SLACK else None, edges=edges)
+                if score >= need * TRACK_NEED and (best is None or score > best[0]):
                     best = (score, mob, x0 + cx, y0 + cy, fw, fh, i)
+            spot = bright[max(0, top - y0):top - y0 + h, max(0, left - x0):left - x0 + w]
+            if not best and spot.size and spot.mean() >= 0.5:   # mostly under hit effects: being hit, not gone
+                best = (need, mob, left, top, w, h, last_frame)
             if best and all(abs((best[2] + best[4] / 2.0) - (k[2] + k[4] / 2.0)) > min(best[4], k[4]) * 0.6 for k in kept):
                 kept.append(best)   # two followed onto the same mob: one
         self.last, self.traces = kept, {}
@@ -1490,6 +1512,7 @@ class Screen:
         self.clock = time.monotonic
         self.np, self.tag, self.pixels, self.frame_now, self.raw = numpy_or_none(), None, None, False, None
         self.popup = None     # the test popup's panel on screen last reading, else None
+        self.popup_at = None  # when it was last looked for
         tag = (config.get("mobs") or {}).get("tag")
         if self.np and tag:
             rgb = self.np.frombuffer(bytes.fromhex(tag["rgb"]), self.np.uint8).reshape(tag["h"], tag["w"], 3)
@@ -1692,7 +1715,9 @@ class Screen:
         watches = {}
         for what, mark in c.get("watch", {}).items():   # (not `name`: that's the map's)
             watches[what] = patch_matches(grab(self.sct, mark["x"] - 2, mark["y"] - 2, 5, 5), bytes(mark["patch"]))
-        self.popup = self.test_popup()
+        now = self.clock()
+        if self.popup_at is None or now - self.popup_at >= TEST_EVERY_S or now < self.popup_at:
+            self.popup, self.popup_at = self.test_popup(), now   # in between, the last look stands
         out["state"] = self.state.update(out.get("hp"), out.get("mana"), dot is not None, bool(mm), watches, self.popup is not None,
                                          self.clock())
         out["x"], out["y"] = dot if dot else (None, None)
@@ -3792,6 +3817,8 @@ def selftest():
     # "ok" once it's answered. A setup for another game doesn't look for it.
     popup(fake.px, 800, 520, 380)
     ms = Screen(fake, {"game": "maplestory"})
+    tick = [0.0]
+    ms.clock = lambda: tick[0]
     assert [ms.read()["state"] for _ in range(2)] == ["ok", "test"] and ms.popup, ms.popup
     assert screen.read()["state"] == "ok" and screen.popup is None
     assert Screen(fake, {"game": "maplestory", "test_popup": False}).test_popup() is None
@@ -3800,6 +3827,8 @@ def selftest():
     assert named["map"] == "Ellinia", named   # with a --mark spot set: still the map's own name, not the mark's
     del screen.map_name, screen.config["watch"]
     paint(fake.px, 800, 520, 380, 782, 568, grey)
+    assert ms.read()["state"] == "test"                     # looked for once a second: still up till then
+    tick[0] += TEST_EVERY_S
     assert ms.read()["state"] == "ok" and ms.popup is None
     # Alert sounds: the test popup as it shows and every 5 s while it stays; a death once.
     alarm = Alarm()
@@ -3981,6 +4010,13 @@ def selftest():
         walked[90:110, 85:105] = 40; walked[90:110, 200:220][rgba[..., 3] > 0] = rgba[..., :3][rgba[..., 3] > 0]
         assert search.track(walked) == [] and search.last == []              # moved further than it could: let go (the next search finds it)
         assert sorted(f[2] for f in search.search(walked, 200, 109)) == [200]
+        edge = world.copy()                                                   # one partly off the screen's right edge
+        edge[90:110, 300:320] = 40; edge[90:110, 390:400][rgba[:, :10, 3] > 0] = rgba[:, :10, :3][rgba[:, :10, 3] > 0]
+        assert ("blob", 390) in [(f[1], f[2]) for f in search.search(edge, 200, 109)]
+        assert ("blob", 390) in [(f[1], f[2]) for f in search.track(edge)]  # still followed (the video lost these)
+        flash = world.copy(); flash[88:112, 55:85] = (255, 240, 200)          # a hit effect all over one: kept, being hit
+        search.search(world, 200, 109)
+        assert ("blob", 60) in [(f[1], f[2]) for f in search.track(flash)]
         everything = ShapeSearch(np, frames, 200, 400, view="screen", height=120).search(world, 200, 109)
         assert sorted((f[1], f[2]) for f in everything) == [("bat", 240), ("blob", 60), ("blob", 130), ("blob", 300)], everything
         tag = np.zeros((10, 30, 3), np.uint8); tag[:] = (60, 30, 90); tag[2:8, 1:7] = (220, 40, 30); tag[3:7, 10:28] = (230, 200, 160)

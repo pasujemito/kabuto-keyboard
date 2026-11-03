@@ -5,6 +5,22 @@ and show up in the pad's **Updates** panel.
 
 ## Screen reader (with the next release)
 
+- 🎥 **Tuned on a real Perion video** (The Burnt Land III, 74 s, replayed at
+  the reading rate):
+  - mobs partly off the screen's edge were found but never followed (the
+    follow window stopped at the edge): now padded like the search;
+  - mobs being hit were let go (hit effects cover them): a mob just seen
+    there needs 75% of the usual match to be followed, and one mostly under
+    hit effects is kept;
+  - the whole search is ~10% quicker for the same finds (the "not seen"
+    mask on the screen's bytes, frames nowhere near skipped sooner, sums in
+    place), and the test popup is looked for once a second, not every
+    reading (~11 ms saved);
+  - **run `python mob_frames.py`** if you haven't: with only fire_boar.png
+    a walking boar matched some of the time; with its stand, walk and hit
+    frames 68% more boars were found. Your setup's `"sight": 2.5` searches
+    the whole screen width; 1.5 found every boar within reach for 15% less
+    time
 - ⚡ **Mobs followed between searches**: the whole mob search (about
   150-270 ms a reading) now runs every 0.5 s, and only once you've landed:
   the pattern jump-attacks all the time and the camera bobs with each jump,

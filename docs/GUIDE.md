@@ -419,16 +419,16 @@ reading; 5 frames: about 200 ms; 5 frames, sight 1.5: about 145 ms; 3
 frames, sight 1.5: about 100 ms. Looser/Stricter (F6/F7) move the colour tolerance here too, and a
 map's `shape` (0.6 by default) sets how well a frame must match.
 
-**Mobs are followed between searches.** That whole search runs every 0.5 s
-(`FULL_SEARCH_S`), once you've landed: mid-jump the camera has moved up or
-down, so the band at your platform's height would miss the mobs (in the air
-over 2 s, it searches anyway). In between, each mob it found is looked for
-only in a small window round where it was (60 px either side, 50 px above and
-below: its walk and the camera's bobbing), with only its own frames, the one
-it matched last first. That takes a few ms a mob instead of the whole search,
-so readings come every 0.2 s and the pad hears of a mob walking off, turning
-or dying almost at once. A mob not found again is let go; a respawn shows up
-at the next whole search, within about half a second.
+**Every reading searches for mobs.** That way a new mob is reported on the
+first reading that can see it: replayed on three Perion videos, following
+the mobs between searches instead (quicker readings) made new ones wait 0.1-0.25 s
+on average and up to 1 s. On a slow PC, `"search_every": 0.5` in your setup's
+`mobs` searches every 0.5 s and follows the mobs found in between (each in a
+small window round where it was, with its own frames: a few ms a mob). Mid-jump
+is searched too: as many mobs were found in the air as on the ground. Readings
+come every 0.2 s, or as soon as the last one is done with a 0.05 s rest. The
+console shows how long each takes (its `ms`); keep it under ~150 ms with
+`frames` and `sight` above.
 
 **Mobs per map:** keep every mob's PNG once, in `mobs`, and describe each map
 in `mobs/map.json`: its name (as you like; the in-game name reads best) and

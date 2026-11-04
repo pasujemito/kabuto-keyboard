@@ -269,6 +269,9 @@ void webServerBegin() {
     api("/api/network", HTTP_GET, [](AsyncWebServerRequest* req) {
         JsonDocument d;
         homeWifiWriteStatus(d);
+        // The pad's health, for the page: a long run under heavy traffic shows up here.
+        d["uptimeS"] = millis() / 1000; d["heapFree"] = ESP.getFreeHeap(); d["heapLargest"] = ESP.getMaxAllocHeap();
+        if (WiFi.status() == WL_CONNECTED) d["rssi"] = WiFi.RSSI();
         d["pinSet"] = accessPinSet();
         d["viaHotspot"] = viaHotspot(req);
         String out; serializeJson(d, out);
@@ -318,9 +321,10 @@ void webServerBegin() {
         }
         if (liveStatsUpdate(r))
             Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
-        char home[48];
+        char home[48], keys[64];
         homeReply(home, sizeof(home));   // the playing pattern's home, for the game layer
-        JsonDocument d; d["ok"] = true; if (home[0]) d["home"] = home;
+        toolKeysTake(keys, sizeof(keys));   // pad buttons pressed since: no separate polling needed
+        JsonDocument d; d["ok"] = true; d["keys"] = keys; if (home[0]) d["home"] = home;
         String out; serializeJson(d, out);
         sendJson(req, 200, out);
     });

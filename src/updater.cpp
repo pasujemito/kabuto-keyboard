@@ -73,6 +73,10 @@ bool beginGet(HTTPClient& http, WiFiClientSecure& client, const String& url, Str
     if (code == 200) return true;
     err = code == 404 ? String("Not found on GitHub (no release published yet?)")
                       : code < 0 ? String("Couldn't reach GitHub") : "GitHub answered " + String(code);
+    // A secure connection needs ~40 KB of memory in one piece; a long run under heavy
+    // traffic can leave too little. Say so rather than blame GitHub.
+    if (code < 0 && ESP.getMaxAllocHeap() < 45000)
+        err += " (low memory: " + String(ESP.getMaxAllocHeap() / 1024) + " KB free in one piece). Restart the pad and try again";
     http.end();
     return false;
 }

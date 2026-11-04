@@ -3,6 +3,23 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.9
+
+- 🐢➡️⚡ **Less Wi-Fi traffic, a quicker pad**: with the screen reader on
+  Wi-Fi the pad was handling ~8 requests a second (a reading every 0.2 s, and
+  a separate ask for its buttons ~3 times a second). Wi-Fi shares the radio
+  with the Bluetooth keys, so keys lagged, the page loaded slowly and secure
+  downloads ran short of memory. Now the buttons pressed come back in each
+  reading's answer (no separate asking while readings flow), and readings go
+  every 0.5 s over Wi-Fi (still 0.2 s over USB; `--interval` sets your own):
+  about 2 requests a second. **Update the PC script too**, and use the USB
+  cable when you can: it doesn't touch the radio
+- 🩺 **The pad's health on the page**: under Home Wi-Fi, how long it has been
+  up, its free memory (and how much in one piece) and the Wi-Fi signal,
+  amber when too little is left for an update. A download that fails for lack
+  of memory says so ("restart the pad and try again") instead of "Couldn't
+  reach GitHub"
+
 ## 1.18.8
 
 - 🌊 **Moving while attacking, not stepping**: a new **Move while

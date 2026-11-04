@@ -154,9 +154,10 @@ static void usbStatsPoll() {
         } else if (!strncmp(line, "KABUTO stats ", 13)) {
             StatsReading r = parseStatsForm(line + 13);
             if (liveStatsUpdate(r)) Macros.post(EngineCmd::STOP);
-            char home[48];
+            char home[48], keys[64];
             homeReply(home, sizeof(home));   // the playing pattern's home, for the game layer
-            if (home[0]) Serial.printf("KABUTO ok %s\n", home); else Serial.print("KABUTO ok\n");
+            toolKeysTake(keys, sizeof(keys));   // pad buttons pressed since: no separate polling needed
+            Serial.printf("KABUTO ok keys=%s%s%s\n", keys, home[0] ? "&" : "", home);
         }
     }
 }

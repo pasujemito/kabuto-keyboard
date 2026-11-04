@@ -427,7 +427,9 @@ on average and up to 1 s. On a slow PC, `"search_every": 0.5` in your setup's
 `mobs` searches every 0.5 s and follows the mobs found in between (each in a
 small window round where it was, with its own frames: a few ms a mob). Mid-jump
 is searched too: as many mobs were found in the air as on the ground. Readings
-come every 0.2 s, or as soon as the last one is done with a 0.05 s rest. The
+come every 0.2 s over USB (0.5 s over Wi-Fi: the pad's radio is shared with its
+Bluetooth keys, and more slowed both its keys and its page), or as soon as the
+last one is done with a 0.05 s rest. `--interval` sets your own. The
 console shows how long each takes (its `ms`); keep it under ~150 ms with
 `frames` and `sight` above.
 
@@ -646,8 +648,8 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   - **Face mobs**: turns to face mobs in your hitbox; with mobs on both
     sides, the nearer one (Smart does this too). Edges come first, then mobs, then the pattern's
     turn chance. It checks before every attack, so a mob that spawns behind
-    you is faced within about a second (readings every 0.2 s; `--interval
-    0.5` to send fewer).
+    you is faced within about a second (readings every 0.2 s over USB, 0.5 s over Wi-Fi; `--interval`
+    to change that).
   - **Stuck after (s)**, 20 s by default: if your place on the map doesn't
     change for that long, it turns around; still stuck after another wait, it
     stops. It goes by the map position (slide plus dot), so a dot that stays
@@ -748,6 +750,11 @@ pads will trust, so keep write access to yourself (or protect `main`).
 - It checks a minute after starting and every 6 hours, joining your home Wi-Fi
   only for the check unless it stays connected (see above). Its own hotspot
   stays on, though a phone on it may drop for a moment. **Check now** checks straight away.
+- Under **Home Wi-Fi**, a **Pad:** line shows how long it has been up, its
+  free memory and how much of it is in one piece, and the Wi-Fi signal. Under
+  45 KB in one piece it turns amber: a secure download needs about 40 KB, so
+  restart the pad (unplug it a moment) before updating. A download that fails
+  for that reason says so.
 - The **Updates** panel lists the newest 4 versions (installed one shown above
   them either way); **Install** on any of them.
 - Only releases signed with your key are listed. A download is installed only

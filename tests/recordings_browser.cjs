@@ -10,7 +10,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     releases:[{version:'1.15.0',date:'2026-11-02',newer:true},{version:'1.14.0',date:'2026-10-27',newer:false},{version:'1.13.0',date:'2026-10-20',newer:false}]};
   const updateRequests=[];let refuseInstall=false;
   // Home Wi-Fi and PIN mocks; pinRequired acts like a page opened over the home network.
-  const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true};
+  const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true,uptimeS:11100,heapFree:150000,heapLargest:70000};
   const networkRequests=[];let pinRequired=false,loggedIn=false;
   let liveState=null,patternState=null,noticeState=null;const statsRequests=[],noticeRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
@@ -303,6 +303,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();
   assert.match(await page.locator('#networkStatus').textContent(),/Saved: HomeNet\. Joined only to check for updates/);
+  // The pad's health; memory too broken up for updates says so.
+  assert.match(await page.locator('#padHealth').textContent(),/^Pad: up 3 h 5 min · memory 146 KB free, 68 KB in one piece$/);
+  networkState.heapLargest=30000;await page.evaluate(()=>refreshNetwork());
+  await page.waitForFunction(()=>document.querySelector('#padHealth').classList.contains('warn'));
+  assert.match(await page.locator('#padHealth').textContent(),/29 KB in one piece\. Low: restart the pad/);
+  networkState.heapLargest=70000;await page.evaluate(()=>refreshNetwork());
   await page.getByLabel('Home Wi-Fi name').fill('OtherNet');
   await page.evaluate(()=>refreshNetwork());await page.waitForTimeout(100);
   assert.equal(await page.getByLabel('Home Wi-Fi name').inputValue(),'OtherNet');

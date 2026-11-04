@@ -91,12 +91,18 @@ bool fetchReleases(std::vector<Release>& out, String& err) {
     JsonDocument doc;
     if (deserializeJson(doc, body)) { err = "Release list unreadable"; return false; }
     uint32_t parsed[3];
+    // Each signature check is heavy maths (ECDSA): only the newest few are checked
+    // (the list comes newest first), with a pause after each. 20 checks in a row
+    // starved this core for over 5 s: the watchdog restarted the pad, and the page
+    // and Wi-Fi stalled meanwhile.
     for (JsonObjectConst v : doc["versions"].as<JsonArrayConst>()) {
+        if (out.size() >= RELEASES_LISTED) break;
         Release r{v["version"] | "", v["date"] | "", v["sha256"] | "", v["size"] | 0U};
         // Unsigned or malformed entries are never shown, let alone installed.
-        if (!parseVersion(r.version, parsed) || !isSha256Hex(r.sha256) || !r.size ||
-            !verifySignature(manifestPayload(r.version, r.size, r.sha256), v["signature"] | "")) continue;
-        out.push_back(r);
+        if (!parseVersion(r.version, parsed) || !isSha256Hex(r.sha256) || !r.size) continue;
+        bool signedOk = verifySignature(manifestPayload(r.version, r.size, r.sha256), v["signature"] | "");
+        vTaskDelay(pdMS_TO_TICKS(20));   // let the web server, Wi-Fi and the idle task (watchdog) run
+        if (signedOk) out.push_back(r);
     }
     return true;
 }
@@ -130,7 +136,10 @@ bool download(const Release& r, String& err) {
         mbedtls_md_update(&md, buf, n);
         if (Update.write(buf, n) != (size_t)n) { err = String("Writing failed: ") + Update.errorString(); break; }
         done += n;
-        Lock l; progress_ = (uint8_t)((uint64_t)done * 100 / r.size);
+        { Lock l; progress_ = (uint8_t)((uint64_t)done * 100 / r.size); }
+        // Data can flow for 10-30 s without a pause; give this core's idle task (the
+        // watchdog's), the web server and Wi-Fi a moment every 16 KB, as the check does.
+        if ((done & 0x3FFF) < (uint32_t)n) vTaskDelay(1);
     }
     uint8_t hash[32];
     mbedtls_md_finish(&md, hash);

@@ -3,6 +3,18 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.11
+
+- 💥 **No more restarts on checking for updates** (and no stalls while it
+  checks): each check verified the signature of every release listed, heavy
+  maths done without a pause. With the list grown to 20 that took over 5 s,
+  so the watchdog restarted the pad, and the page and Wi-Fi froze meanwhile
+  (a check runs a minute after starting, every 6 hours and on Check now).
+  Now only the newest 6 are checked, with a pause after each, and the list
+  keeps the newest 8 (so pads on older versions stop restarting too). The
+  firmware download (1.3 MB, 10-30 s of data) pauses a moment every 16 KB
+  too, so it can't trip the watchdog either
+
 ## 1.18.10
 
 - 🔄 **Check now shows what it's doing**: it said "Not checked yet" and

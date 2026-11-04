@@ -738,7 +738,7 @@ docs, tests or `data/` don't announce an update. It:
 2. Builds with that version baked in (local builds report the base), runs the
    host tests (including the storage tests), and stops if anything fails.
 3. Signs the build and publishes release `vX.Y.Z` with `firmware.bin` and
-   `versions.json`, the signed list of the 20 most recent releases.
+   `versions.json`, the signed list of the 8 most recent releases (the pad checks the signatures of the newest 6).
 
 Pushes queue rather than race, and **Actions → Release firmware → Run
 workflow** releases without a code change. Actions and releases are free for

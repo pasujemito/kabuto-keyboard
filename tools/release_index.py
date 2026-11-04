@@ -21,7 +21,7 @@ Usage:
 """
 import argparse, base64, hashlib, json, os, subprocess, tempfile
 
-KEEP_VERSIONS = 20      # keeps versions.json a few KB for the pad to parse
+KEEP_VERSIONS = 8       # each costs the pad a signature check (pads before 1.18.11 check them all, and 20 tripped its watchdog)
 
 def payload(version, size, sha256_hex):
     return ("%s\n%d\n%s\n" % (version, size, sha256_hex)).encode()

@@ -210,6 +210,19 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   refuseInstall=true;page.once('dialog',d=>d.accept());
   await page.getByRole('button',{name:'Install v1.15.0'}).click();
   await page.locator('#toast.show.err').waitFor();assert.match(await page.locator('#toast').textContent(),/Stop playback/);
+  // Check now: "Checking GitHub…" at once, even before the pad says it started, and the
+  // result shows as soon as it's in (not at the next 30 s refresh).
+  refuseInstall=false;
+  await page.getByRole('button',{name:'Check now'}).click();
+  assert.match(await page.locator('#updateStatus').textContent(),/Checking GitHub…/);
+  assert(updateRequests.some(r=>r.path==='/api/update/check'));
+  await page.waitForTimeout(1500);
+  assert.match(await page.locator('#updateStatus').textContent(),/Checking GitHub…/);   // the pad hasn't picked it up yet: still following
+  updateState.state='checking';await page.waitForTimeout(1700);
+  updateState.state='ready';updateState.checkedAgoS=0;updateState.releases.unshift({version:'1.16.0',date:'2026-11-04',newer:true});
+  await page.waitForFunction(()=>/Checked just now/.test(document.querySelector('#updateStatus').textContent),null,{timeout:4000});
+  assert.equal(await page.locator('#updateSummary').textContent(),'Update available: v1.16.0');
+  updateState.releases.shift();updateState.checkedAgoS=120;
   // Live bars from the PC screen reader appear on the pad screen with XP rates.
   await page.locator('#tabKeys').click();
   assert.equal(await page.locator('#gridMode button.on').getAttribute('data-g'),'run');   // buttons play when tapped, until Edit

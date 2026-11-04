@@ -136,7 +136,10 @@ bool download(const Release& r, String& err) {
         mbedtls_md_update(&md, buf, n);
         if (Update.write(buf, n) != (size_t)n) { err = String("Writing failed: ") + Update.errorString(); break; }
         done += n;
-        Lock l; progress_ = (uint8_t)((uint64_t)done * 100 / r.size);
+        { Lock l; progress_ = (uint8_t)((uint64_t)done * 100 / r.size); }
+        // Data can flow for 10-30 s without a pause; give this core's idle task (the
+        // watchdog's), the web server and Wi-Fi a moment every 16 KB, as the check does.
+        if ((done & 0x3FFF) < (uint32_t)n) vTaskDelay(1);
     }
     uint8_t hash[32];
     mbedtls_md_finish(&md, hash);

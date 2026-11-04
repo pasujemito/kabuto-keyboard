@@ -11,7 +11,9 @@ and show up in the pad's **Updates** panel.
   so the watchdog restarted the pad, and the page and Wi-Fi froze meanwhile
   (a check runs a minute after starting, every 6 hours and on Check now).
   Now only the newest 6 are checked, with a pause after each, and the list
-  keeps the newest 8 (so pads on older versions stop restarting too)
+  keeps the newest 8 (so pads on older versions stop restarting too). The
+  firmware download (1.3 MB, 10-30 s of data) pauses a moment every 16 KB
+  too, so it can't trip the watchdog either
 
 ## 1.18.10
 

@@ -396,7 +396,7 @@
     <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
     <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
-    <button class="btn sm" id="newSetupLayer" title="Two layers of buttons for the PC screen reader: setup (mark, skip, which map, outlines) and tuning (looser, stricter, outlines, hide)">🍁 Setup layer</button>
+    <button class="btn sm" id="newSetupLayer" title="A layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">🍁 Setup layer</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
   </section>
@@ -625,7 +625,7 @@ function renderUpdates(){
   box.append(note(updateStatusText(u)));
   if(u.rolledBack)box.append(note(`v${u.rolledBack} kept failing to start, so the pad went back to v${u.current}.`));
   const busy=['checking','downloading','restarting'].includes(u.state);
-  for(const r of releases){
+  for(const r of releases.slice(0,4)){   // the newest 4 (the list comes newest first)
     const line=el('div','update-release'),label=el('span'),meta=el('small');
     label.textContent='v'+r.version;
     meta.textContent=[r.version===u.current?'installed':r.newer?'new':'older',r.date].filter(Boolean).join(' · ');label.appendChild(meta);
@@ -749,18 +749,16 @@ function showTab(t){
 }
 
 /* layers */
-// Two layers whose buttons are the PC screen reader's keys, so setup, tuning
-// and the game layer work from the pad: MS🍁 Setup (mark, skip, which map,
-// outlines, on to Tune, back) and MS🍁 Tune (looser, stricter, outlines,
-// hide, to Setup, back). An empty button on the current layer, if any,
-// switches to Setup.
+// A layer whose buttons are the PC screen reader's keys, so setup and the
+// game layer work from the pad: MS🍁 Setup (mark, skip, which map, map area,
+// outlines, back). An empty button on the current layer, if any, switches to it.
+// (Looser/Stricter and the Tune layer are gone: F6/F7 still work on the keyboard.)
 function addSetupLayer(){
-  if(cfg.layers.length+2>meta.maxLayers)throw new Error('No room for two more layers (at most '+meta.maxLayers+').');
-  const from=selLayer,setup=cfg.layers.length,tune=setup+1,fromName=cfg.layers[from].name||'layer '+from;
+  if(cfg.layers.length+1>meta.maxLayers)throw new Error('No room for another layer (at most '+meta.maxLayers+').');
+  const from=selLayer,setup=cfg.layers.length,fromName=cfg.layers[from].name||'layer '+from;
   const tool=k=>{const [name,hotkey]=TOOL_KEYS[k],label=name+' ('+hotkey+')';return [label,label,[{type:'tool',key:k}]];};
   const go=(label,name,layer)=>[label,name,[{type:'layer',layer}]];
-  const layouts=[['MS🍁 Setup',[tool('mark'),tool('skip'),tool('map'),tool('outlines'),go('Tune ▸','Go to MS🍁 Tune',tune),go('Back','Back to '+fromName,from)]],
-                 ['MS🍁 Tune',[tool('looser'),tool('stricter'),tool('outlines'),tool('hide'),go('◂ Setup','Go to MS🍁 Setup',setup),go('Back','Back to '+fromName,from)]]];
+  const layouts=[['MS🍁 Setup',[tool('mark'),tool('skip'),tool('map'),tool('area'),tool('outlines'),go('Back','Back to '+fromName,from)]]];
   const same=(w,steps)=>w.steps.length===1&&JSON.stringify(w.steps)===JSON.stringify(steps);
   const wanted=[...new Set(layouts.flatMap(([,items])=>items.slice(0,meta.keyCount).map(([, ,steps])=>JSON.stringify(steps))).concat(JSON.stringify([{type:'layer',layer:setup}])))];
   if(cfg.workflows.length+wanted.filter(j=>!cfg.workflows.some(w=>same(w,JSON.parse(j)))).length>64)throw new Error('Recording storage is full.');
@@ -776,7 +774,7 @@ function addSetupLayer(){
   const empty=cfg.layers[from].keys.map((k,i)=>k.steps.length?-1:i).filter(i=>i>=0).pop();
   if(empty!==undefined){const k=cfg.layers[from].keys[empty];k.name='🍁 Setup';setAssignment(k,'single',[reuse('Go to MS🍁 Setup',[{type:'layer',layer:setup}])]);}
   cfg.version=2;selLayer=setup;selKey=0;selectedWorkflow=null;renderLayers();renderGrid();renderEditor();renderRecordings();updateDirty();
-  toast('Added the MS🍁 Setup and Tune layers'+(empty!==undefined?'; button '+(empty+1)+' on '+fromName+' goes to Setup':'')+'. Save to use them.');
+  toast('Added the MS🍁 Setup layer'+(empty!==undefined?'; button '+(empty+1)+' on '+fromName+' goes to Setup':'')+'. Save to use them.');
 }
 function renderLayers(){
   const b=$("#layerbar");b.replaceChildren();
@@ -890,7 +888,7 @@ const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
   return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -913,6 +911,7 @@ function normalizeDynamicPattern(p){
   if(p.auto_pause===undefined)p.auto_pause=0;   // saved before auto-pause / walking to mobs
   if(p.approach===undefined)p.approach=false;
   if(p.walk_hold===undefined)p.walk_hold=[280,650];
+  if(p.glide===undefined)p.glide=0;   // saved before fluid movement: turns tapped on the ground, as before
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -941,6 +940,7 @@ function validateDynamicPattern(p){
   if(typeof p.auto_pause!=='number'||!(p.auto_pause>=0&&p.auto_pause<=.9))throw new Error('Auto-pause: enter a percentage from 0 to 90.');
   if(typeof p.approach!=='boolean')throw new Error('Choose whether to walk to mobs.');
   range(p.walk_hold,'Walking hops',50,5000);
+  if(typeof p.glide!=='number'||!(p.glide>=0&&p.glide<=1))throw new Error('Move while attacking: enter a percentage from 0 to 100.');
   if(!Array.isArray(p.potions)||p.potions.length>2||new Set(p.potions.map(x=>x.id)).size!==p.potions.length||p.potions.some(x=>!POTION_LABELS[x.id]))throw new Error('Use one HP and one Mana entry.');
   for(const x of p.potions){
     const label=POTION_LABELS[x.id];
@@ -1013,6 +1013,7 @@ function renderDynamicAware(){
   const approach=el('label','dynamic-field'),approachCheck=el('input');approachCheck.type='checkbox';approachCheck.checked=p.approach;approachCheck.setAttribute('aria-label','Walk to mobs');
   approachCheck.onchange=()=>{p.approach=approachCheck.checked;dynamicDirty=true;};approach.append(approachCheck,' Walk to mobs you can see but not reach');box.appendChild(approach);
   box.appendChild(dynamicRange('Walking: hop every (ms)',p.walk_hold,50,5000));
+  box.appendChild(dynamicNumber('Move while attacking (%)',Math.round(p.glide*1000)/10,0,100,1,n=>p.glide=n/100,'Move while attacking (% of sets) · arrow held through the jump-attacks, turns in the air · 0 = off'));
 }
 function renderDynamicPotions(){
   const list=$('#dynamicPotions');list.replaceChildren();
@@ -1121,7 +1122,7 @@ function recordingSteps(recording,seen=new Set()){
   });
 }
 // Buttons for tools/screen_stats.py ("tool" steps): its keys, pressed on the pad.
-const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11'],looser:['Looser','F6'],stricter:['Stricter','F7'],home:['Set home (unused)','F12']};   // home: 1.18.6's, kept so saved buttons show
+const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11'],looser:['Looser','F6'],stricter:['Stricter','F7'],home:['Set home (unused)','—'],area:['Map area','F12']};   // home: 1.18.6's, kept so saved buttons show
 function isToolRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='tool';}
 function recordingSummary(recording){
   if(isToolRecording(recording)){const k=TOOL_KEYS[recording.steps[0].key];return `Screen reader key · ${k?k[0]+' ('+k[1]+')':recording.steps[0].key}`;}
@@ -1961,10 +1962,10 @@ function renderLiveStats(live,pattern=status.pattern){
     const row=el('div','live-row'),name=el('span'),track=el('div','track'),dot=el('i'),value=el('b');
     name.textContent='Map';dot.style.left=live.x/10+'%';
     // Home and how far you may drift from it, on the minimap's scale.
-    if(pattern&&pattern.homeRange&&pattern.home!==undefined){
-      const at=pattern.homeOnMap?(live.wx!==undefined?live.x+pattern.home-live.wx:null):pattern.home;
-      if(at!==null){const band=el('span','home'),lo=Math.max(0,at-pattern.homeRange),hi=Math.min(1000,at+pattern.homeRange);
-        if(hi>lo){band.style.left=lo/10+'%';band.style.width=(hi-lo)/10+'%';band.title='Home range';if(at>=0&&at<=1000){const mark=el('b');mark.style.left=(at-lo)/(hi-lo)*100+'%';band.appendChild(mark);}track.appendChild(band);}}
+    if(pattern&&pattern.home!==undefined){
+      const at=pattern.homeOnMap?(live.wx!==undefined?live.x+pattern.home-live.wx:null):pattern.home,range=pattern.homeRange||8;   // no range: just a mark
+      if(at!==null){const band=el('span','home'),lo=Math.max(0,at-range),hi=Math.min(1000,at+range);
+        if(hi>lo){band.style.left=lo/10+'%';band.style.width=(hi-lo)/10+'%';band.title=pattern.homeRange?'Home range':'Home (set when the pattern started)';if(at>=0&&at<=1000){const mark=el('b');mark.style.left=(at-lo)/(hi-lo)*100+'%';band.appendChild(mark);}track.appendChild(band);}}
     }
     track.appendChild(dot);
     value.textContent=(live.mobs&1?'◀ ':'')+pct(live.x)+(live.mobs&2?' ▶':'');value.title='Your position on the minimap; arrows show mobs in reach on that side';
@@ -2049,7 +2050,7 @@ function renderNotices(list=[],live){
   clear.onclick=()=>api('/api/notices/clear',{method:'POST'}).then(()=>renderNotices([])).catch(()=>{});
   head.append(title,clear);box.appendChild(head);
   const nowId=now?Math.max(...list.filter(n=>n.kind===now).map(n=>n.id)):-1;
-  for(const n of [...list].reverse()){
+  for(const n of [...list].reverse().slice(0,4)){   // the newest 4
     const [icon,label,help]=NOTICES[n.kind]||['🔔',n.text,''],row=el('div','notice'+(n.id===nowId?' now':''));
     const i=el('span'),text=el('div'),b=el('b'),more=el('span'),time=el('time');
     i.textContent=icon;b.textContent=label+(n.id===nowId?' · on screen now':'');more.textContent=help;

@@ -94,6 +94,9 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (!o["approach"].isNull() && !o["approach"].is<bool>()) return false;
     p.approach = o["approach"] | false;
     if (!range(o["walk_hold"],p.walkHold,50,5000)) return false;   // walking: time between jumps, arrow held
+    // "glide": the share of sets in which the arrow stays held through the
+    // jump-attacks (fluid movement; turns made in the air). 0 / missing: off.
+    if (!chance(o["glide"],p.glidePermille)) return false;
     // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
     // keys keep the defaults, so older patterns play exactly as before.
     auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
@@ -209,7 +212,7 @@ static bool parseStep(JsonObjectConst o, Step& step) {
         // Combat also parses the same weighted workflow choices as random.
     }
     if (type == "utilities") { step.type = StepType::UTILITIES; return true; }
-    if (type == "tool") {   // a screen reader key: mark, skip, map, outlines, hide, looser, stricter, home
+    if (type == "tool") {   // a screen reader key: mark, skip, map, outlines, hide, looser, stricter, home, area
         step.type = StepType::TOOL;
         step.value = toolKeyFromName(o["key"] | "");
         return step.value != TOOL_NONE;
@@ -411,7 +414,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
             d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;
-            range(d,"walk_hold",p->walkHold);
+            range(d,"walk_hold",p->walkHold);d["glide"]=p->glidePermille/1000.0;
             auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
             JsonObject keys=d["keys"].to<JsonObject>();
             keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);

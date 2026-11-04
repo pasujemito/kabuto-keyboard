@@ -139,7 +139,7 @@ static void handleStatus(AsyncWebServerRequest* req) {
         static const char* const actions[] = {"attack", "wait", "home", "home", "pause", "approach", "approach"};
         p["smart"] = view.smart; p["action"] = view.action < 7 ? actions[view.action] : "attack";
         p["facing"] = view.facingLeft ? "left" : "right";
-        if (view.haveHome && view.homeRange) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; }
+        if (view.haveHome) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; }
         if (view.peak >= 0) p["peak"] = view.peak;
     }
     String out; serializeJson(d, out);
@@ -318,7 +318,11 @@ void webServerBegin() {
         }
         if (liveStatsUpdate(r))
             Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
-        sendJson(req, 200, "{\"ok\":true}");
+        char home[48];
+        homeReply(home, sizeof(home));   // the playing pattern's home, for the game layer
+        JsonDocument d; d["ok"] = true; if (home[0]) d["home"] = home;
+        String out; serializeJson(d, out);
+        sendJson(req, 200, out);
     });
     // The screen reader's keys pressed on the pad since it last asked.
     api("/api/tool/keys", HTTP_POST, [](AsyncWebServerRequest* req) {

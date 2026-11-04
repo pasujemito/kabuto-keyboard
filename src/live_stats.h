@@ -51,6 +51,7 @@ struct PatternView {
 };
 void patternViewSet(const PatternView& v);
 PatternView patternViewSnapshot();
+void homeReply(char* out, size_t size);   // homeReplyForm of the playing pattern
 
 // The screen reader's keys pressed on the pad (ToolKeys, stats_logic.h).
 void toolKeyPush(uint8_t key);

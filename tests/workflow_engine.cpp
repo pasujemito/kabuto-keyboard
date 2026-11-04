@@ -495,6 +495,42 @@ int main() {
                  at(back?300:380,back?MOB_READ|MOB_LEFT:MOB_READ);});         // then none: walks home, and the rest are fought there
         {uint32_t later=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5&&e.at>=homeAgainAt)++later;
          assert(back&&attacks()==3&&later==2&&homeShownAt&&held.empty());}
+        // Fluid movement (glide). Is each attack made with `key` held?
+        auto attacksHolding=[&](uint8_t key){int n=0;bool down=false;for(auto e:hidEvents){if(e.key==key)down=e.down;else if(down&&e.down&&e.key==0&&e.mods==5)++n;}return n;};
+        auto playWith=[&](std::function<long(long)> draw,std::function<void()> each){uint32_t giveUp=millis()+60000;each();testRandomHook=draw;
+            testDelayHook=[&,each]{each();if(millis()>=giveUp)engine.stopFlag_=true;};hidEvents.clear();run(engine,{aware});testDelayHook={};testRandomHook={};};
+        // Every set on the move: the arrow goes down once and stays down through all
+        // the jump-attacks of both sets (no taps on the ground), let go at the end.
+        {DynamicPattern g=p;g.sets={2,2};g.attacksPerSet={3,3};g.skills.clear();g.potions.clear();g.turnChancePermille=0;g.glidePermille=1000;
+         aware.setPattern(g);
+         playWith([](long){return 0L;},[&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500);});
+         assert((dirs()==std::vector<uint8_t>{L})&&attacks()==6&&attacksHolding(L)==6&&held.empty()&&!heldMods);
+         // Standing sets (the draw says no move): a turn is made in the air, the arrow
+         // pressed after take-off (Alt down) and let go once the attack is, never on the ground.
+         g.glidePermille=500;g.edgeMarginPermille=120;aware.setPattern(g);
+         playWith([](long upper){return upper==1000?999L:0L;},[&]{liveStatsUpdate(500,500,-1,LIVE_OK,50,500);});   // left edge: turn right
+         assert((dirs()==std::vector<uint8_t>{R})&&attacks()==6&&attacksHolding(R)==1);
+         for(size_t i=0;i<hidEvents.size();++i)if(hidEvents[i].key==R){
+             if(hidEvents[i].down)assert(hidEvents[i].mods&4);   // in the air: Alt (jump) held
+             else assert(i>0&&hidEvents[i-1].key==0&&!hidEvents[i-1].down);}   // let go right after the attack
+         assert(held.empty()&&!heldMods);
+         // Smart, gliding: walking home runs straight into attacking, the arrow never let go.
+         g.edgeMarginPermille=0;g.smart=true;g.homeRangePermille=100;g.sets={1,1};g.glidePermille=1000;g.walkHold={280,650};aware.setPattern(g);
+         walked=false;calls=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}
+                  walked=walked||hopsWhileHeld(L)>=2;
+                  liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});
+         assert(walked&&(dirs()==std::vector<uint8_t>{L})&&attacks()==3&&attacksHolding(L)==3&&held.empty());}
+        // Home is set at the start of every pattern (not only Smart), for the
+        // dashboard and the game layer; a home from the dot is set again once map
+        // positions come, rather than compared with them.
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={4,4};g.skills.clear();g.potions.clear();aware.setPattern(g);
+         int homeDot=-1,homeMap=-1;calls=0;
+         playWith([](long){return 0L;},[&]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,420,500,0,calls>3?1500:LIVE_NO_POS,500);
+                  PatternView v=patternViewSnapshot();if(v.haveHome&&!v.homeOnMap)homeDot=v.home;if(v.haveHome&&v.homeOnMap)homeMap=v.home;
+                  char form[48];homeReply(form,sizeof(form));if(v.haveHome&&v.homeOnMap)assert(std::string(form)=="home=1500&hm=1&hr=0");});
+         assert(homeDot==420&&homeMap==1500);
+         char form[48];homeReply(form,sizeof(form));assert(!form[0]);}   // nothing playing: no home to tell
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

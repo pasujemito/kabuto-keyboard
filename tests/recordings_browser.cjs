@@ -271,30 +271,34 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('#notices').getByRole('button',{name:'Clear'}).click();
   await page.waitForFunction(()=>document.querySelector('#notices').hidden);
   assert.deepEqual(noticeRequests,['/api/notices/clear']);
+  // Only the newest 4 are listed.
+  noticeState=[1,2,3,4,5,6].map(id=>({id,kind:id%2?'dead':'offline',text:'x',agoMs:(7-id)*60000}));
+  await page.waitForFunction(()=>!document.querySelector('#notices').hidden);
+  assert.equal(await page.locator('#notices .notice').count(),4);
+  assert.match(await page.locator('#notices .notice').first().textContent(),/Game disconnected.*1 min ago/);
+  noticeState=null;await page.waitForFunction(()=>document.querySelector('#notices').hidden);
   liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
   await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
   assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);
   assert.equal(await page.locator('#liveStats .live-row').count(),1);   // unread bars aren't shown
   liveState=null;await page.waitForFunction(()=>document.querySelector('#liveStats').hidden);
   await page.locator('#tabRecordings').click();
-  // The screen reader's keys as pad buttons: a Setup and a Tune layer, ways
-  // between them and back, and a free button on the current layer to get in.
+  // The screen reader's keys as pad buttons: one Setup layer with a way back,
+  // and a free button on the current layer to get in.
   const layersBefore=await page.evaluate(()=>cfg.layers.length);
   await page.locator('#newSetupLayer').click();
   const layerKeys=i=>page.evaluate(i=>{const L=cfg.layers[i];return {name:L.name,keys:L.keys.map(k=>[k.name,cfg.workflows.find(w=>w.id===k.steps[0]?.workflow)?.steps[0]])};},i);
-  assert.equal(await page.evaluate(()=>cfg.layers.length),layersBefore+2);
+  assert.equal(await page.evaluate(()=>cfg.layers.length),layersBefore+1);
   assert.deepEqual(await layerKeys(layersBefore),{name:'MS🍁 Setup',keys:[['Mark (F8)',{type:'tool',key:'mark'}],['Skip (Esc)',{type:'tool',key:'skip'}],
-    ['Which map (F9)',{type:'tool',key:'map'}],['Outlines (F10)',{type:'tool',key:'outlines'}],['Tune ▸',{type:'layer',layer:layersBefore+1}],['Back',{type:'layer',layer:0}]]});
-  assert.deepEqual(await layerKeys(layersBefore+1),{name:'MS🍁 Tune',keys:[['Looser (F6)',{type:'tool',key:'looser'}],['Stricter (F7)',{type:'tool',key:'stricter'}],
-    ['Outlines (F10)',{type:'tool',key:'outlines'}],['Hide layer (F11)',{type:'tool',key:'hide'}],['◂ Setup',{type:'layer',layer:layersBefore}],['Back',{type:'layer',layer:0}]]});
+    ['Which map (F9)',{type:'tool',key:'map'}],['Map area (F12)',{type:'tool',key:'area'}],['Outlines (F10)',{type:'tool',key:'outlines'}],['Back',{type:'layer',layer:0}]]});
   assert.deepEqual(await page.evaluate(n=>cfg.layers[0].keys.filter(k=>k.name==='🍁 Setup').map(k=>cfg.workflows.find(w=>w.id===k.steps[0].workflow).steps[0]),layersBefore),[{type:'layer',layer:layersBefore}]);
   assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Mark \(F8\)/);
-  assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Looser \(F6\)/);
+  assert.match(await page.locator('#recordings').textContent(),/Screen reader key · Map area \(F12\)/);
   const toolCount=await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length);
-  assert.equal(toolCount,7);
-  if(await page.evaluate(()=>cfg.layers.length+2<=meta.maxLayers)){
+  assert.equal(toolCount,5);
+  if(await page.evaluate(()=>cfg.layers.length+1<=meta.maxLayers)){
     await page.locator('#newSetupLayer').click();   // again: the same recordings are reused
-    assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),7);
+    assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),5);
   }
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();

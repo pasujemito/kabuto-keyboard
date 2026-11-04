@@ -51,6 +51,7 @@ struct DynamicPattern {
     uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
     bool approach = false;            // smart: walk to mobs you can see but not reach
     DynamicRange walkHold{280,650};   // smart: walking (home or to mobs) holds the arrow, jumping after each of these
+    uint16_t glidePermille = 0;       // share of sets moving while jump-attacking (arrow held); >0 also turns in the air
     // Defaults match patterns saved before keys were configurable.
     DynamicKey jump = dynamicModifier(0x04);     // KM_LALT
     DynamicKey attack = dynamicModifier(0x01);   // KM_LCTRL

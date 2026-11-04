@@ -226,19 +226,20 @@ the game has focus:
 | F9 | which map is this? A window lists the maps in `mobs/map.json`, your 5 most recently taught first. Just type to search (words in any order, `rocky 2` finds Rocky Road II), ↑↓ to move, Enter or a double click teaches it (about 4 s), Esc closes. Taught maps are green, changed ones amber. Click back into the game after |
 | F10 | outlines on the game: the reach box (red), how far it looks for mobs (blue), each mob found (named, with how well its PNG matched, e.g. *red-snail 98%*), clumps of mob colour that aren't a mob (grey, *not a mob 31%*), the minimap and where it reads your dot (cyan), the map name area |
 | F11 | hide or show the layer |
-| F6 / F7 | **looser / stricter** mob colours on this map (tolerance ±5, saved straight away; the strip shows it). Watch the F10 outlines while you press |
+| F12 | **map area by hand**, for a map where the minimap or its name isn't where it's looked for (the minimap doesn't start at the screen's edge, say): hover the minimap's map picture top-left corner (under its title), F8, then its bottom-right, F8; then the map name's top-left and bottom-right, F8 each. Esc skips either part (that one stays automatic). On a map it already knows, both are saved for it straight away (the name taught again in its new place); on one it doesn't, press F9 next and pick it: they're saved with it. The minimap goes in `mobs/map.json` (`"minimap": {"width", "height", "left", "top"}`, from the setup's corner: exactly the marked picture), the name's place with the map in `kabuto-bars.json` (`"name_area"`): when the usual place shows no name it knows, each map's own place is read |
+| F6 / F7 | **looser / stricter** mob colours on this map (tolerance ±5, saved straight away; the strip shows it). Watch the F10 outlines while you press. Keyboard only |
 
 **Or press them on the pad.** In the editor, **Recordings → 🍁 Setup layer**
-adds two layers whose buttons are those keys:
+adds a layer whose buttons are those keys:
 
 | Layer | 1 | 2 | 3 | 4 | 5 | 6 |
 | --- | --- | --- | --- | --- | --- | --- |
-| *MS🍁 Setup* | Mark (F8) | Skip (Esc) | Which map (F9) | Outlines (F10) | Tune ▸ | Back |
-| *MS🍁 Tune* | Looser (F6) | Stricter (F7) | Outlines (F10) | Hide layer (F11) | ◂ Setup | Back |
+| *MS🍁 Setup* | Mark (F8) | Skip (Esc) | Which map (F9) | Map area (F12) | Outlines (F10) | Back |
 
 and puts a **🍁 Setup** button on a free key of the layer you were on, to get
-there. (Made a Setup layer with 1.17.0-1.17.2? Press the button again for the
-Tune layer; the old layer can be deleted.) Save, then press 🍁 Setup on the pad: hover something in the game,
+there. (Made Setup and Tune layers before 1.18.8? Delete both and press the
+button again: Looser, Stricter and the Tune layer are gone. Saved buttons
+still work.) Save, then press 🍁 Setup on the pad: hover something in the game,
 press **Mark** on the pad, and so on, with no keyboard and whatever has focus.
 **Back** returns to your layer. The buttons type nothing into the game: the
 pad keeps each press (for up to 3 s) until the script collects it, over the
@@ -333,8 +334,8 @@ two mobs side by side are two matches. It prints what it kept:
   A mob needs 11 hits in a 28 px patch (the map's busiest patch had 4)
 ```
 
-**Tuning it live:** if it misses mobs, press **Looser** (F6, or on the
-*MS🍁 Tune* layer); if it sees mobs that aren't there, **Stricter** (F7). Each
+**Tuning it live:** if it misses mobs, press **Looser** (F6); if it sees mobs
+that aren't there, **Stricter** (F7). Each
 press moves that map's colour `tolerance` by 5 (10-100; 40 to start) and
 saves it in `kabuto-bars.json` straight away: the next reading uses it, and
 the F10 outlines show the effect (matched mobs with their %, grey boxes for
@@ -576,15 +577,15 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   to one of those: 🧩 test popup, 💀 death, 🔌 disconnect, newest first with
   how long ago (hover for the time). One still on screen is red ("on screen
   now"). A new one shows a message and buzzes the phone (Android; the page
-  must be open). The pad keeps the last 8 until it restarts; **Clear** empties
-  them.
+  must be open). The newest 4 are listed (the pad keeps the last 8 until it
+  restarts); **Clear** empties them.
 - Under the buttons, a **dashboard** shows what's going on:
   - what the playing pattern is doing (⚔ attacking, ⏳ waiting for mobs,
     ⏸ auto-pause, 🏠 walking home, 🚶 walking to mobs), which way it faces,
     the button playing and the map (or "map not taught");
   - HP, MP and XP bars;
   - your **minimap position**, with ◀ ▶ when mobs are in reach on that side,
-    and the **home range** as a green band (the line is home);
+    and home as a green line (with Smart's **home range** as a green band);
   - a **mob radar**: you in the middle facing your way, your reach shaded, and
     the nearest mob each side (red when in reach) with how many that side has;
   - the **target** (the nearest mob, named, with its side and distance; "in
@@ -621,9 +622,12 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
     - **Home range** (50% of the minimap by default, up to 50%; 0 = no home):
       how far from home it may go. Drift further than that with no mobs in
       reach, or twice that whatever's around, and it walks back;
-    - **Home is where you press the button**: where you stand when the
-      pattern starts (or where you arrive on a new map). To hunt somewhere
-      else, walk there and press it again;
+    - **Home is where you press the button**: set by itself where you stand
+      when any dynamic pattern starts (or where you arrive on a new map), and
+      shown on the dashboard and on the game layer's minimap (a green line,
+      the range a band under it; the strip says "you 41% · home 37% ◀", amber
+      when out of range). To hunt somewhere else, walk there and press it
+      again. Only Smart walks back to it;
     - **It hunts around home**: it fights mobs in reach where they are and
       walks to ones in sight (within ¾ of the range), but once there's
       nothing to fight it walks back to home (when more than 6% of the
@@ -633,7 +637,8 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
     - **Walking: hop every** (600–1300 ms for new patterns): walking, home or
       to mobs, holds the arrow key down the whole way and hops (a quick jump)
       after each random time in that range, as you would. The arrow is let go
-      before it attacks, waits or turns round.
+      before it attacks, waits or turns round, unless the pattern moves while
+      attacking (below): then a walk runs straight into the jump-attacks.
     It needs the mob detector set up in the script; without it, or without
     fresh readings, the pattern plays as normal. Walking to mobs and
     auto-pause need mob sprites (the counts); older patterns have both off.
@@ -743,6 +748,8 @@ pads will trust, so keep write access to yourself (or protect `main`).
 - It checks a minute after starting and every 6 hours, joining your home Wi-Fi
   only for the check unless it stays connected (see above). Its own hotspot
   stays on, though a phone on it may drop for a moment. **Check now** checks straight away.
+- The **Updates** panel lists the newest 4 versions (installed one shown above
+  them either way); **Install** on any of them.
 - Only releases signed with your key are listed. A download is installed only
   if its size and SHA-256 match the signed entry, so a tampered file is
   rejected even though the connection itself isn't certificate-checked.
@@ -892,7 +899,18 @@ correlation of 0.31 and similar slow/fast stretches. The press/release timings
 inside a jump-attack showed no drift in the recording (lag-1 ≈ 0), so they stay
 independent. Patterns saved before drift existed load with 0%.
 
-Every jump-attack retains that exact press/release order. Directions are tapped
+**Move while attacking** (fluid movement; 60% of sets for new patterns, 0 =
+off, which older patterns load with): in that share of sets the arrow stays
+held through the jump-attacks, so you drift through the air attacking the way
+you face, as a player holding the arrow does, instead of jumping on the spot.
+The arrow goes down a moment (40-110 ms) before the first jump and stays down
+from attack to attack; the other sets stand. Turns are never a tap on the
+ground (the "step"): moving, it switches arrows; standing, the arrow is
+pressed in the air after take-off and let go with the attack. Walking (Smart)
+runs straight into attacking without stopping, and skills are cast standing.
+Edge margin, facing mobs and Smart's home range keep it where it should be.
+
+With it off, every jump-attack retains that exact press/release order. Directions are tapped
 between sets, never mixed into an Alt/Ctrl chord. The initial facing is
 chosen and actually tapped **before** the first attack, unlike the supplied
 Python example which only tracked it in memory. After each set except the

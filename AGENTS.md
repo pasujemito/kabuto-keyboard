@@ -81,9 +81,12 @@ release workflow runs all C++ and Python tests.
   parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). The other way,
   `tool` steps (the pad's setup buttons) queue the script's keys in `ToolKeys`
   (`stats_logic.h`); it collects them with `KABUTO keys` / `POST
-  /api/tool/keys`. Maps are described in `mobs/map.json` (name, mobs, the
+  /api/tool/keys`. Each reading's answer (`KABUTO ok home=...` / `{"home":
+  "..."}`) carries the playing pattern's home (`homeReplyForm`) for the game
+  layer. Maps are described in `mobs/map.json` (name, mobs, the
   map's minimap size; PNGs kept once in `mobs`): written by hand except
-  `minimap`, which F9 teaching fills in. Machine-learned data (name pixels,
+  `minimap`, which F9 teaching (size) or F12 (a hand-marked box with
+  `left`/`top`) fills in. Machine-learned data (name pixels,
   mob colours) stays in `kabuto-bars.json`. Maps are told apart by the name's
   pixels (no OCR); the pad only gets the name. With numpy (optional, never
   required: CI has none), mobs are found by shape from their animation frames

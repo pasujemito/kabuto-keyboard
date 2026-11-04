@@ -32,13 +32,15 @@ default), and so is where its bars are. --game other samples them.
 
 The game layer: a strip across the top of the game shows what's read and
 sent, the map and the mobs, and each setup step, so you needn't leave the
-game. F6-F11 work while the game has focus:
+game. F6-F12 work while the game has focus:
     F8   mark (during setup)     F9   which map is this? (pick it from map.json)
     F10  outlines on the game    F11  hide or show the layer
+    F12  this map's minimap and name, marked by hand (over the automatic ones)
     F6   looser mob colours      F7   stricter mob colours (this map, saved)
-Or press them on the pad: the editor's "Setup layer" (Recordings) gives two
-pad layers: Setup (Mark, Skip, Which map, Outlines) and Tune (Looser,
-Stricter, Outlines, Hide).
+Or press them on the pad: the editor's "Setup layer" (Recordings) gives a pad
+layer: Mark, Skip, Which map, Map area, Outlines, Back.
+With a pattern playing, the pad tells its home back: the layer marks it on
+the minimap (and your dot, even with outlines off).
 Each clump of mob colour is checked against your PNGs (MapleStory draws
 sprites pixel for pixel), so scenery sharing a colour isn't counted.
 The game must be windowed or borderless. --no-layer for the terminal only.
@@ -1518,8 +1520,12 @@ class Screen:
         self.sprites_dir, self.shapes = sprites_dir, {}
         self.sct, self.config, self.state = sct, config, GameState()
         self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
-        area = config.get("map_name")
-        self.maps = MapReader(config.get("maps", {}), area.get("light", 170)) if area and config.get("maps") else None
+        area, maps = config.get("map_name"), config.get("maps", {})
+        usual = {n: m for n, m in maps.items() if not m.get("name_area")}
+        self.maps = MapReader(usual, area.get("light", 170)) if area and maps else None
+        # Maps whose name is somewhere else (F12): looked for there when the usual place has none.
+        self.own_names = [(m["name_area"], MapReader({n: m}, m["name_area"].get("light", 170)))
+                          for n, m in sorted(maps.items()) if m.get("name_area") and name_taught(m)]
         self.boxes = []   # the mobs last found, in screen coordinates (for the game layer)
         self.current = None   # the taught map you're on ("" untaught, None no map library)
         self.sizes = {}       # {map: its minimap size}, from map.json
@@ -1553,11 +1559,19 @@ class Screen:
     def map_name(self):
         """The taught map you're on ("" for one you haven't taught), or None
         without a map library."""
-        if not self.maps:
+        if not self.maps and not self.own_names:
             return None
-        a = self.config["map_name"]
-        w, h = a["x2"] - a["x1"] + 1, a["y2"] - a["y1"] + 1
-        return self.maps.read(grab(self.sct, a["x1"], a["y1"], w, h), w, h, name_limit(a, self.frame()))
+        name = ""
+        if self.maps:
+            a = self.config["map_name"]
+            w, h = a["x2"] - a["x1"] + 1, a["y2"] - a["y1"] + 1
+            name = self.maps.read(grab(self.sct, a["x1"], a["y1"], w, h), w, h, name_limit(a, self.frame()))
+        for a, reader in self.own_names if not name else ():
+            w, h = a["x2"] - a["x1"] + 1, a["y2"] - a["y1"] + 1
+            name = reader.read(grab(self.sct, a["x1"], a["y1"], w, h), w, h)
+            if name:
+                break
+        return name
 
     def minimap_box(self, name):
         """The minimap's box on this map: this map's own size from map.json if
@@ -1567,7 +1581,7 @@ class Screen:
         if not mm:
             return mm
         if size:
-            return dict(mm, x2=mm["x1"] + size["width"] - 1, y2=mm["y1"] + size["height"] - 1)
+            return map_box(mm, size)
         frame = self.frame()
         if frame:
             return dict(mm, x2=frame[0] - 1, y2=frame[1] - 1)
@@ -1758,7 +1772,7 @@ class Screen:
 # it, so F8 only worked with the terminal in front. On Windows the keys' state
 # is read directly instead (GetAsyncKeyState), which needs no hook.
 
-KEYS = {"f6": 0x75, "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "esc": 0x1B}   # Windows key codes
+KEYS = {"f6": 0x75, "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B, "esc": 0x1B}   # Windows key codes
 
 class KeyEdges:
     """Which keys went down since the last look, from the keys down now."""
@@ -1771,7 +1785,7 @@ class KeyEdges:
         return pressed
 
 class Keys:
-    """Calls on_key("f6" ... "f11" or "esc") on its own thread, wherever the
+    """Calls on_key("f6" ... "f12" or "esc") on its own thread, wherever the
     focus is."""
     def __init__(self, on_key):
         self.on_key, self.stopped, self.listener = on_key, threading.Event(), None
@@ -1823,7 +1837,7 @@ def press(key):
             report_error(e)
 
 # The pad's setup layer buttons ("tool" steps) and the keys they stand for.
-PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11", "looser": "f6", "stricter": "f7"}
+PAD_KEYS = {"mark": "f8", "skip": "esc", "map": "f9", "outlines": "f10", "hide": "f11", "looser": "f6", "stricter": "f7", "area": "f12"}
 
 def pointer():
     """Where the mouse pointer is on the screen."""
@@ -2028,7 +2042,9 @@ def read_map_list(sprites_dir):
           "minimap": {"width": 178, "height": 96}}, ...]
 
     "minimap" is that map's minimap size in px (from the setup's top-left
-    corner; F9 fills it in). Other keys are kept for later. The 1.17.1 form,
+    corner; F9 fills it in), or, marked by hand with F12, the map picture's
+    own box: "left"/"top" px from the setup's corner, then its width and
+    height. Other keys are kept for later. The 1.17.1 form,
     {"Rocky Road II": ["red-snail.png", ...]}, still reads.
     Returns ({map: {"mobs": [file, ...], "minimap": {...} or None}}, [problem,
     ...]); listed files that aren't there and bad entries are problems, not
@@ -2062,10 +2078,14 @@ def read_map_list(sprites_dir):
             problems.append("%s: %s lists %s, not in %s" % (MAP_LIST, name, ", ".join(missing), sprites_dir))
         size = entry.get("minimap")
         if size is not None and not (isinstance(size, dict) and all(isinstance(size.get(k), int) and 8 <= size[k] <= 4000
-                                                                   for k in ("width", "height"))):
+                                                                   for k in ("width", "height"))
+                                     and all(isinstance(size.get(k, 0), int) and -4000 <= size.get(k, 0) <= 4000 for k in ("left", "top"))):
             problems.append('%s: %s\'s "minimap" should be {"width": px, "height": px}; the setup\'s is used' % (MAP_LIST, name))
             size = None
-        maps[name] = {"mobs": files, "minimap": size and {"width": size["width"], "height": size["height"]}}
+        if size:
+            size = dict({"width": size["width"], "height": size["height"]},
+                        **({"left": size.get("left", 0), "top": size.get("top", 0)} if "left" in size or "top" in size else {}))
+        maps[name] = {"mobs": files, "minimap": size}
     return maps, problems
 
 def format_map_list(entries):
@@ -2138,6 +2158,57 @@ def map_changed(sprites_dir, maps, name, taught):
         return False
     return sorted(f for f in set(files) if os.path.isfile(os.path.join(sprites_dir, f))) != taught.get("sprites")
 
+def map_box(mm, size):
+    """The minimap's box on a map with its own size in map.json: from the
+    setup's top-left corner (with its header), or, marked by hand (F12, "left"
+    and "top"), exactly the marked map picture, with no header."""
+    if "left" in size:
+        x1, y1 = mm["x1"] + size["left"], mm["y1"] + size["top"]
+        return dict(mm, x1=x1, y1=y1, x2=x1 + size["width"] - 1, y2=y1 + size["height"] - 1, header=0, auto=False)
+    return dict(mm, x2=mm["x1"] + size["width"] - 1, y2=mm["y1"] + size["height"] - 1)
+
+def marked_box(mm, a, b):
+    """map.json's "minimap" for a map picture marked by two corners (any
+    order): {"left", "top", "width", "height"} from the setup's corner, or
+    None if that's too small to be a minimap."""
+    (ax, ay), (bx, by) = a, b
+    x1, y1, x2, y2 = min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)
+    if min(x2 - x1, y2 - y1) + 1 < 8:
+        return None
+    return {"width": x2 - x1 + 1, "height": y2 - y1 + 1, "left": x1 - mm["x1"], "top": y1 - mm["y1"]}
+
+def marked_name_area(a, b, light=170):
+    """A map name area from two corners (any order), or None if it's too thin."""
+    (ax, ay), (bx, by) = a, b
+    area = {"x1": min(ax, bx), "y1": min(ay, by), "x2": max(ax, bx), "y2": max(ay, by), "light": light}
+    return area if area["x2"] - area["x1"] >= 8 and area["y2"] - area["y1"] >= 3 else None
+
+def mark_map_area(config, cancel=("esc",)):
+    """F12: mark this map's minimap and its name by hand, for a map where
+    they aren't where they're looked for. Returns (map.json "minimap" or None,
+    name area or None); Esc skips either."""
+    mm, box, area = config.get("minimap"), None, None
+    if mm:
+        pts = mark_points("Map area (F12): hover the minimap's map picture TOP-LEFT corner (under its title), F8; "
+                          "then its BOTTOM-RIGHT, F8 (Esc keeps the automatic minimap)", 2, cancel)
+        box = marked_box(mm, *pts) if len(pts) == 2 else None
+        say("  minimap: %s" % ("%d x %d px at %d,%d" % (box["width"], box["height"], pts[0][0], pts[0][1]) if box
+                               else "kept as found" if len(pts) < 2 else "too small, kept as found"))
+    pts = mark_points("Map name: hover the TOP-LEFT of the map's name, F8; then its BOTTOM-RIGHT, a bit past where the "
+                      "longest name would end, F8 (Esc keeps the usual place)", 2, cancel)
+    area = marked_name_area(*pts) if len(pts) == 2 else None
+    say("  map name: %s" % ("marked" if area else "kept where it was"))
+    return box, area
+
+def save_map_area(sct, config, sprites_dir, name, box, area):
+    """Saves a map's hand-marked minimap (map.json) and name area (taught
+    again with it, in the setup file: the caller saves it). Returns why not, or None."""
+    if box and not save_map_value(sprites_dir, name, "minimap", box):
+        return "%s isn't in %s: its minimap wasn't saved" % (name, os.path.join(sprites_dir, MAP_LIST))
+    if area:
+        return teach_map(sct, config, sprites_dir, name, area)
+    return None
+
 def minimap_size(mm, corner):
     """The minimap's size from the setup's top-left corner to `corner`, or None
     if that's too small to be one."""
@@ -2160,17 +2231,19 @@ def name_rows(sct, area, mm=None):
     frame = minimap_frame(sct, mm) if mm and mm.get("auto") and area.get("auto") else None
     return text_rows(grab(sct, area["x1"], area["y1"], w, h), w, h, area.get("light", 170), name_limit(area, frame))
 
-def teach_map(sct, config, sprites_dir, name):
+def teach_map(sct, config, sprites_dir, name, area=None):
     """Teach the map you're standing on as `name`: its name's look, and its
     mobs (its PNGs in map.json), learned against this map. Updates `config`
-    (the caller saves it). Returns why not, or None when taught."""
+    (the caller saves it). Returns why not, or None when taught. `area`: a name
+    area of this map's own (F12), kept with it; one it already has is reused."""
     mobs = config.get("mobs")
     if not mobs or "reach" not in mobs:
         return "Mark your hitbox first: python screen_stats.py --mobs"
     sprites = map_sprites(sprites_dir, name)
     if not sprites:
         return "No mob sprites for %s: list its PNGs in %s" % (name, os.path.join(sprites_dir, MAP_LIST))
-    area = config.get("map_name") or mark_map_name(config)
+    own = area or (config.get("maps", {}).get(name) or {}).get("name_area")
+    area = own or config.get("map_name") or mark_map_name(config)
     if not area:
         return "A map is told apart by its name, so mark where the name is"
     rows = name_rows(sct, area, config.get("minimap"))
@@ -2195,6 +2268,8 @@ def teach_map(sct, config, sprites_dir, name):
         learned = {"sprites": sorted(sprites)}
     learned["rows"], learned["name_reading"] = ["%x" % r for r in rows], NAME_READING
     learned["taught_at"] = int(time.time())   # recent maps come first in the F9 list
+    if own:
+        learned["name_area"] = own   # read there, not in the usual place
     config.setdefault("maps", {})[name] = learned
     return None
 
@@ -2354,6 +2429,32 @@ def form_fields(readings):
     fields["state"] = readings.get("state", "ok")
     return fields
 
+# ---- home, as the pad tells it --------------------------------------------------
+# The pad answers each reading with the playing pattern's home (set where its
+# button started it, or where you arrived on a new map): "home=1415&hm=1&hr=500"
+# - in tenths of a percent of the minimap, hm=1 for a map position (the slide
+# counted, like "wx") rather than the dot's x, hr the home range (0: none). The
+# game layer marks it on the minimap. No answer, or no pattern playing: None.
+
+def parse_home(form):
+    """{"home": 1415, "map": True, "range": 500} from the pad's answer, or None."""
+    fields = dict(urllib.parse.parse_qsl(form or ""))
+    try:
+        return {"home": int(fields["home"]), "map": fields.get("hm") == "1", "range": max(0, int(fields.get("hr", 0)))}
+    except (KeyError, ValueError):
+        return None
+
+def home_place(r, home):
+    """Where home is on the minimap in % across (it can be off the minimap's
+    edge when the minimap slides), or None when it can't be told."""
+    if not home or r.get("x") is None:
+        return None
+    if not home["map"]:
+        return home["home"] / 10.0
+    if r.get("wx") is None:
+        return None
+    return r["x"] + (home["home"] - r["wx"]) / 10.0   # the same slide as your dot
+
 class Pad:
     """Posts readings to the pad, logging in with the PIN when it asks (401)."""
     def __init__(self, host, pin):
@@ -2378,7 +2479,12 @@ class Pad:
             return self._post(path, fields)
 
     def send(self, readings):
-        self._call("/api/stats", form_fields(readings))
+        """Sends a reading; returns the pad's home (parse_home), or None."""
+        body = self._call("/api/stats", form_fields(readings))
+        try:
+            return parse_home(json.loads(body or b"{}").get("home"))
+        except (ValueError, AttributeError):
+            return None
 
     def keys(self):
         """Setup buttons pressed on the pad since the last ask, or None if the
@@ -2402,7 +2508,14 @@ class UsbPad:
     """Sends readings down the USB cable ("KABUTO stats <form>" lines), so a
     game laptop needs no Wi-Fi or PIN: plugging the pad in is the permission."""
     def __init__(self, port, version=None):
-        self.port, self.version, self.lock = port, version, threading.Lock()
+        self.port, self.version, self.lock, self.home = port, version, threading.Lock(), None
+
+    def _heard(self, line):
+        """The pad's answer to a reading ("KABUTO ok" and maybe its home): kept."""
+        if line == "KABUTO ok" or line.startswith("KABUTO ok "):
+            self.home = parse_home(line[10:])
+            return True
+        return False
 
     @staticmethod
     def open(device):
@@ -2419,17 +2532,21 @@ class UsbPad:
         end = time.time() + wait
         while time.time() < end:
             line = self.port.readline().decode("ascii", "replace").strip()
-            if line.startswith("KABUTO ") and line != "KABUTO ok":
+            if line.startswith("KABUTO ") and line != "KABUTO ok" and not line.startswith("KABUTO ok "):
                 self.version = line[7:]
                 return self.version
         return None
 
     def send(self, readings):
+        """Sends a reading; returns the pad's home from its latest answer (the
+        one to the reading before: it isn't waited for), or None."""
         with self.lock:
             self.port.write(("KABUTO stats " + urllib.parse.urlencode(form_fields(readings)) + "\n").encode())
             waiting = getattr(self.port, "in_waiting", 0)
-            if waiting:
-                self.port.read(waiting)   # replies and the pad's log; just keep the buffer empty
+            if waiting:   # answers and the pad's log: the answers are kept, the rest dropped
+                for line in self.port.read(waiting).decode("ascii", "replace").splitlines():
+                    self._heard(line.strip())
+            return self.home
 
     def keys(self, wait=1.0):
         """Setup buttons pressed on the pad since the last ask. None only for
@@ -2440,6 +2557,7 @@ class UsbPad:
             end = time.time() + wait
             while time.time() < end:
                 line = self.port.readline().decode("ascii", "replace").strip()
+                self._heard(line)   # an answer to a reading read here isn't lost
                 if line == "KABUTO keys" or line.startswith("KABUTO keys "):
                     return [k for k in line[12:].split(",") if k]
         old = version_tuple(self.version)
@@ -2789,9 +2907,10 @@ def run(args):
     if args.game and config.get("game") != args.game:   # --game other: sampled colours again
         config["game"] = args.game
         save_config(args.config, config)
-    screen, pad, link, xp_rate = Screen(sct, config, args.sprites), None, None, XpRate()
+    screen, pad, link, xp_rate, home = Screen(sct, config, args.sprites), None, None, XpRate(), None
     alarm = Alarm() if not getattr(args, "quiet", False) and config.get("sound", True) else None
     pads = None if args.dry_run else getattr(args, "pads", None) or PadLink(args)
+    pending_area = None   # F12 on a map not recognised: saved with the map F9 picks next
     while True:
         maps = map_list.get()
         screen.sizes = map_sizes(maps)
@@ -2802,7 +2921,9 @@ def run(args):
             while not LAYER.commands.empty():
                 kind, value = LAYER.commands.get()
                 if kind == "teach":   # F9: value is the map
-                    problem = teach_map(sct, config, args.sprites, value)
+                    box, area = pending_area or (None, None)
+                    pending_area = None
+                    problem = save_map_area(sct, config, args.sprites, value, box, None) or teach_map(sct, config, args.sprites, value, area)
                     if problem:
                         say(problem)
                     else:
@@ -2818,6 +2939,23 @@ def run(args):
                             % ("Looser" if value > 0 else "Stricter", tuned[1], tuned[0]))
                     else:
                         say("No mob colours here to tune: teach this map first (F9)")
+                elif kind == "area":   # F12: this map's minimap and name, marked by hand
+                    box, area = mark_map_area(config)
+                    if not box and not area:
+                        say("Map area: nothing marked, nothing changed")
+                    elif screen.current:   # a map it knows: saved (and its name taught again) now
+                        here = screen.current
+                        problem = save_map_area(sct, config, args.sprites, here, box, area)
+                        if problem:
+                            say(problem)
+                        else:
+                            save_config(args.config, config)
+                            screen = Screen(sct, config, args.sprites)
+                            screen.sizes, screen.map_mobs = map_sizes(maps), {n: e.get("mobs") for n, e in maps.items()}
+                            say("Saved %s's own map area: used whenever you're on it." % here.replace("_", " "))
+                    else:
+                        pending_area = (box, area)
+                        say("Now press F9 and pick this map: the marked area is saved with it")
         started = time.time()
         readings = screen.read()
         if alarm and alarm.update(readings.get("state", "ok"), started):
@@ -2828,8 +2966,7 @@ def run(args):
         try:
             pad = pads.get() if pads else None
             link = pad.where if pad else "dry run"
-            if pad:
-                pad.send(readings)
+            home = pad.send(readings) if pad else None
             print("\r" + line.ljust(70) + ("" if pad else "(dry run)"), end="", flush=True)
             wait = args.interval
         except (urllib.error.URLError, OSError) as e:   # serial errors are OSErrors too
@@ -2843,8 +2980,8 @@ def run(args):
             if screen.tag and not screen.you:
                 hint = (hint + " \u00b7 " if hint else "") + "can't see your name tag"
             tol = mob_tolerance(config, screen.current) if readings.get("mobs") is not None else None
-            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint, tol, xp_text(xp_rate)),
-                       layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box, screen.you))
+            LAYER.show(layer_status(readings, link, config.get("game"), LAYER.maps, hint, tol, xp_text(xp_rate), home),
+                       layer_shapes(config, sct.monitors[0], screen.boxes, readings, screen.box, screen.you, home))
         time.sleep(max(wait - (time.time() - started), REST))   # a slow reading isn't followed by a full wait
 
 # ---- the game layer -------------------------------------------------------------
@@ -2950,7 +3087,22 @@ def xp_text(rate):
     when = "" if left is None else (", level in %dm" % round(left * 60) if left < 1 else ", level in %.1fh" % left)
     return "+%.1f%%/h%s" % (per, when)
 
-def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp=""):
+def home_cell(r, home):
+    """Where you are on the minimap and, with a pattern playing, where its home
+    is: "you 41% · home 37% ◀" (the arrow: the way home), amber outside the
+    home range; None without a position."""
+    if r.get("x") is None:
+        return None
+    at = home_place(r, home)
+    if at is None:
+        return Cell("you %.0f%%" % r["x"], INK, 150, "home", "%.0f%%" % r["x"])
+    off = r["x"] - at
+    far = home["range"] and abs(off) * 10 > home["range"]
+    way = "at home" if abs(off) < 1 else "home %.0f%% %s" % (at, "◀" if off > 0 else "▶")
+    return Cell("you %.0f%% · %s" % (r["x"], way), AMBER if far else INK, 150, "home",
+                "%.0f%% · %s" % (r["x"], "home" if abs(off) < 1 else "%.0f%%%s" % (at, "◀" if off > 0 else "▶")))
+
+def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp="", home=None):
     """The strip's items from a reading: [(text, colour), ...], Cells with a
     fixed width where their text changes reading to reading, and an icon and
     a shorter text for the strip's one row."""
@@ -2974,6 +3126,9 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp=""):
                         "new map: F9" if maps else "map not taught"))
     elif r.get("map"):
         out.append(Cell(r["map"].replace("_", " "), INK, 186, "pin"))
+    place = home_cell(r, home)
+    if place:
+        out.append(place)
     if r.get("ml") is not None:
         near = [(r["d" + side], side) for side in "lr" if r.get("d" + side) is not None]
         out.append(Cell("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK, 60, "mob", "%d\u25c0 \u25b6%d" % (r["ml"], r["mr"])))
@@ -2993,10 +3148,14 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp=""):
         out.append(Cell(hint, AMBER, None, "warn"))
     return out
 
-def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
+HOME_COLOR = "#2f9e1f"
+ALWAYS_SHOWN = ("you", "home", "home range")   # drawn even with the F10 outlines off
+
+def layer_shapes(config, monitor, boxes, r, mm=None, you=None, home=None):
     """Outlines over the game: [(x0, y0, x1, y1, colour, label), ...] in screen
     coordinates. The minimap (`mm`, else the setup's) and name area are drawn
-    just outside what's read."""
+    just outside what's read. Your dot ("you") and the pad's home (a line down
+    the minimap, its range a band along the bottom) show even without F10."""
     out = []
     mb = config.get("mobs")
     if mb and "x" in mb and you:   # where your name tag says you are
@@ -3023,6 +3182,13 @@ def layer_shapes(config, monitor, boxes, r, mm=None, you=None):
             x = mm["x1"] + r["x"] * (mm["x2"] - mm["x1"]) / 100.0
             y = mm["y1"] + r["y"] * (mm["y2"] - mm["y1"]) / 100.0
             out.append((int(x) - 4, int(y) - 4, int(x) + 4, int(y) + 4, "#00e5ff", "you"))   # not the dot's own colour
+        at = home_place(r, home)
+        if at is not None:
+            span, top = mm["x2"] - mm["x1"], mm["y1"] + mm.get("header", 0)
+            px = lambda pct: int(round(mm["x1"] + min(max(pct, 0.0), 100.0) * span / 100.0))   # off the minimap: at its edge
+            if home["range"]:
+                out.append((px(at - home["range"] / 10.0), mm["y2"] - 3, px(at + home["range"] / 10.0), mm["y2"], HOME_COLOR, "home range"))
+            out.append((px(at) - 1, top, px(at) + 1, mm["y2"], HOME_COLOR, "home"))
     a = config.get("map_name")
     if a:
         out.append((a["x1"] - 2, a["y1"] - 2, a["x2"] + 2, a["y2"] + 2, "#c084fc", "map name"))
@@ -3101,7 +3267,7 @@ ICON = 14   # px an icon takes, with the gap after it
 def draw_icon(c, kind, x, y, color=None, tags=()):
     """A small icon (12 px) with its left edge at x, middle at y: usb, wifi,
     pin (the map), mob (a mushroom), target, up (XP rate), clock (to the next
-    level), warn. Outlined dark so it shows on any scenery."""
+    level), home, warn. Outlined dark so it shows on any scenery."""
     o = {"outline": "#2b2b2b", "tags": tags}
     if kind == "usb":
         c.create_line(x + 4, y - 6, x + 4, y - 2, fill="#2b2b2b", width=2, tags=tags)
@@ -3133,6 +3299,10 @@ def draw_icon(c, kind, x, y, color=None, tags=()):
         c.create_oval(x + 1, y - 5, x + 11, y + 5, fill="#ffffff", **o)
         c.create_line(x + 6, y, x + 6, y - 3, fill="#2b2b2b", width=1, tags=tags)
         c.create_line(x + 6, y, x + 9, y, fill="#2b2b2b", width=1, tags=tags)
+    elif kind == "home":
+        c.create_polygon(x, y - 1, x + 6, y - 7, x + 12, y - 1, fill=color or MS["green"], **o)
+        c.create_rectangle(x + 2, y - 1, x + 10, y + 6, fill="#ffffff", **o)
+        c.create_rectangle(x + 5, y + 2, x + 7, y + 6, fill=color or MS["green"], outline="", tags=tags)
     elif kind == "warn":
         c.create_polygon(x, y + 5, x + 6, y - 6, x + 12, y + 5, fill=color or "#ffd34d", **o)
         c.create_text(x + 6, y + 1, text="!", fill="#2b2b2b", font=(UI_FONT, 7, "bold"), tags=tags)
@@ -3182,7 +3352,7 @@ class Layer:
         root.report_callback_exception = self._error
         self.lock, self.commands, self.keys = threading.Lock(), queue.Queue(), queue.Queue()
         self.status, self.shapes = [("Kabuto", AMBER), ("starting", DIM)], []
-        self.message, self.until = "F6/F7 looser/stricter \u00b7 F9 map \u00b7 F10 outlines \u00b7 F11 hide", time.time() + 20
+        self.message, self.until = "F9 map \u00b7 F10 outlines \u00b7 F11 hide \u00b7 F12 map area (by hand)", time.time() + 20
         self.outlines, self.hidden, self.finished, self.maps, self.taught, self.picker = self.windows, False, False, [], {}, None
         self.changed = set()
         self.unlisten = listen(self.keys.put)
@@ -3247,12 +3417,14 @@ class Layer:
                 self.hidden = not self.hidden
             elif key in ("f6", "f7"):   # looser / stricter mob colours, done by the reading loop
                 self.commands.put(("tune", 1 if key == "f6" else -1))
+            elif key == "f12":   # mark this map's minimap and name by hand, done by the reading loop
+                self.commands.put(("area", None))
         with self.lock:
             status, shapes = list(self.status), list(self.shapes)
             message = self.message if time.time() < self.until else ""
         if not self.unseen:   # captured with the game: only outlines drawn outside what's read
             shapes = [s for s in shapes if s[5] in ("minimap", "map name")]
-        self._draw(status, shapes if self.outlines else [], message)
+        self._draw(status, shapes if self.outlines else [s for s in shapes if s[5] in ALWAYS_SHOWN], message)
         if self.finished:
             self.root.after(4000 if message else 300, self.root.quit)
             self.finished = None
@@ -3269,7 +3441,9 @@ class Layer:
             c.create_rectangle(x0 - ox, y0 - oy, x1 - ox, y1 - oy, outline=color, width=2)
             if label == "minimap":   # under it: the map name is usually just above
                 ms_tag(c, x0 - ox + 4, y1 - oy + 4, label, color, "nw")
-            elif label and label != "you":
+            elif label == "home":   # under the minimap, beside its own label
+                ms_tag(c, x0 - ox, y1 - oy + 22, label, color, "n")
+            elif label and label not in ("you", "home range"):
                 ms_tag(c, x0 - ox + 4, y0 - oy - 4, label, color, "sw")
         # The strip: one row hanging from the top of the screen, its width
         # fixed, clear of the minimap at the top left (and the game's windows
@@ -3916,6 +4090,28 @@ def selftest():
     r = screen.read()
     assert screen.box["x2"] == 699 and screen.box["y2"] == 59 and r["x"] > whole + 10, (whole, r["x"], screen.box)
     assert [shape[:4] for shape in layer_shapes(config, FakeScreen.monitors[0], [], r, screen.box) if shape[5] == "minimap"] == [(598, 8, 701, 61)]
+    # Marked by hand (F12): exactly the map picture marked, no header, wherever it is.
+    screen.sizes = {"Henesys Field": {"width": 60, "height": 40, "left": 30, "top": 30}}
+    r = screen.read()
+    assert (screen.box["x1"], screen.box["y1"], screen.box["x2"], screen.box["y2"], screen.box["header"]) == (630, 40, 689, 79, 0), screen.box
+    assert abs(r["x"] - 20.3) < 3 and abs(r["y"] - 30.8) < 5, r
+    assert marked_box({"x1": 600, "y1": 10}, (689, 79), (630, 40)) == {"width": 60, "height": 40, "left": 30, "top": 30}
+    assert marked_box({"x1": 0, "y1": 0}, (5, 5), (9, 60)) is None   # too thin to be a minimap
+    assert map_box({"x1": 0, "y1": 0, "header": 72}, {"width": 100, "height": 50}) == {"x1": 0, "y1": 0, "x2": 99, "y2": 49, "header": 72}
+    assert marked_name_area((160, 213), (100, 200)) == {"x1": 100, "y1": 200, "x2": 160, "y2": 213, "light": 170}
+    assert marked_name_area((100, 200), (104, 213)) is None
+    # A map whose name is shown somewhere else (F12): read there when the usual place has no name it knows.
+    paint(fake.px, 800, 600, 92, 660, 106, dark)
+    for x, y, x1, y1 in ellinia:
+        paint(fake.px, 800, 100 + x, 200 + y, 100 + x1, 200 + y1, white)
+    config["maps"]["Ellinia"] = {"rows": ["%x" % v for v in text_rows(name_area(ellinia), 60, 14)], "name_reading": NAME_READING,
+                                 "name_area": {"x1": 100, "y1": 200, "x2": 159, "y2": 213, "light": 170}}
+    screen = Screen(fake, config)
+    assert screen.read()["map"] == "Ellinia" and list(screen.maps.maps) == ["Henesys Field"]
+    for x, y, x1, y1 in henesys:
+        paint(fake.px, 800, 600 + x, 92 + y, 600 + x1, 92 + y1, white)
+    assert screen.read()["map"] == "Henesys_Field"   # the usual place first
+    del config["maps"]["Ellinia"]
     assert form_fields({"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}) == \
         {"hp": 1.0, "mobs": "R", "ml": 0, "mr": 2, "dr": 54, "mn": "blob", "map": "Henesys", "state": "ok"}
 
@@ -3969,6 +4165,16 @@ def selftest():
                         '  {\n    "name": "Ellinia",\n    "mobs": ["slime.png"],\n    "home": 0.3,\n'
                         '    "minimap": {"width": 180, "height": 90}\n  }\n]\n'), text
         assert read_map_list(lib)[0]["Ellinia"]["minimap"] == {"width": 180, "height": 90}
+        # F12 writes a hand-marked box: "left"/"top" from the setup's corner, kept when read.
+        assert save_map_value(lib, "Ellinia", "minimap", {"width": 60, "height": 40, "left": 30, "top": -5})
+        assert read_map_list(lib) == ({"Henesys": {"mobs": ["snail.png", "blue_snail.png"], "minimap": None},
+                                       "Ellinia": {"mobs": ["slime.png"], "minimap": {"width": 60, "height": 40, "left": 30, "top": -5}}}, [])
+        assert save_map_value(lib, "Ellinia", "minimap", {"width": 60, "height": 40, "left": "x"})
+        assert read_map_list(lib)[0]["Ellinia"]["minimap"] is None and "should be" in read_map_list(lib)[1][0]
+        assert save_map_area(None, {}, lib, "Ellinia", {"width": 60, "height": 40, "left": 0, "top": 0}, None) is None
+        assert read_map_list(lib)[0]["Ellinia"]["minimap"] == {"width": 60, "height": 40, "left": 0, "top": 0}
+        assert "isn't in" in save_map_area(None, {}, lib, "Perion", {"width": 60, "height": 40, "left": 0, "top": 0}, None)
+        assert save_map_area(None, {}, lib, "Perion", None, None) is None   # nothing marked: nothing to do
         assert minimap_size({"x1": 20, "y1": 60}, (199, 155)) == (180, 96) and minimap_size({"x1": 20, "y1": 60}, (10, 155)) is None
         # No map.json: older folders per map still work, each meaning the whole folder.
         os.remove(os.path.join(lib, MAP_LIST)); os.mkdir(os.path.join(lib, "Perion"))
@@ -4258,6 +4464,24 @@ def selftest():
     strip = layer_status({"hp": 0.0, "state": "dead", "map": "-", "ml": 0, "mr": 0}, "can't reach Kabuto", None, ["A"])
     assert ("DEAD", RED) in strip and ("new map, mobs not seen: F9", RED) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
     assert ("map not taught", RED) in layer_status({"map": "-"}, "USB", None, [])
+    # Home on the game layer: parsed from the pad's answer, placed on the minimap
+    # (a map position follows your dot's slide), on the strip and as outlines.
+    assert parse_home("home=415&hm=0&hr=60") == {"home": 415, "map": False, "range": 60}
+    assert parse_home("") is None and parse_home(None) is None and parse_home("home=x") is None
+    dot_home, map_home = {"home": 415, "map": False, "range": 60}, {"home": 1500, "map": True, "range": 0}
+    assert home_place({"x": 50.0}, dot_home) == 41.5 and home_place({"x": 50.0, "wx": 1700}, map_home) == 30.0
+    assert home_place({"x": 50.0}, map_home) is None and home_place({}, dot_home) is None and home_place({"x": 1.0}, None) is None
+    assert ("you 50% \u00b7 home 42% \u25c0", AMBER) in layer_status({"x": 50.0}, "USB", home=dot_home)   # 8.5% off, range 6%
+    assert ("you 44% \u00b7 home 42% \u25c0", INK) in layer_status({"x": 44.0}, "USB", home=dot_home)
+    assert ("you 42% \u00b7 at home", INK) in layer_status({"x": 42.0}, "USB", home=dot_home)
+    assert ("you 20% \u00b7 home 30% \u25b6", INK) in layer_status({"x": 20.0, "wx": 1400}, "USB", home=map_home)   # no range: never amber
+    assert ("you 50%", INK) in layer_status({"x": 50.0}, "USB") and not any(t.startswith("you") for t, _ in layer_status({}, "USB"))
+    box = {"x1": 0, "y1": 0, "x2": 200, "y2": 172, "header": 72}
+    marks = {s[5]: s[:4] for s in layer_shapes({}, {}, [], {"x": 50.0, "y": 50.0}, box, home=dot_home)}
+    assert marks["home"] == (82, 72, 84, 172) and marks["home range"] == (71, 169, 95, 172) and "you" in marks, marks
+    marks = {s[5]: s[:4] for s in layer_shapes({}, {}, [], {"x": 5.0, "y": 50.0, "wx": 9000}, box, home=map_home)}
+    assert marks["home"] == (-1, 72, 1, 172) and "home range" not in marks   # far off the left edge: at the edge
+    assert set(ALWAYS_SHOWN) >= {"you", "home", "home range"}
     assert ("tolerance 45", DIM) in layer_status({"mobs": "R"}, "USB", tol=45) and not any(t.startswith("tolerance") for t, _ in layer_status({"mobs": "R"}, "USB"))
     # The layer's MapleStory look: colours mixed for its gradients; bars drawn as gauges.
     assert mix("#000000", "#ffffff", 0.5) == "#808080" and mix("#f6921e", "#f6921e", 0.3) == "#f6921e"
@@ -4285,7 +4509,7 @@ def selftest():
         def readline(self): return self.replies.pop(0) if self.replies else b""
         @property
         def in_waiting(self): return len(b"".join(self.replies))
-        def read(self, n): self.replies.clear(); return b""
+        def read(self, n): data = b"".join(self.replies); self.replies.clear(); return data
         def close(self): self.closed = True
     class Port:
         def __init__(self, device, vid): self.device, self.vid = device, vid
@@ -4297,6 +4521,15 @@ def selftest():
     kabuto.replies = [b"KABUTO ok\n"]
     pad.send({"hp": 0.0, "x": 41.5, "y": 70.0, "mobs": "L", "state": "dead"})
     assert kabuto.sent[-1] == b"KABUTO stats hp=0.0&x=41.5&y=70.0&mobs=L&state=dead\n", kabuto.sent
+    # The pad's answer carries the playing pattern's home; a plain "ok" means none (any more).
+    kabuto.replies = [b"[log] x\r\n", b"KABUTO ok home=415&hm=0&hr=60\r\n"]
+    assert pad.send({"x": 41.5}) == {"home": 415, "map": False, "range": 60}
+    assert pad.send({"x": 41.5}) == {"home": 415, "map": False, "range": 60}   # no answer yet: the last one stands
+    kabuto.replies = [b"KABUTO ok\n"]
+    assert pad.send({"x": 41.5}) is None
+    kabuto.replies = [b"KABUTO ok home=1500&hm=1&hr=0\n", b"KABUTO keys\n"]
+    assert pad.keys() == [] and pad.home == {"home": 1500, "map": True, "range": 0}   # heard while asking for keys
+    pad.home = None
     # The pad's setup buttons over USB: log lines and stats replies are skipped.
     kabuto.replies = [b"KABUTO ok\n", b"[ok] tap\n", b"KABUTO keys mark,map\n"]
     assert pad.keys() == ["mark", "map"] and kabuto.sent[-1] == b"KABUTO keys\n"
@@ -4330,13 +4563,14 @@ def selftest():
                 self.send_response(200 if authed else 401); self.end_headers(); self.wfile.write(b'{"keys":["skip"]}')
                 return
             seen.append((authed, body))
-            self.send_response(200 if authed else 401); self.end_headers(); self.wfile.write(b"{}")
+            self.send_response(200 if authed else 401); self.end_headers()
+            self.wfile.write(b'{"ok":true,"home":"home=1415&hm=1&hr=500"}' if "x=" in body else b"{}")
     server = HTTPServer(("127.0.0.1", 0), Fake)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     host = "127.0.0.1:%d" % server.server_port
     pad = Pad(host, "246810")
-    pad.send({"hp": 72.0, "mana": None, "xp": 63.2, "state": "ok", "mobs": ""})
-    pad.send({"hp": 0.0, "mana": 40.0, "x": 41.5, "y": 70.0, "state": "dead", "mobs": "R"})
+    assert pad.send({"hp": 72.0, "mana": None, "xp": 63.2, "state": "ok", "mobs": ""}) is None
+    assert pad.send({"hp": 0.0, "mana": 40.0, "x": 41.5, "y": 70.0, "state": "dead", "mobs": "R"}) == {"home": 1415, "map": True, "range": 500}
     assert seen == [(False, "hp=72.0&xp=63.2&mobs=&state=ok"), (True, "hp=72.0&xp=63.2&mobs=&state=ok"),
                     (True, "hp=0.0&mana=40.0&x=41.5&y=70.0&mobs=R&state=dead")], seen
     assert Pad(host, "246810").keys() == ["skip"]   # logs in first, like readings

@@ -96,3 +96,8 @@ PatternView patternViewSnapshot() {
     portEXIT_CRITICAL(&mux_);
     return v;
 }
+
+void homeReply(char* out, size_t size) {
+    PatternView v = patternViewSnapshot();
+    homeReplyForm(out, size, v.active, v.haveHome, v.home, v.homeOnMap, v.homeRange);
+}

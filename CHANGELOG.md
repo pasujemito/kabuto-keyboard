@@ -3,7 +3,37 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
-## Screen reader (with the next release)
+## 1.18.8
+
+- 🌊 **Moving while attacking, not stepping**: a new **Move while
+  attacking** setting (60% of sets for new patterns; older ones load with 0,
+  as before: turn it up in the pattern) keeps the arrow held through the
+  jump-attacks in that share of sets, so you drift through the air attacking
+  left or right like a player instead of jumping on the spot. Turns are no
+  longer a tap on the ground (the "step"): moving, it switches arrows;
+  standing, the arrow is pressed in the air after take-off. Smart's walks run
+  straight into attacking without stopping; skills are still cast standing
+- 🏠 **Home shown in the game**: home is set by itself when any dynamic
+  pattern starts (not only Smart ones), and the pad tells it back with each
+  reading, so the game layer marks it on the minimap (a green line, the home
+  range a band under it) with your dot, even with outlines (F10) off. The
+  strip says where you are and which way home is ("you 41% · home 37% ◀",
+  amber out of range). The dashboard shows home without a range too. A home
+  taken from the minimap dot is set again once map positions come, instead
+  of being compared with them
+- 🗺 **F12: the map area by hand**: for a map whose minimap (or its name)
+  isn't where it's looked for, F12 (or the pad's **Map area** button) marks
+  the minimap's map picture by two corners and the map name by two more
+  (Esc keeps either automatic). Saved for the map you're on, or the one you
+  pick with F9 next; that map is then read from your marks, and recognised
+  by its name in its own place
+- 🔔 **Dashboard**: only the newest 4 notifications and 4 versions listed
+- 🍁 **Setup layer slimmed down**: one layer (Mark, Skip, Which map, Map
+  area, Outlines, Back) instead of Setup + Tune: Looser, Stricter and the
+  Setup/Tune switches are gone (F6/F7 still work on the keyboard). Delete the
+  old two layers and press **🍁 Setup layer** again to get it
+
+### Screen reader (already on main, out with this release)
 
 - 🕵️ **The Lie Detector mini-game counts as a test too**: its notice ("The
   Lie Detector Mini-game ... the mini-game will start soon", a blue panel in

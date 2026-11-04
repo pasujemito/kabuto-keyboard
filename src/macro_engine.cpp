@@ -486,6 +486,16 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 bool approachOff=false;uint32_t approachOffAt=0;
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
                 auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;};
+                // Home is set as soon as there's a position (every pattern, so the dashboard and the
+                // game layer can show it; only Smart walks back to it). A home from the minimap dot
+                // can't be compared with a map position (or back): it's set again from the new one.
+                auto homeCheck=[&](const LiveStats& live,bool havePos,int pos){
+                    if(!havePos)return;
+                    if(haveHome&&homeOnMap==(live.wx!=LIVE_NO_POS))return;
+                    bool again=haveHome;setHome(live,pos);
+                    char label[48];std::snprintf(label,sizeof(label),again?"home set again: %d.%d%%":"home set: %d.%d%%",pos/10,(pos<0?-pos:pos)%10);
+                    logStep(s,pc,millis(),0,true,label);
+                };
                 // The map's name changed: home is wherever you arrive.
                 auto mapCheck=[&](const LiveStats& live){
                     if(!live.fresh||!live.map[0]||lastMap==live.map)return;
@@ -520,6 +530,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // (a quick jump) after each walk_hold, as a player walks. The arrow
                 // is let go when the walk ends: to attack, wait or turn round.
                 const DynamicRange WALK_JUMP_HOLD{60,140};
+                const DynamicRange GLIDE_RUN_UP{40,110};   // gliding: arrow down this long before the first jump
                 DynamicKey walking;   // the arrow held (empty: none)
                 auto stopWalking=[&]{
                     if(walking.empty())return;
@@ -527,8 +538,26 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     std::vector<Step> up{edge(false,walking.keycode,walking.mods)};executeSteps(up,letGo,state,depth+1);
                     walking=DynamicKey();
                 };
+                // Holds `key` (letting go of another arrow first); true when it was just pressed.
+                auto hold=[&](DynamicKey key){
+                    if(walking==key)return false;
+                    stopWalking();std::vector<Step> down{edge(true,key.keycode,key.mods)};executeSteps(down,stop,state,depth+1);walking=key;
+                    return true;
+                };
+                // Fluid movement ("glide"): in that share of sets the arrow stays held through the
+                // jump-attacks, so you drift through the air attacking, as a player does, and walking
+                // runs straight into attacking without stopping. Turns are made in the air (the arrow
+                // pressed during the next jump) or by switching arrows mid-move, never a tap on the
+                // ground, which is what made the character step. Off (0): taps, as before.
+                const bool glide=pattern->glidePermille>0;
+                bool moving=false;      // this set keeps the arrow held
+                bool turnInAir=false;   // a turn owed, made during the next jump
+                auto turn=[&]{
+                    if(!glide){tap(facing(),pattern->directionHold,pattern->directionAfter);return;}
+                    if(!walking.empty())hold(facing());else turnInAir=true;
+                };
                 auto walk=[&](DynamicKey key){
-                    if(walking!=key){stopWalking();std::vector<Step> down{edge(true,key.keycode,key.mods)};executeSteps(down,stop,state,depth+1);walking=key;}
+                    hold(key);
                     std::vector<Step> hop{delay(sample(pattern->walkHold)),edge(true,jump.keycode,jump.mods),delay(sample(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
                     executeSteps(hop,stop,state,depth+1);
                 };
@@ -541,7 +570,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(stopReason(live))return;
                         mapCheck(live);
                         int pos=0;bool havePos=livePos(live,pos);
-                        if(havePos&&!haveHome)setHome(live,pos);
+                        homeCheck(live,havePos,pos);
                         uint8_t act=smartDecide(smartInput(live,havePos,pos));
                         publish(act);
                         if(act==SMART_ATTACK)break;
@@ -555,7 +584,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         else{stopWalking();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                              std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
                     }
-                    stopWalking();homing=false;
+                    // Gliding, a walk runs straight on into attacking (the arrow stays held).
+                    if(glide&&!walking.empty()&&!stop)moving=true;else stopWalking();
+                    homing=false;
                     if(doing>=0){stuck=StuckWatch();if(!stop)logStep(s,pc,millis(),0,true,"smart: mobs found");}   // standing still on purpose isn't stuck
                 };
                 auto screenCheck=[&]{
@@ -563,23 +594,25 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     LiveStats live=liveStatsSnapshot();
                     if(!live.fresh)return false;
                     if(stopReason(live))return true;
+                    mapCheck(live);
+                    {int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);}
                     int want=liveFacing(true,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
-                    if(want&&(want<0)!=facingLeft){facingLeft=want<0;tap(facing(),pattern->directionHold,pattern->directionAfter);}
+                    if(want&&(want<0)!=facingLeft){facingLeft=want<0;turn();}
                     publish(SMART_ATTACK);
                     if(pattern->stuckAfterMs){
                         // Map position when the script sends it (the dot can stay centred while you walk), else the dot.
                         bool map=live.wx!=LIVE_NO_POS&&live.wy!=LIVE_NO_POS;
                         uint8_t verdict=map?stuck.update(true,live.wx,live.wy,millis(),pattern->stuckAfterMs):stuck.update(live.x>=0&&live.y>=0,live.x,live.y,millis(),pattern->stuckAfterMs);
-                        if(verdict==1){logStep(s,pc,millis(),0,true,"stuck: turning around");facingLeft=!facingLeft;tap(facing(),pattern->directionHold,pattern->directionAfter);}
+                        if(verdict==1){logStep(s,pc,millis(),0,true,"stuck: turning around");facingLeft=!facingLeft;turn();}
                         if(verdict==2){logStep(s,pc,millis(),0,true,"stopped: still stuck");stop=true;return true;}
                     }
                     return false;
                 };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
-                {LiveStats live=liveStatsSnapshot();int pos=0;if(pattern->smart&&livePos(live,pos))setHome(live,pos);if(live.fresh)lastMap=live.map;}
+                {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);if(live.fresh)lastMap=live.map;}
                 publish(SMART_ATTACK);
-                // Establish the actual initial facing before the first attack.
-                tap(facing(),pattern->directionHold,pattern->directionAfter);
+                // Establish the actual initial facing before the first attack (gliding: in the first jump).
+                turn();
                 // Potions due are tapped in the gap after the next attack, as a player would: quick
                 // taps that use up the gap's own time, so the combo keeps its rhythm. As many as fit
                 // (at least one), the rest after the next attack. Their wait starts when decided on.
@@ -602,16 +635,29 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     Step entry=s;entry.keycode=facing().keycode;entry.value=count;
                     char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
                     uint32_t setLog=logStep(entry,pc,started,0,false,label);
+                    if(glide&&set==0)moving=moving||(uint32_t)random(1000L)<pattern->glidePermille;   // later sets: decided at the turn
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
                         if(screenCheck())break;
                         decidePotions();
                         if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
                         uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
-                        std::vector<Step> actions{
-                            edge(true,jump.keycode,jump.mods),delay(sample(pattern->jumpToAttack)),
+                        std::vector<Step> actions;
+                        // Gliding: the arrow held into the jump (a short run-up when just pressed), or,
+                        // standing, a turn owed made in the air: the arrow pressed after take-off and
+                        // let go with the attack.
+                        bool airTurn=false;DynamicKey arrow=facing();
+                        if(glide){
+                            if(moving){if(hold(arrow))actions.push_back(delay(sample(GLIDE_RUN_UP)));turnInAir=false;}
+                            else{stopWalking();airTurn=turnInAir;turnInAir=false;}
+                        }
+                        uint32_t toAttack=sample(pattern->jumpToAttack);
+                        actions.push_back(edge(true,jump.keycode,jump.mods));
+                        if(airTurn){uint32_t first=toAttack/3;actions.push_back(delay(first));actions.push_back(edge(true,arrow.keycode,arrow.mods));toAttack-=first;}
+                        for(const Step& step:{delay(toAttack),
                             edge(true,attack.keycode,attack.mods),delay(sample(pattern->attackToJumpUp)),
                             edge(false,jump.keycode,jump.mods),delay(sample(pattern->jumpUpToAttackUp)),
-                            edge(false,attack.keycode,attack.mods)};
+                            edge(false,attack.keycode,attack.mods)})actions.push_back(step);
+                        if(airTurn)actions.push_back(edge(false,arrow.keycode,arrow.mods));
                         uint32_t left=gap;bool tapped=false;
                         for(size_t k=0;k<potionTaps.size();++k){
                             DynamicKey key=dynamicKeycode(pattern->potions[k].keycode);
@@ -631,6 +677,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i)
                         if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))skills.push_back(i);
+                    if(!skills.empty())stopWalking();   // skills are cast standing
                     if(pattern->shuffleSkills)for(size_t i=skills.size();i>1;--i)std::swap(skills[i-1],skills[random((long)i)]);
                     for(size_t index:skills){
                         if(stop)break;
@@ -641,15 +688,22 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     // Live facing (map edge, mobs) wins; otherwise the turn chance.
                     LiveStats live=liveStatsSnapshot();
                     int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
+                    bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;
                     else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
                     publish(SMART_ATTACK);
-                    tap(facing(),pattern->directionHold,pattern->directionAfter);
+                    if(!glide)tap(facing(),pattern->directionHold,pattern->directionAfter);
+                    else{
+                        moving=(uint32_t)random(1000L)<pattern->glidePermille;   // the next set: on the move or standing
+                        if(!moving)stopWalking();
+                        if(facingLeft!=wasLeft)turn();
+                    }
                     if(!stop)yieldTick();
                 }
                 // Taps still owed when the attacking ends (a refill of several): drunk now.
                 for(size_t k=0;k<potionTaps.size()&&!stop;++k)
                     for(;potionTaps[k]&&!stop;--potionTaps[k])tap(dynamicKeycode(pattern->potions[k].keycode),pattern->potions[k].hold,pattern->potions[k].after);
+                stopWalking();
                 patternViewSet(PatternView());
                 releaseTracked();
                 logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,stop?"dynamic: stopped":"dynamic: finished");

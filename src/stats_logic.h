@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 // Live HP/Mana/XP, read off the game screen by tools/screen_stats.py as bar
 // fill percentages (pure, host-tested). Kept in tenths of a percent (0-1000).
@@ -241,22 +242,35 @@ struct StuckWatch {
     }
 };
 
+// ---- home, told back to the screen reader ------------------------------------
+// The answer to each reading carries the playing pattern's home, so the PC's
+// game layer can mark it on the minimap: "home=1415&hm=1&hr=500" (home in the
+// position's own units, hm=1 when it's a map position wx rather than the dot's
+// x, hr the home range in tenths of a percent of the minimap, 0 = none). Empty
+// with no pattern playing or no home yet.
+inline void homeReplyForm(char* out, size_t size, bool active, bool haveHome, int home, bool onMap, uint16_t range) {
+    if (!size) return;
+    out[0] = 0;
+    if (active && haveHome) snprintf(out, size, "home=%d&hm=%d&hr=%u", home, onMap ? 1 : 0, (unsigned)range);
+}
+
 // ---- the screen reader's keys, pressed on the pad ---------------------------
 // "tool" steps press tools/screen_stats.py's keys from the pad: mark (its F8),
 // skip (Esc), map (F9), outlines (F10), hide (F11), looser (F6) and stricter
-// (F7) mob colours, home (1.18.6's F12, no longer used: kept so saved buttons load), so setup, tuning and the game layer need no keyboard and
+// (F7) mob colours, home (1.18.6's F12, no longer used: kept so saved buttons load), area (F12:
+// mark this map's minimap and name by hand, over the automatic ones), so setup, tuning and the game layer need no keyboard and
 // work whatever has focus. They wait here until the
 // script asks (USB "KABUTO keys", Wi-Fi POST /api/tool/keys); ones older than
 // TOOL_KEY_MAX_AGE_MS are dropped, so presses with no script running don't
 // fire later.
-enum ToolKey : uint8_t { TOOL_NONE, TOOL_MARK, TOOL_SKIP, TOOL_MAP, TOOL_OUTLINES, TOOL_HIDE, TOOL_LOOSER, TOOL_STRICTER, TOOL_HOME };
+enum ToolKey : uint8_t { TOOL_NONE, TOOL_MARK, TOOL_SKIP, TOOL_MAP, TOOL_OUTLINES, TOOL_HIDE, TOOL_LOOSER, TOOL_STRICTER, TOOL_HOME, TOOL_AREA };
 const uint32_t TOOL_KEY_MAX_AGE_MS = 3000;
 inline const char* toolKeyName(uint8_t key) {
-    static const char* const names[] = {"", "mark", "skip", "map", "outlines", "hide", "looser", "stricter", "home"};
-    return key <= TOOL_HOME ? names[key] : "";
+    static const char* const names[] = {"", "mark", "skip", "map", "outlines", "hide", "looser", "stricter", "home", "area"};
+    return key <= TOOL_AREA ? names[key] : "";
 }
 inline uint8_t toolKeyFromName(const char* name) {
-    for (uint8_t k = TOOL_MARK; name && k <= TOOL_HOME; ++k)
+    for (uint8_t k = TOOL_MARK; name && k <= TOOL_AREA; ++k)
         if (!strcmp(name, toolKeyName(k))) return k;
     return TOOL_NONE;
 }

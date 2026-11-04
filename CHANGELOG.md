@@ -3,6 +3,14 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.10
+
+- 🔄 **Check now shows what it's doing**: it said "Not checked yet" and
+  nothing more, because the page looked 0.3 s after asking while the pad
+  only picks the request up once a second, and then didn't look again for
+  30 s. Now it says "Checking GitHub…" at once and follows the check to its
+  result (the new releases, or why not) within a second or two of it ending
+
 ## 1.18.9
 
 - 🐢➡️⚡ **Less Wi-Fi traffic, a quicker pad**: with the screen reader on

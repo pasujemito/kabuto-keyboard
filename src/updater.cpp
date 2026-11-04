@@ -266,6 +266,9 @@ void updaterWriteStatus(JsonDocument& d) {
 
 void updaterRequestCheck() {
     Lock l; checkRequested_ = true;
+    // Say so at once: the updater task only looks once a second, and a page asking
+    // right after "Check now" would otherwise see the old state and stop following.
+    if (state_ != "downloading" && state_ != "restarting" && state_ != "off") { state_ = "checking"; error_ = ""; }
 }
 
 String updaterRequestInstall(const String& version) {

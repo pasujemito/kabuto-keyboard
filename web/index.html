@@ -586,12 +586,20 @@ function showLoadError(e){
 let storage=null;
 /* Firmware updates: the pad checks this project's GitHub releases over home
    Wi-Fi and lists them; nothing installs until you pick a version and confirm. */
-let updateInfo=null,updateTimer=null;
+let updateInfo=null,updateTimer=null,checkAskedAt=0,checkStarted=false;
 async function refreshUpdates(){
   try{updateInfo=await getJson("/api/update");}catch(e){updateInfo=null;}
+  // Just asked to check: follow it closely, even before the pad says it started (older
+  // firmware says so up to a second later) and through a brief drop while it joins Wi-Fi.
+  const sinceAsk=Date.now()-checkAskedAt;
+  if(checkAskedAt&&updateInfo){
+    if(updateInfo.state==='checking')checkStarted=true;
+    else if(!checkStarted&&sinceAsk<3000)updateInfo.state='checking';   // not picked up yet
+    else checkAskedAt=0;   // finished: its result shows
+  }
   renderUpdates();
   clearTimeout(updateTimer);
-  const busy=updateInfo&&['checking','downloading','restarting'].includes(updateInfo.state);
+  const busy=(updateInfo&&['checking','downloading','restarting'].includes(updateInfo.state))||(checkAskedAt&&!updateInfo&&sinceAsk<45000);
   updateTimer=setTimeout(()=>{refreshUpdates();if(!busy)refreshNetwork();},busy?1500:30000);
 }
 function updateStatusText(u){
@@ -637,7 +645,8 @@ function renderUpdates(){
   if(!u.wifi)box.append(note('Add your home Wi-Fi above to check for updates.'));
   if(!$('#updateCheck')){
     const check=el('button','btn sm');check.type='button';check.id='updateCheck';check.textContent='Check now';
-    check.onclick=async()=>{await api('/api/update/check',{method:'POST'}).catch(()=>{});setTimeout(refreshUpdates,300);};
+    check.onclick=async()=>{checkAskedAt=Date.now();checkStarted=false;if(updateInfo){updateInfo.state='checking';renderUpdates();}
+      await api('/api/update/check',{method:'POST'}).catch(()=>{});setTimeout(refreshUpdates,1000);};
     panel.appendChild(check);
   }
   $('#updateCheck').hidden=false;$('#updateCheck').disabled=busy||!u.wifi;

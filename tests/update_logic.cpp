@@ -3,6 +3,7 @@
 #include <iostream>
 int main(){
     uint32_t v[3];
+    assert(RELEASES_LISTED>=4&&RELEASES_LISTED<=8);   // the page shows 4; each costs a slow signature check
     assert(parseVersion("1.14.0",v)&&v[0]==1&&v[1]==14&&v[2]==0);
     for(const char* bad:{"v1.14.0","1.14","1.14.0-beta","1.14.0 ","","a.b.c"})assert(!parseVersion(bad,v));
     assert(isNewerVersion("1.14.0","1.13.9")&&isNewerVersion("2.0.0","1.99.99")&&isNewerVersion("1.13.10","1.13.9"));

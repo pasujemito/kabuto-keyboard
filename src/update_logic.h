@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -46,6 +47,10 @@ inline std::string wifiJoinProblem(uint8_t reason) {
         default: return "Wi-Fi error " + std::to_string(reason);
     }
 }
+
+// How many releases a check lists (newest first): each needs a signature check,
+// slow on the pad, and the page shows the newest 4.
+const size_t RELEASES_LISTED = 6;
 
 // Installs only start when you confirm one, and never mid-playback or recording:
 // the pad restarts at the end, which would cut a macro off.

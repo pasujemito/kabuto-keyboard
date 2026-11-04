@@ -91,12 +91,18 @@ bool fetchReleases(std::vector<Release>& out, String& err) {
     JsonDocument doc;
     if (deserializeJson(doc, body)) { err = "Release list unreadable"; return false; }
     uint32_t parsed[3];
+    // Each signature check is heavy maths (ECDSA): only the newest few are checked
+    // (the list comes newest first), with a pause after each. 20 checks in a row
+    // starved this core for over 5 s: the watchdog restarted the pad, and the page
+    // and Wi-Fi stalled meanwhile.
     for (JsonObjectConst v : doc["versions"].as<JsonArrayConst>()) {
+        if (out.size() >= RELEASES_LISTED) break;
         Release r{v["version"] | "", v["date"] | "", v["sha256"] | "", v["size"] | 0U};
         // Unsigned or malformed entries are never shown, let alone installed.
-        if (!parseVersion(r.version, parsed) || !isSha256Hex(r.sha256) || !r.size ||
-            !verifySignature(manifestPayload(r.version, r.size, r.sha256), v["signature"] | "")) continue;
-        out.push_back(r);
+        if (!parseVersion(r.version, parsed) || !isSha256Hex(r.sha256) || !r.size) continue;
+        bool signedOk = verifySignature(manifestPayload(r.version, r.size, r.sha256), v["signature"] | "");
+        vTaskDelay(pdMS_TO_TICKS(20));   // let the web server, Wi-Fi and the idle task (watchdog) run
+        if (signedOk) out.push_back(r);
     }
     return true;
 }

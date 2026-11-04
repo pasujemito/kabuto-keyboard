@@ -266,6 +266,7 @@
   .storage .meter{height:4px;background:var(--edge);border-radius:2px;overflow:hidden;margin-top:3px}
   .storage .meter i{display:block;height:100%;background:var(--live)}
   .storage .meter i.warn{background:var(--amber)}
+  .hint.warn{color:var(--amber)}
   .storage .meter i.full{background:var(--stop)}
   .live-stats{display:grid;gap:6px;margin:10px 0 2px;padding:10px 12px;border:1px solid var(--edge);border-radius:var(--r);background:var(--panel);font-size:12px;color:var(--muted)}
   .live-stats[hidden]{display:none}
@@ -662,6 +663,12 @@ function renderNetwork(){
     !n.ssid?'Not set up yet. Add your home Wi-Fi to get updates.':
     n.stay?`Joining ${n.ssid}…`:`Saved: ${n.ssid}. Joined only to check for updates.`));
   if(n.connected&&n.error)box.append(note(n.error));
+  // The pad's health: low memory in one piece (a long run under heavy traffic) slows it and stops updates.
+  if(n.heapFree!==undefined){
+    const up=n.uptimeS<3600?Math.round(n.uptimeS/60)+' min':Math.floor(n.uptimeS/3600)+' h '+Math.floor(n.uptimeS%3600/60)+' min',kb=b=>Math.round(b/1024)+' KB';
+    const low=n.heapLargest<45000,h=note(`Pad: up ${up} · memory ${kb(n.heapFree)} free, ${kb(n.heapLargest)} in one piece`+(n.rssi!==undefined?` · Wi-Fi ${n.rssi} dBm`+(n.rssi<-75?' (weak)':''):'')+(low?'. Low: restart the pad (unplug it a moment) before updating.':''));
+    h.id='padHealth';if(low)h.classList.add('warn');box.append(h);
+  }
   if(!$('#networkForm'))panel.appendChild(buildNetworkForm());
   const form=$('#networkForm');
   if(!form.dataset.edited){$('#netSsid').value=n.ssid||'';$('#netStay').checked=!!n.stay;}

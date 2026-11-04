@@ -2,7 +2,7 @@
 """
 screen_stats.py - read your game screen and send what matters to Kabuto.
 
-Runs on the PC with the game. Five times a second it samples a few small
+Runs on the PC with the game. Five times a second (twice over Wi-Fi) it samples a few small
 areas of the screen and sends a handful of numbers to the pad: HP, Mana and
 XP (bar fill %), your position on the minimap, the mobs around you (which
 sides are in your reach, how many you can see each side, how near the nearest
@@ -2444,6 +2444,35 @@ def parse_home(form):
     except (KeyError, ValueError):
         return None
 
+def answer_keys(form_or_list):
+    """The pad buttons in a reading's answer: ["mark", "map"] from "mark,map"
+    (or a list), or None when the answer has none at all (older firmware)."""
+    if form_or_list is None:
+        return None
+    items = form_or_list if isinstance(form_or_list, list) else form_or_list.split(",")
+    return [k for k in items if k]
+
+class Answers:
+    """What readings' answers carried: the pad buttons pressed since (kept
+    until taken), and whether this firmware puts them there at all, so the
+    separate polling for them can rest while readings flow."""
+    def __init__(self):
+        self.inbox, self.carries_keys, self.heard_at = [], False, 0.0
+
+    def heard(self, keys):
+        if keys is not None:
+            self.carries_keys, self.heard_at = True, time.monotonic()
+            self.inbox.extend(keys)
+
+    def take_keys(self):
+        keys, self.inbox = self.inbox, []
+        return keys
+
+    def polling_needed(self, now=None, quiet=1.0):
+        """Poll for buttons only when answers don't bring them (older
+        firmware) or no reading was answered lately (setup, a pause)."""
+        return not self.carries_keys or (time.monotonic() if now is None else now) - self.heard_at > quiet
+
 def home_place(r, home):
     """Where home is on the minimap in % across (it can be off the minimap's
     edge when the minimap slides), or None when it can't be told."""
@@ -2458,7 +2487,7 @@ def home_place(r, home):
 class Pad:
     """Posts readings to the pad, logging in with the PIN when it asks (401)."""
     def __init__(self, host, pin):
-        self.base, self.pin = "http://" + host, pin
+        self.base, self.pin, self.answers = "http://" + host, pin, Answers()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
     def _post(self, path, fields):
@@ -2482,9 +2511,13 @@ class Pad:
         """Sends a reading; returns the pad's home (parse_home), or None."""
         body = self._call("/api/stats", form_fields(readings))
         try:
-            return parse_home(json.loads(body or b"{}").get("home"))
-        except (ValueError, AttributeError):
+            answer = json.loads(body or b"{}")
+        except ValueError:
             return None
+        if not isinstance(answer, dict):
+            return None
+        self.answers.heard(answer_keys(answer.get("keys")))
+        return parse_home(answer.get("home"))
 
     def keys(self):
         """Setup buttons pressed on the pad since the last ask, or None if the
@@ -2508,12 +2541,15 @@ class UsbPad:
     """Sends readings down the USB cable ("KABUTO stats <form>" lines), so a
     game laptop needs no Wi-Fi or PIN: plugging the pad in is the permission."""
     def __init__(self, port, version=None):
-        self.port, self.version, self.lock, self.home = port, version, threading.Lock(), None
+        self.port, self.version, self.lock, self.home, self.answers = port, version, threading.Lock(), None, Answers()
 
     def _heard(self, line):
-        """The pad's answer to a reading ("KABUTO ok" and maybe its home): kept."""
+        """The pad's answer to a reading ("KABUTO ok", maybe with the buttons
+        pressed since and its home): kept."""
         if line == "KABUTO ok" or line.startswith("KABUTO ok "):
+            fields = dict(urllib.parse.parse_qsl(line[10:], keep_blank_values=True))
             self.home = parse_home(line[10:])
+            self.answers.heard(answer_keys(fields.get("keys")))
             return True
         return False
 
@@ -2559,7 +2595,7 @@ class UsbPad:
                 line = self.port.readline().decode("ascii", "replace").strip()
                 self._heard(line)   # an answer to a reading read here isn't lost
                 if line == "KABUTO keys" or line.startswith("KABUTO keys "):
-                    return [k for k in line[12:].split(",") if k]
+                    return self.answers.take_keys() + [k for k in line[12:].split(",") if k]
         old = version_tuple(self.version)
         return None if old and old < PAD_KEYS_SINCE else []
 
@@ -2614,6 +2650,10 @@ def watch_pad_keys(link, every=0.15):
             pad = None
             try:
                 pad = link.get()
+                answers = getattr(pad, "answers", None)
+                if answers and not answers.polling_needed():   # readings' answers bring them: no extra traffic
+                    time.sleep(0.5)
+                    continue
                 keys = pad.keys()
                 if keys is None:
                     say("This pad's firmware (%s) has no setup buttons: update it to %s or newer to use them"
@@ -2891,6 +2931,13 @@ def layer_maps(maps, config):
     """For the F9 list: every map in map.json, and when each taught one was taught."""
     return sorted(maps), {n: m.get("taught_at", 0) for n, m in config.get("maps", {}).items() if name_taught(m)}
 
+USB_INTERVAL, WIFI_INTERVAL = 0.2, 0.5   # s between readings by default: Wi-Fi shares the pad's radio with Bluetooth
+
+def reading_interval(asked, pad):
+    """--interval if given, else 0.2 s over USB and 0.5 s over Wi-Fi (more
+    there slows the pad's Bluetooth keys and web page, and can fill its memory)."""
+    return asked if asked else USB_INTERVAL if pad is None or isinstance(pad, UsbPad) else WIFI_INTERVAL
+
 REST = 0.05   # s: at least this between readings, so the game keeps some CPU (more: slower readings on a slow PC)
 
 def run(args):
@@ -2967,8 +3014,11 @@ def run(args):
             pad = pads.get() if pads else None
             link = pad.where if pad else "dry run"
             home = pad.send(readings) if pad else None
+            for k in pad.answers.take_keys() if pad and hasattr(pad, "answers") else ():
+                if k in PAD_KEYS:
+                    press(PAD_KEYS[k])
             print("\r" + line.ljust(70) + ("" if pad else "(dry run)"), end="", flush=True)
-            wait = args.interval
+            wait = reading_interval(args.interval, pad)
         except (urllib.error.URLError, OSError) as e:   # serial errors are OSErrors too
             print("\r%s  can't reach Kabuto (%s), retrying..." % (line, getattr(e, "reason", e)), end="", flush=True)
             link = "can't reach Kabuto"
@@ -4530,6 +4580,21 @@ def selftest():
     kabuto.replies = [b"KABUTO ok home=1500&hm=1&hr=0\n", b"KABUTO keys\n"]
     assert pad.keys() == [] and pad.home == {"home": 1500, "map": True, "range": 0}   # heard while asking for keys
     pad.home = None
+    # Firmware that puts the pad's buttons in each answer: taken from there, and the
+    # separate polling rests while answers keep coming (less traffic on the pad).
+    assert pad.answers.polling_needed()   # these answers had no "keys": older firmware, keep polling
+    kabuto.replies = [b"KABUTO ok keys=mark,map&home=415&hm=0&hr=60\n"]
+    assert pad.send({"x": 41.5}) == {"home": 415, "map": False, "range": 60}
+    assert pad.answers.take_keys() == ["mark", "map"] and pad.answers.take_keys() == []
+    assert not pad.answers.polling_needed() and pad.answers.polling_needed(time.monotonic() + 2)
+    kabuto.replies = [b"KABUTO ok keys=\n"]
+    assert pad.send({"x": 41.5}) is None and pad.answers.take_keys() == []
+    kabuto.replies = [b"KABUTO ok keys=skip\n", b"KABUTO keys area\n"]
+    assert pad.keys() == ["skip", "area"]   # one heard in an answer while polling isn't lost
+    pad.answers = Answers()
+    assert answer_keys(None) is None and answer_keys("") == [] and answer_keys(["hide", ""]) == ["hide"]
+    assert reading_interval(None, pad) == USB_INTERVAL and reading_interval(None, Pad("x", "")) == WIFI_INTERVAL
+    assert reading_interval(0.3, Pad("x", "")) == 0.3 and reading_interval(None, None) == USB_INTERVAL
     # The pad's setup buttons over USB: log lines and stats replies are skipped.
     kabuto.replies = [b"KABUTO ok\n", b"[ok] tap\n", b"KABUTO keys mark,map\n"]
     assert pad.keys() == ["mark", "map"] and kabuto.sent[-1] == b"KABUTO keys\n"
@@ -4564,13 +4629,15 @@ def selftest():
                 return
             seen.append((authed, body))
             self.send_response(200 if authed else 401); self.end_headers()
-            self.wfile.write(b'{"ok":true,"home":"home=1415&hm=1&hr=500"}' if "x=" in body else b"{}")
+            self.wfile.write(b'{"ok":true,"keys":"map","home":"home=1415&hm=1&hr=500"}' if "x=" in body else b"{}")
     server = HTTPServer(("127.0.0.1", 0), Fake)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     host = "127.0.0.1:%d" % server.server_port
     pad = Pad(host, "246810")
     assert pad.send({"hp": 72.0, "mana": None, "xp": 63.2, "state": "ok", "mobs": ""}) is None
+    assert pad.answers.polling_needed()   # an answer without "keys": older firmware
     assert pad.send({"hp": 0.0, "mana": 40.0, "x": 41.5, "y": 70.0, "state": "dead", "mobs": "R"}) == {"home": 1415, "map": True, "range": 500}
+    assert pad.answers.take_keys() == ["map"] and not pad.answers.polling_needed()
     assert seen == [(False, "hp=72.0&xp=63.2&mobs=&state=ok"), (True, "hp=72.0&xp=63.2&mobs=&state=ok"),
                     (True, "hp=0.0&mana=40.0&x=41.5&y=70.0&mobs=R&state=dead")], seen
     assert Pad(host, "246810").keys() == ["skip"]   # logs in first, like readings
@@ -4637,7 +4704,7 @@ def main():
                     help="how to reach the pad: USB cable if plugged in, else Wi-Fi (default auto)")
     ap.add_argument("--host", default="kabuto.local", help="the pad's Wi-Fi address (default kabuto.local)")
     ap.add_argument("--pin", default=os.environ.get("KABUTO_PIN"), help="access PIN (or set KABUTO_PIN)")
-    ap.add_argument("--interval", type=float, default=0.2, help="seconds between readings (default 0.2: mobs are followed between searches)")
+    ap.add_argument("--interval", type=float, default=None, help="seconds between readings (default 0.2 over USB, 0.5 over Wi-Fi)")
     ap.add_argument("--config", default=CONFIG, help="setup file (default %s)" % CONFIG)
     ap.add_argument("--dry-run", action="store_true", help="print readings without sending")
     ap.add_argument("--game", choices=sorted(GAMES) + ["other"],

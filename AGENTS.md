@@ -81,9 +81,11 @@ release workflow runs all C++ and Python tests.
   parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). The other way,
   `tool` steps (the pad's setup buttons) queue the script's keys in `ToolKeys`
   (`stats_logic.h`); it collects them with `KABUTO keys` / `POST
-  /api/tool/keys`. Each reading's answer (`KABUTO ok home=...` / `{"home":
-  "..."}`) carries the playing pattern's home (`homeReplyForm`) for the game
-  layer. Maps are described in `mobs/map.json` (name, mobs, the
+  /api/tool/keys`. Each reading's answer (`KABUTO ok keys=...&home=...` / `{"keys":
+  "...", "home": "..."}`) carries the pad buttons pressed since (so the script
+  only polls for them while readings aren't flowing) and the playing
+  pattern's home (`homeReplyForm`) for the game layer. Keep Wi-Fi traffic low:
+  it shares the radio with the BLE keys (readings default to 0.5 s there). Maps are described in `mobs/map.json` (name, mobs, the
   map's minimap size; PNGs kept once in `mobs`): written by hand except
   `minimap`, which F9 teaching (size) or F12 (a hand-marked box with
   `left`/`top`) fills in. Machine-learned data (name pixels,

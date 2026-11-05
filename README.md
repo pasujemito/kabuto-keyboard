@@ -37,7 +37,7 @@ Hold **BOOT** for 3 s to forget paired devices.
 
 🎮 **Game laptop?** Plug the pad in by USB, `pip install mss pynput pyserial`
 and run `python tools/screen_stats.py` for live HP, Mana, XP and screen
-awareness. No Wi-Fi or PIN needed over USB.
+awareness. Readings go over the cable only (a data cable), never Wi-Fi.
 
 ## 📚 More
 

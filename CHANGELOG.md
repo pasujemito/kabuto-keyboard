@@ -3,6 +3,21 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.12
+
+- 🔌 **Readings over the USB cable only**: over Wi-Fi the screen reader's
+  readings flooded the pad (its one radio also carries the Bluetooth keys and
+  your phone's page) until keys lagged and the page stopped loading. The
+  pad's Wi-Fi reading routes are gone; the script finds the pad on the cable
+  (a data cable) and says so if it can't. `--via`, `--host` and `--pin` are
+  gone with them. **Update the PC script too**
+- 📉 **Only what changes is sent**: a reading goes to the pad when something it
+  fights with changes (mobs: sides, counts, the nearest's name, one coming
+  into or out of reach; your place by 1%; HP or MP by 1%; the game's state;
+  the map), plus one every 2 s, so it still reacts at once to a mob
+- 📱 **The phone's dashboard asks every 2 s** (was 0.7 s), and not at all
+  while the page is in the background
+
 ## 1.18.11
 
 - 💥 **No more restarts on checking for updates** (and no stalls while it

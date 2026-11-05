@@ -76,16 +76,17 @@ release workflow runs all C++ and Python tests.
   `update_public_key.pem` belongs in the repo.
 - Screen reading stays on the PC (`tools/screen_stats.py`); the pad only gets
   a few numbers per reading. Keep it that way: the pad has little RAM.
-  Readings arrive as the same form over Wi-Fi (`POST /api/stats`) or USB serial
-  (`KABUTO hello` / `KABUTO stats <form>` lines, `usbStatsPoll` in `main.cpp`),
+  Readings arrive over USB serial only (`KABUTO hello` / `KABUTO stats <form>`
+  lines, `usbStatsPoll` in `main.cpp`; the Wi-Fi routes flooded the pad and are
+  gone: don't add Wi-Fi traffic per reading), only when they change something
+  (`worth_sending`) plus a 2 s heartbeat,
   parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). The other way,
   `tool` steps (the pad's setup buttons) queue the script's keys in `ToolKeys`
-  (`stats_logic.h`); it collects them with `KABUTO keys` / `POST
-  /api/tool/keys`. Each reading's answer (`KABUTO ok keys=...&home=...` / `{"keys":
-  "...", "home": "..."}`) carries the pad buttons pressed since (so the script
+  (`stats_logic.h`); it collects them with `KABUTO keys`. Each reading's
+  answer (`KABUTO ok keys=...&home=...`) carries the pad buttons pressed since (so the script
   only polls for them while readings aren't flowing) and the playing
-  pattern's home (`homeReplyForm`) for the game layer. Keep Wi-Fi traffic low:
-  it shares the radio with the BLE keys (readings default to 0.5 s there). Maps are described in `mobs/map.json` (name, mobs, the
+  pattern's home (`homeReplyForm`) for the game layer. The page polls
+  `/api/status` every 2 s, never while hidden. Maps are described in `mobs/map.json` (name, mobs, the
   map's minimap size; PNGs kept once in `mobs`): written by hand except
   `minimap`, which F9 teaching (size) or F12 (a hand-marked box with
   `left`/`top`) fills in. Machine-learned data (name pixels,

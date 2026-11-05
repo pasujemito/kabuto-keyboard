@@ -151,8 +151,27 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#dynamicError').textContent(),'Walking hops: enter an ordered range from 50 to 5000.');
   await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).fill('300');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
+  // Every setting explains itself in plain words, shows its default and goes back to it.
+  assert.match(await page.locator('#dynamicHome').textContent(),/0%: off, no home.*Works with Smart on or off\..*Default: 50%/s);
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'10');
+  await page.getByRole('button',{name:'Default for Home range',exact:true}).click();
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'50');
+  await page.getByRole('button',{name:'Default for Walking: hop every',exact:true}).click();
+  assert.equal(await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).inputValue(),'600');
+  await page.getByLabel('Smart mode',{exact:true}).uncheck();await page.getByRole('button',{name:'Default for Smart mode',exact:true}).click();
+  assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
+  assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking.*0%: off.*Default: 60%/s);
+  assert.match(await page.locator('#dynamicPotions').textContent(),/HP drink below.*0%: ignores the bar.*Default: 50%/s);
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('70');await page.getByRole('button',{name:'Default for Mana drink below',exact:true}).click();
+  assert.equal(await page.getByLabel('Mana drink below (%)',{exact:true}).inputValue(),'30');
+  await page.getByLabel('Home range (%)',{exact:true}).fill('10');await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).fill('300');
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('25');
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
+  await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('80');
+  await page.getByRole('button',{name:'Default for Skill 1 chance',exact:true}).click();
+  assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'10');
+  if(process.env.SHOT)await page.locator('#dynamicDialog').screenshot({path:process.env.SHOT});
   // Presets change movement/rhythm and keep skills.
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('35');
   await page.getByRole('button',{name:'Flip',exact:true}).click();

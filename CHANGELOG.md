@@ -3,6 +3,19 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.13
+
+- 📖 **Every setting explains itself**: in the pattern editor each setting
+  says in plain sentences what it does and what its values mean (0%, a
+  middle value, the top), shows its default (what a new pattern gets) and has
+  a **↺ Default** button to go back to it. Long explanation paragraphs are
+  gone in favour of these
+- 🏠 **Home on its own**: Home range has its own section and works with Smart
+  off too: drift past it and the pattern walks back home, then carries on
+  attacking (Smart off never waits for mobs). With Smart on it still hunts
+  around home as before
+- New skills start with the defaults shown
+
 ## 1.18.12
 
 - 🔌 **Readings over the USB cable only**: over Wi-Fi the screen reader's

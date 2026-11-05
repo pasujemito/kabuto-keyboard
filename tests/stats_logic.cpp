@@ -75,6 +75,15 @@ int main(){
     assert(smartAction(true,left,true,650,true,500,100,false)==SMART_ATTACK&&smartAction(true,left,true,750,true,500,100,false)==SMART_WALK_LEFT);   // mobs keep you, unless far
     // Nothing to fight: back home, to hunt around it. Walks when over HOME_SETTLE (6%) away, until within half that.
     assert(smartAction(true,none,true,560,true,500,100,false)==SMART_WAIT&&smartAction(true,none,true,570,true,500,100,false)==SMART_WALK_LEFT);
+    {   // Home on its own (Smart off): only walking back, never waiting
+        SmartInput h;h.fresh=true;h.mobs=MOB_READ;h.havePos=true;h.haveHome=true;h.home=500;h.range=100;
+        h.pos=560;assert(homeDecide(h)==SMART_ATTACK);                 // within range, nothing in reach: attacks (Smart would wait)
+        h.pos=650;assert(homeDecide(h)==SMART_WALK_LEFT);h.pos=350;assert(homeDecide(h)==SMART_WALK_RIGHT);
+        h.pos=650;h.mobs=MOB_READ|MOB_LEFT;assert(homeDecide(h)==SMART_ATTACK);   // a mob in reach keeps you...
+        h.pos=750;assert(homeDecide(h)==SMART_WALK_LEFT);                          // ...unless twice the range away
+        h.pos=560;h.mobs=MOB_READ;h.homing=true;assert(homeDecide(h)==SMART_WALK_LEFT);   // walking: on to half the range
+        h.range=0;h.pos=900;assert(homeDecide(h)==SMART_ATTACK);h.range=100;h.fresh=false;assert(homeDecide(h)==SMART_ATTACK);
+    }
     assert(smartAction(true,none,true,540,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,525,true,500,100,true)==SMART_WAIT);
     assert(smartAction(true,none,true,420,true,500,100,false)==SMART_WALK_RIGHT);           // either side
     assert(smartAction(true,left,true,570,true,500,100,false)==SMART_ATTACK);               // mobs in reach: fight them first

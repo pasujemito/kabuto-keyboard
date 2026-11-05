@@ -153,14 +153,22 @@ struct SmartInput {
     int pos = 0, home = 0;
     uint16_t range = 0;
 };
+// Home on its own (any pattern with a home range, Smart or not): drifted past
+// the range with no mobs in reach, or twice the range whatever's around, walk
+// back until within half of it; otherwise attack.
+inline uint8_t homeDecide(const SmartInput& in) {
+    if (!in.fresh || !in.havePos || !in.haveHome || !in.range) return SMART_ATTACK;
+    bool any = in.mobs & (MOB_LEFT | MOB_RIGHT);
+    int off = in.pos - in.home, dist = off < 0 ? -off : off;
+    if (dist > (in.homing ? in.range / 2 : in.range) && (!any || dist > 2 * in.range)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
+    return SMART_ATTACK;
+}
 inline uint8_t smartDecide(const SmartInput& in) {
     if (!in.fresh) return SMART_ATTACK;
     bool any = in.mobs & (MOB_LEFT | MOB_RIGHT), homed = in.havePos && in.haveHome && in.range;
     int off = homed ? in.pos - in.home : 0;
-    if (homed) {
-        int dist = off < 0 ? -off : off;
-        if (dist > (in.homing ? in.range / 2 : in.range) && (!any || dist > 2 * in.range)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
-    }
+    uint8_t back = homeDecide(in);
+    if (back != SMART_ATTACK) return back;
     bool away = homed && (in.mobs & MOB_READ) && (off < 0 ? -off : off) > (in.homing ? HOME_SETTLE / 2 : HOME_SETTLE);
     if (in.paused) return away ? (off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT) : SMART_PAUSE;
     if (any) return SMART_ATTACK;

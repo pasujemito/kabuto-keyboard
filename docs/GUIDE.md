@@ -604,6 +604,13 @@ are gone with Wi-Fi readings).
     pattern with Smart turned off shows **Smart off**. The game layer's strip
     says the same in red ("new map, mobs not seen: F9", "not looking for
     mobs").
+- **Every setting in the pattern editor explains itself** in plain sentences
+  right under it (what it does, and what 0, a middle value or the top value
+  means), shows its default (what a new pattern gets) and has a **↺ Default**
+  button to go back to it.
+- **Home** is its own section, apart from Smart: with a home range set, a
+  pattern walks back home when it drifts past it, Smart on or off (see Home
+  range below). With Smart on it also hunts around home.
 - Each dynamic pattern has **Screen awareness** (on for new patterns, off for
   older ones):
   - **Turn at map edges (%)**, 12% by default: within that distance of the
@@ -625,9 +632,10 @@ are gone with Wi-Fi readings).
       carries on once they're back to twice that share (60%), or after 20 s
       anyway to finish off the last few. The "most seen lately" drops by one
       every 30 s it isn't reached, so one crowded moment doesn't hold it up;
-    - **Home range** (50% of the minimap by default, up to 50%; 0 = no home):
-      how far from home it may go. Drift further than that with no mobs in
-      reach, or twice that whatever's around, and it walks back;
+    - **Home range** (in the Home section; 50% of the minimap by default, up
+      to 50%; 0 = no home): how far from home it may go. Drift further than
+      that with no mobs in reach, or twice that whatever's around, and it
+      walks back. This part works with Smart off too;
     - **Home is where you press the button**: set by itself where you stand
       when any dynamic pattern starts (or where you arrive on a new map), and
       shown on the dashboard and on the game layer's minimap (a green line,

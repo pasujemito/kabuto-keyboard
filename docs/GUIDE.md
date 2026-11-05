@@ -197,8 +197,15 @@ works the whole time. In the terminal a "no" is remembered too (`not_now` in
 `kabuto-bars.json`; delete an entry to be asked again), and mobs maplestory.io doesn't have are
 kept in `mobs/frames-not-found.txt`.
 
-Over USB there's no Wi-Fi, `kabuto.local` or PIN involved: having the pad
-plugged in is the permission. Without a cable, it uses Wi-Fi instead.
+Readings go **over the USB cable only** (a data cable; a charge-only one
+won't do): no Wi-Fi, `kabuto.local` or PIN involved, having the pad plugged in
+is the permission. Since 1.18.12 they never go over Wi-Fi: the pad's one radio
+carries its Bluetooth keys and your phone's page too, and readings over it
+flooded the pad until the keys lagged and the page stopped loading. Only what
+changes for the fight is sent (mobs, your place, HP/MP, the game's state, the
+map), plus one every 2 s. Your phone still opens the pad's page over Wi-Fi as
+before; the dashboard refreshes every 2 s, and not at all while the page is in
+the background.
 
 **The game layer** keeps you in the game. While the script runs, a strip
 across the top of the screen shows what it reads and sends (USB or Wi-Fi, HP,
@@ -242,8 +249,8 @@ button again: Looser, Stricter and the Tune layer are gone. Saved buttons
 still work.) Save, then press 🍁 Setup on the pad: hover something in the game,
 press **Mark** on the pad, and so on, with no keyboard and whatever has focus.
 **Back** returns to your layer. The buttons type nothing into the game: the
-pad keeps each press (for up to 3 s) until the script collects it, over the
-USB cable or Wi-Fi, a few times a second, during setup too. Older firmware
+pad keeps each press (for up to 3 s) until the script collects it over the
+USB cable, with the next reading's answer (or by asking, during setup). Older firmware
 doesn't have them; the script says so.
 
 The game must be **windowed or borderless**: nothing can draw over exclusive
@@ -272,8 +279,7 @@ it (the game windowed away from the screen's corner, say) do you mark them.
 For another game, `--setup --game other` samples the colours as before.
 
 ```bash
-python screen_stats.py                 # USB if plugged in, else kabuto.local
-python screen_stats.py --pin 123456    # Wi-Fi with the PIN (or set KABUTO_PIN)
+python screen_stats.py                 # the pad on the USB cable
 python screen_stats.py --setup         # redo setup (then carries on reading, so F9 teaches maps)
 python screen_stats.py --dry-run       # check readings without sending
 ```
@@ -427,9 +433,8 @@ on average and up to 1 s. On a slow PC, `"search_every": 0.5` in your setup's
 `mobs` searches every 0.5 s and follows the mobs found in between (each in a
 small window round where it was, with its own frames: a few ms a mob). Mid-jump
 is searched too: as many mobs were found in the air as on the ground. Readings
-come every 0.2 s over USB (0.5 s over Wi-Fi: the pad's radio is shared with its
-Bluetooth keys, and more slowed both its keys and its page), or as soon as the
-last one is done with a 0.05 s rest. `--interval` sets your own. The
+are taken every 0.2 s (or as soon as the last one is done, with a 0.05 s
+rest; `--interval` sets your own), and sent when they change something. The
 console shows how long each takes (its `ms`); keep it under ~150 ms with
 `frames` and `sight` above.
 
@@ -519,9 +524,8 @@ it has slid, so it always knows where you are on the whole map. A view that
 won't line up (a teleport, a respawn, another map) adds no slide; it just
 carries on from the new view. Changing maps doesn't stop playback.
 
-Without a USB cable, the PC reaches the pad at `kabuto.local` while it stays on
-your home Wi-Fi (PIN needed), or join the PC to the Kabuto-Setup hotspot (no
-PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
+The PC reaches the pad over the USB cable only (`--via`, `--host` and `--pin`
+are gone with Wi-Fi readings).
 
 **On the pad:**
 
@@ -648,8 +652,7 @@ PIN; use `--host 192.168.4.1`). `--via usb` or `--via wifi` picks one.
   - **Face mobs**: turns to face mobs in your hitbox; with mobs on both
     sides, the nearer one (Smart does this too). Edges come first, then mobs, then the pattern's
     turn chance. It checks before every attack, so a mob that spawns behind
-    you is faced within about a second (readings every 0.2 s over USB, 0.5 s over Wi-Fi; `--interval`
-    to change that).
+    you is faced within about a second (readings every 0.2 s, sent as soon as a mob shows).
   - **Stuck after (s)**, 20 s by default: if your place on the map doesn't
     change for that long, it turns around; still stuck after another wait, it
     stops. It goes by the map position (slide plus dot), so a dot that stays

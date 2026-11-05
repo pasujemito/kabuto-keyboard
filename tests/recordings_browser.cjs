@@ -290,6 +290,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#notices .notice').count(),4);
   assert.match(await page.locator('#notices .notice').first().textContent(),/Game disconnected.*1 min ago/);
   noticeState=null;await page.waitForFunction(()=>document.querySelector('#notices').hidden);
+  // The dashboard asks every 2 s, and not at all while the page is in the background.
+  let statusCalls=0;const countStatus=r=>{if(new URL(r.url()).pathname==='/api/status')statusCalls++;};page.on('request',countStatus);
+  await page.waitForTimeout(4200);assert(statusCalls>=2&&statusCalls<=3,'status asked '+statusCalls+' times in 4.2 s');
+  const setHidden=h=>page.evaluate(h=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>h});document.dispatchEvent(new Event('visibilitychange'));},h);
+  await setHidden(true);await page.waitForTimeout(2200);statusCalls=0;await page.waitForTimeout(4200);
+  assert.equal(statusCalls,0);
+  await setHidden(false);await page.waitForTimeout(400);assert.equal(statusCalls,1);   // shown again: asks at once, one loop only
+  await page.waitForTimeout(2100);assert.equal(statusCalls,2);
+  page.off('request',countStatus);
   liveState={hp:723,mana:-1,xp:-1,ageMs:12000,fresh:false,xpPerHour:-1,minutesToLevel:-1,levels:0};
   await page.waitForFunction(()=>document.querySelector('#liveStats').classList.contains('stale'));
   assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);

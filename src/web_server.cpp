@@ -307,38 +307,10 @@ void webServerBegin() {
         String out; serializeJson(d, out);
         sendJson(req, err.length() ? 409 : 200, out);
     });
-    // Readings from tools/screen_stats.py as a form body: hp, mana, xp and the
-    // minimap x/y in percent (decimals allowed; missing or out of range = not
-    // read), map position wx/wy (whole numbers), state (ok/dead/offline), mobs
-    // (L, R, both nearest first: LR or RL, or empty), mobs seen ml/mr, nearest
-    // dl/dr, its name mn and the map's name (see stats_logic.h). A state
-    // turning bad stops playback at once.
-    api("/api/stats", HTTP_POST, [](AsyncWebServerRequest* req) {
-        StatsReading r;
-        for (size_t i = 0; i < req->params(); ++i) {
-            const AsyncWebParameter* p = req->getParam(i);
-            if (p->isPost()) statsField(r, p->name().c_str(), p->value().c_str());
-        }
-        if (liveStatsUpdate(r))
-            Macros.post(EngineCmd::STOP);   // the engine also checks between attacks
-        char home[48], keys[64];
-        homeReply(home, sizeof(home));   // the playing pattern's home, for the game layer
-        toolKeysTake(keys, sizeof(keys));   // pad buttons pressed since: no separate polling needed
-        JsonDocument d; d["ok"] = true; d["keys"] = keys; if (home[0]) d["home"] = home;
-        String out; serializeJson(d, out);
-        sendJson(req, 200, out);
-    });
-    // The screen reader's keys pressed on the pad since it last asked.
-    api("/api/tool/keys", HTTP_POST, [](AsyncWebServerRequest* req) {
-        char keys[64];
-        toolKeysTake(keys, sizeof(keys));
-        JsonDocument d;
-        JsonArray list = d["keys"].to<JsonArray>();
-        char* rest = nullptr;
-        for (char* k = strtok_r(keys, ",", &rest); k; k = strtok_r(nullptr, ",", &rest)) list.add(String(k));
-        String out; serializeJson(d, out);
-        sendJson(req, 200, out);
-    });
+    // Readings from tools/screen_stats.py come over the USB cable only ("KABUTO
+    // stats" lines, usbStatsPoll in main.cpp), with the pad's buttons in the
+    // answer: over Wi-Fi they flooded the pad, which shares its radio with the
+    // Bluetooth keys and this page.
     api("/api/stats/reset", HTTP_POST, [](AsyncWebServerRequest* req) {
         liveStatsReset();
         sendJson(req, 200, "{\"ok\":true}");

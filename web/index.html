@@ -2074,7 +2074,14 @@ function renderNotices(list=[],live){
     text.append(b,more);row.append(i,text,time);box.appendChild(row);
   }
 }
+// Every 2 s, and not at all while the page is in the background: the pad
+// shares its radio between this page and its Bluetooth keys.
+const STATUS_EVERY_MS=2000;let statusTimer=null,statusBusy=false;
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!statusTimer&&!statusBusy)pollStatus();});
 async function pollStatus(){
+  clearTimeout(statusTimer);statusTimer=null;
+  if(document.hidden)return;   // picked up again when the page is shown
+  statusBusy=true;
   try{
     status=await(await api("/api/status")).json();
     const dot=$("#dotConn"),label=status.connected?"Host connected":"No host connected";
@@ -2087,7 +2094,8 @@ async function pollStatus(){
     renderNotices(status.notices,status.live);
     renderGrid();updateDirty();
   }catch(e){}
-  setTimeout(pollStatus,700);
+  statusBusy=false;
+  statusTimer=setTimeout(pollStatus,STATUS_EVERY_MS);
 }
 
 $("#pinDialog").addEventListener("cancel",event=>event.preventDefault());

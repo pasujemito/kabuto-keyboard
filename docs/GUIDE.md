@@ -604,10 +604,15 @@ are gone with Wi-Fi readings).
     pattern with Smart turned off shows **Smart off**. The game layer's strip
     says the same in red ("new map, mobs not seen: F9", "not looking for
     mobs").
-- **Every setting in the pattern editor explains itself** in plain sentences
-  right under it (what it does, and what 0, a middle value or the top value
-  means), shows its default (what a new pattern gets) and has a **↺ Default**
-  button to go back to it.
+- **Every setting in the pattern editor explains itself**: a plain title
+  with its unit, one sentence, and bullet points for what its values mean.
+  Each shows its default (what a new pattern gets) and has a **↺ Default**
+  button to go back to it. Settings not in use right now are greyed out with
+  the reason (no screen reader readings, Smart off, ...); you can still
+  change them.
+- **Mobs in reach are always faced** when the screen reader sees them (the
+  old Face mobs switch is gone); the flip-direction % decides only when
+  there's no mob to face.
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.
@@ -657,9 +662,9 @@ are gone with Wi-Fi readings).
     fresh readings, the pattern plays as normal. Walking to mobs and
     auto-pause need mob sprites (the counts); older patterns have both off.
     To stop while it waits, press the key again as usual.
-  - **Face mobs**: turns to face mobs in your hitbox; with mobs on both
-    sides, the nearer one (Smart does this too). Edges come first, then mobs, then the pattern's
-    turn chance. It checks before every attack, so a mob that spawns behind
+  - **Facing mobs** (automatic, no switch since 1.18.13): it turns to face
+    mobs in your hitbox; with mobs on both sides, the nearer one. Edges come
+    first, then mobs, then the pattern's flip-direction %. It checks before every attack, so a mob that spawns behind
     you is faced within about a second (readings every 0.2 s, sent as soon as a mob shows).
   - **Stuck after (s)**, 20 s by default: if your place on the map doesn't
     change for that long, it turns around; still stuck after another wait, it

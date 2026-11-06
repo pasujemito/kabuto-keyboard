@@ -6,10 +6,19 @@ and show up in the pad's **Updates** panel.
 ## 1.18.13
 
 - 📖 **Every setting explains itself**: in the pattern editor each setting
-  says in plain sentences what it does and what its values mean (0%, a
-  middle value, the top), shows its default (what a new pattern gets) and has
-  a **↺ Default** button to go back to it. Long explanation paragraphs are
-  gone in favour of these
+  has a plain title (with its unit), one sentence on what it does, and bullet
+  points for what its values mean (e.g. Distance boundary from home: 0%
+  disabled, 20% narrow for platforms, 50% wide for flat ground). Each shows
+  its default (what a new pattern gets) with a **↺ Default** button back to it
+- 💤 **What isn't in use is greyed out, saying why**: no readings from the PC
+  screen reader (screen awareness, home, bar-driven potions), Smart off (wait
+  for respawn, walk to mobs), turn taps while Move while attacking is above
+  0%, walking when nothing walks. It updates as you edit and as readings come
+  and go; greyed settings can still be changed
+- 🎯 **Facing mobs is automatic**: the separate "Turn to face mobs" switch is
+  gone. With the screen reader seeing mobs, the pattern always faces the one
+  in reach (it was already on for new and Smart patterns); the flip-direction
+  % only decides when there's no mob to face
 - 🏠 **Home on its own**: Home range has its own section and works with Smart
   off too: drift past it and the pattern walks back home, then carries on
   attacking (Smart off never waits for mobs). With Smart on it still hunts

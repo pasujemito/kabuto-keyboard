@@ -248,6 +248,13 @@
   .dynamic-field{display:grid;gap:6px;font-size:12px;min-width:0;flex:1}
   .dynamic-field input{width:100%;min-width:0;padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px}
   .setting{display:grid;gap:4px;align-content:start;min-width:0}
+  .setting-title{font-weight:600;font-size:13px}
+  .setting.titled>.dynamic-field>.field-label,.setting.titled>.dynamic-range>legend{display:none}
+  .setting-points{margin:0;padding-left:18px;font-size:12px;line-height:1.5;color:var(--muted)}
+  .setting-points b{color:var(--ink);font-weight:600}
+  .unused-note{display:none;margin:0;font-size:12px;color:var(--amber)}
+  .setting.unused>:not(.unused-note):not(.setting-title){opacity:.5}
+  .setting.unused .unused-note{display:block}
   .setting-help{margin:0;font-size:12px;line-height:1.45;color:var(--muted)}
   .setting-default{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
   .setting-default .btn{padding:2px 8px;font-size:11px}
@@ -489,7 +496,7 @@
   </details>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details open><summary>Home</summary>
-    <p class="hint">Home is the spot where you pressed the button (or where you arrived on a new map). It works with Smart on or off, and shows on the dashboard and the game layer's minimap.</p>
+    <p class="hint">Home is set by itself each time you press the button. The boundary below decides whether it's used.</p>
     <div class="dynamic-main" id="dynamicHome"></div>
   </details>
   <details><summary>Screen awareness</summary>
@@ -991,9 +998,9 @@ function validateDynamicPattern(p){
 }
 let dynamicTarget=null,dynamicDraft=null,dynamicDirty=false,generatedPreview=null;
 function dynamicNumber(label,value,min,max,step,change,displayLabel=label){
-  const wrapper=el('label','dynamic-field');wrapper.append(document.createTextNode(displayLabel));
+  const wrapper=el('label','dynamic-field'),text=el('span','field-label');text.textContent=displayLabel;wrapper.appendChild(text);
   const input=el('input');input.type='number';input.min=min;input.max=max;input.step=step;input.value=value;input.setAttribute('aria-label',label);
-  input.oninput=()=>{change(input.value===''?NaN:Number(input.value));dynamicDirty=true;$('#dynamicError').textContent='';};wrapper.appendChild(input);return wrapper;
+  input.oninput=()=>{change(input.value===''?NaN:Number(input.value));dynamicDirty=true;$('#dynamicError').textContent='';refreshUnused();};wrapper.appendChild(input);return wrapper;
 }
 // scale shows stored milliseconds in larger units, e.g. 1000 for seconds.
 function dynamicRange(label,range,min,max,scale=1){
@@ -1008,7 +1015,7 @@ function openDynamicEditor(id=null){
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
   normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';
-  renderDynamicFields();renderDynamicKeys();renderDynamicHome();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+  renderDynamicFields();renderDynamicKeys();renderDynamicHome();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();refreshUnused();
 }
 function dynamicKeySelect(label,value,options,change){
   const select=el('select');select.setAttribute('aria-label',label);
@@ -1021,55 +1028,91 @@ function dynamicTapKeys(){const movement=new Set(Object.values(dynamicDraft.keys
    mean, and its default (what a new pattern gets), with a button to go back
    to it. Shown right under each setting. */
 const SKILL_DEFAULT={enabled:false,chance:.1,repeats:[1,1],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]};
+// Each setting: a title in plain words, one sentence on what it does, and
+// what its values mean, as bullet points.
 const HELP={
-  attacks_per_set:'How many jump-attacks it does facing one way before it may turn. Each set picks a number between Min and Max. 1–3: turns very often. 4–7: medium runs. 8–10: long runs one way.',
-  sets:'How many sets one button press plays, then it stops by itself. More sets: a longer play. About 10 sets of 5 attacks lasts half a minute.',
-  turn_chance:'After each set, the chance it turns around. 0%: never turns (keeps the first direction). 50%: turns about every other set. 100%: turns after every set. Map edges and facing mobs win over this.',
-  tempo_drift:'Lets the attack rhythm slowly speed up and slow down, like a person. 0%: a steady, machine-like rhythm. 15%: natural. 30%: very uneven.',
-  glide:'Move while attacking: in this share of sets it holds the arrow while it jump-attacks, so you drift sideways through the air. 0%: off, it attacks on the spot and turns with a short tap (a small step). 50%: half the sets on the move. 100%: always on the move.',
-  jump_to_attack:'Time from pressing jump to pressing attack. Shorter: attacks early in the jump. Longer: later, near the top.',
-  attack_to_jump_up:'Time from pressing attack to letting go of jump.',
-  jump_up_to_attack_up:'Time from letting go of jump to letting go of attack.',
-  combo_gap:'Pause after each jump-attack before the next one. Shorter: faster attacks. Longer: slower, calmer play. Potions are tapped inside this pause.',
-  dir_hold:'How long the arrow is held for a turn tap. Only used when Move while attacking is 0%.',
-  dir_after:'Pause after a turn tap before the next jump. Only used when Move while attacking is 0%.',
-  jump:'The key your game jumps with.',attack:'The key your game attacks with.',left:'The key that turns (and walks) left.',right:'The key that turns (and walks) right.',
-  edge_margin:'Turns back before the map\'s edge. The number is how near the minimap\'s left or right edge it may go. 0%: off, it can walk off the edge. 10%: turns near the edge. 40%: keeps to the middle of the map.',
-  stuck_after_ms:'If your place on the map hasn\'t changed for this long, it turns around; still stuck after the same time again, it stops. 0: off. 10 s: reacts quickly. 60 s: very patient.',
-  face_mobs:'On: turns to face mobs in your attack reach (the nearer side when both). Off: only the turn chance decides which way you face. Smart does this anyway.',
-  smart:'On: attacks only when a mob is in your reach; with none, it stands and waits (still drinking potions). Off: attacks all the time, mob or not. Needs the PC screen reader with mobs set up.',
-  auto_pause:'Smart only. Waits for mobs to respawn once most are dead. 0%: off, always chases the last mob. 30%: when fewer than 30% of the most mobs you saw lately are left, it waits (up to 20 s). 90%: pauses after only a few kills.',
-  approach:'Smart only. On: walks to mobs it can see but can\'t reach yet, then attacks them. Off: stays put and waits for mobs to come into reach.',
-  walk_hold:'When it walks (home, or to mobs), it holds the arrow and hops every so often. This is the time between hops. Lower: hops more often. Higher: longer runs between hops.',
-  home_range:'Keeps you near home. Home is where you pressed the button (or where you arrived on a new map). The number is how far you may drift, in % of the minimap\'s width. 0%: off, no home, you can wander anywhere. 10%: stays very close. 50%: may go half the map away. Past it with nothing in reach, it walks back. With Smart on, it also walks home whenever there\'s nothing left to fight nearby. Works with Smart on or off.',
-  'potion.enabled':'On: drinks this potion. Off: never drinks it.',
-  'potion.key':'The key your game drinks this potion with.',
-  'potion.below':'Drinks when the bar falls below this %. 0%: ignores the bar and uses the timer only. 30%: drinks when it\'s low. 70%: keeps the bar high (uses more potions). Needs the screen reader; without it, the timer is used.',
-  'potion.bar_max':'Your bar\'s full amount (for example 5000 HP). With this and Restored per tap both set, it taps just enough to refill. 0: off, it uses Taps instead.',
-  'potion.per_tap':'How much one potion restores (for example 800). Used with Bar total. 0: off.',
-  'potion.every_ms':'The timer, in seconds: how long it waits between drinks when it isn\'t going by the bar (no readings, or Drink below at 0%).',
-  'potion.repeats':'How many times it taps the key for one drink.',
-  'potion.hold':'How long each tap is held down.','potion.after':'Pause after each tap.',
-  'skill.enabled':'On: uses this skill. Off: never uses it (it stays in the list).',
-  'skill.key':'The key your game uses this skill with.',
-  'skill.chance':'After each set, the chance it uses this skill, once its wait is over. 0%: never. 10%: now and then. 50%: about every other set. 100%: as soon as it\'s ready.',
-  'skill.repeats':'How many times it taps the key for one use.',
-  'skill.cooldown_ms':'Wait after each use before it can be used again, in seconds. Set it to the skill\'s cooldown or the buff\'s length. 0: no wait.',
-  'skill.hold':'How long each tap is held down.','skill.after':'Pause after each tap (the skill\'s animation).',
-  shuffle_skills:'On: when several skills are due, uses them in a random order. Off: in the listed order.',
+  attacks_per_set:{title:'Attacks in a row before it may turn',what:'How many jump-attacks it does facing one way. Each run picks a number between Min and Max.',
+    points:[['1–3','turns very often'],['4–7','medium runs'],['8–10','long runs one way']]},
+  sets:{title:'Runs per button press',what:'How many runs of attacks one button press plays. Then it stops by itself.',
+    points:[['5','a short play (about 15 s)'],['10','about half a minute'],['30','a long play (a few minutes)']]},
+  turn_chance:{title:'How often it flips direction (%)',what:'After each run of attacks, the chance it turns to face the other side. Mobs and map edges decide first, when the screen reader sees them.',
+    points:[['0%','always faces the same way'],['20%','occasionally flips sides'],['50%','flips about every other run'],['100%','flips after every run (with 1 attack per run: after every attack)']]},
+  tempo_drift:{title:'Rhythm drift (%)',what:'Lets the pause between attacks slowly get a bit longer or shorter, like a person who speeds up and slows down. The attacks themselves don\'t change.',
+    points:[['0%','the same pause every time (robotic)'],['15%','natural (recommended)'],['30%','very uneven']]},
+  glide:{title:'Move while attacking (% of runs)',what:'Holds the arrow while it jump-attacks, so the character drifts sideways through the air instead of jumping on the spot.',
+    points:[['0%','off: attacks on the spot, turns with a short tap (a small step)'],['50%','half the runs on the move'],['100%','always on the move']]},
+  jump_to_attack:{title:'Jump → attack (ms)',what:'Time from pressing jump to pressing attack.',points:[['shorter','attacks early in the jump'],['longer','attacks near the top of the jump']]},
+  attack_to_jump_up:{title:'Attack → let go of jump (ms)',what:'Time from pressing attack to letting go of jump.'},
+  jump_up_to_attack_up:{title:'Let go of jump → let go of attack (ms)',what:'Time from letting go of jump to letting go of attack.'},
+  combo_gap:{title:'Pause between attacks (ms)',what:'The wait after each jump-attack before the next one. Potions are tapped inside it.',points:[['shorter','faster attacking'],['longer','slower, calmer play']]},
+  dir_hold:{title:'Turn tap: hold (ms)',what:'How long the arrow is held for a turn tap.'},
+  dir_after:{title:'Turn tap: pause after (ms)',what:'Pause after a turn tap, before the next jump.'},
+  jump:{title:'Jump key',what:'The key your game jumps with.'},attack:{title:'Attack key',what:'The key your game attacks with.'},
+  left:{title:'Left key',what:'Turns and walks left.'},right:{title:'Right key',what:'Turns and walks right.'},
+  edge_margin:{title:'Turn back before the map edge (% of map width)',what:'How far from each side of the map it turns back, in % of the map\'s width.',
+    points:[['0%','off: it can walk right to the edge'],['10%','turns 10% from each edge: uses the middle 80% of the map'],['20%','uses the middle 60%'],['40%','uses only the middle 20%']]},
+  stuck_after_ms:{title:'Stuck check (seconds)',what:'If your place on the map hasn\'t changed for this long, it turns around. Still stuck after the same time again, it stops.',
+    points:[['0','off'],['10 s','reacts quickly'],['60 s','very patient']]},
+  smart:{title:'Smart: attack only when a mob is near',what:'Uses the screen reader to see mobs.',
+    points:[['on','attacks only with a mob in reach; with none, stands still and waits (still drinking potions)'],['off','attacks all the time, mob or not']]},
+  auto_pause:{title:'Wait for respawn (% of mobs left)',what:'When most of the mobs are dead, it waits for new ones instead of chasing the last few. It compares the mobs on screen now with the most it saw lately, and waits at most 20 s. Smart only.',
+    points:[['0%','off: keeps chasing the last mob'],['30%','waits once fewer than 30% are left (2 of 8 mobs)'],['60%','waits early (4 of 8 mobs)'],['90%','waits after a couple of kills']]},
+  approach:{title:'Walk to mobs',what:'What it does with mobs it can see but can\'t reach yet. Smart only.',
+    points:[['on','walks to them, then attacks'],['off','stays put and waits for them to come close']]},
+  walk_hold:{title:'Walking: time between hops (ms)',what:'When it walks (back home, or to mobs), it holds the arrow and hops now and then.',
+    points:[['lower','hops more often'],['higher','longer runs between hops']]},
+  home_range:{title:'Distance boundary from home (% of map width)',what:'Home is where you pressed the button (or where you arrived on a new map). Go further than this and it walks back. Smart on or off.',
+    points:[['0%','disabled: no home, wanders freely'],['20%','narrow (use on platforms)'],['50%','wide (use on flat ground)']]},
+  'potion.enabled':{title:'Use this potion',what:'',points:[['on','drinks it'],['off','never drinks it']]},
+  'potion.key':{title:'Potion key',what:'The key your game drinks this potion with.'},
+  'potion.below':{title:'Drink when the bar is below (%)',what:'Goes by your bar on screen (needs the screen reader; without it, the timer below is used).',
+    points:[['0%','ignores the bar: timer only'],['30%','drinks when it\'s low'],['70%','keeps the bar high (uses more potions)']]},
+  'potion.bar_max':{title:'Bar total (optional)',what:'Your bar\'s full amount. With Restored per tap too, it taps just enough to refill.',points:[['0','off: uses Taps'],['5000','for 5000 HP']]},
+  'potion.per_tap':{title:'Restored per tap (optional)',what:'How much one potion gives back. Goes with Bar total.',points:[['0','off'],['800','for an 800 HP potion']]},
+  'potion.every_ms':{title:'Timer (seconds)',what:'Wait between drinks, in seconds, when it isn\'t going by the bar.'},
+  'potion.repeats':{title:'Taps',what:'How many times it taps the key for one drink.'},
+  'potion.hold':{title:'Tap: hold (ms)',what:'How long each tap is held down.'},'potion.after':{title:'Tap: pause after (ms)',what:'Pause after each tap.'},
+  'skill.enabled':{title:'Use this skill',what:'',points:[['on','uses it'],['off','never uses it (it stays in the list)']]},
+  'skill.key':{title:'Skill key',what:'The key your game uses this skill with.'},
+  'skill.chance':{title:'Chance after each run (%)',what:'After each run of attacks, once its wait is over, the chance it uses this skill.',
+    points:[['0%','never'],['10%','now and then'],['50%','about every other run'],['100%','as soon as it\'s ready']]},
+  'skill.repeats':{title:'Taps',what:'How many times it taps the key for one use.'},
+  'skill.cooldown_ms':{title:'Wait before using it again (seconds)',what:'In seconds, counted from the end of each use.',points:[['0','no wait'],['30','for a 30 s buff or cooldown']]},
+  'skill.hold':{title:'Tap: hold (ms)',what:'How long each tap is held down.'},'skill.after':{title:'Tap: pause after (ms)',what:'Pause after each tap (the skill\'s animation).'},
 };
+// What isn't used right now, and why: shown greyed out with the reason.
+function unusedReasons(p){
+  const r={},live=!!(status&&status.live&&status.live.fresh);
+  if(!live)for(const k of ['edge_margin','stuck_after_ms','smart','auto_pause','approach','home_range','walk_hold','potion.below','potion.bar_max','potion.per_tap'])
+    r[k]='Not in use right now: no readings from the PC screen reader (run screen_stats.py with the pad on the USB cable).';
+  if(!p.smart)for(const k of ['auto_pause','approach'])r[k]=r[k]||'Not used: Smart is off.';
+  if(p.glide>0)for(const k of ['dir_hold','dir_after'])r[k]='Not used: turns happen in the air while Move while attacking is above 0%.';
+  if(!(p.home_range>0)&&!(p.smart&&p.approach))r.walk_hold=r.walk_hold||'Not used: nothing walks (Distance from home is 0%, and Walk to mobs is off or Smart is off).';
+  return r;
+}
+function refreshUnused(){
+  const dialog=$('#dynamicDialog');if(!dynamicDraft||!dialog||!dialog.open)return;
+  const reasons=unusedReasons(dynamicDraft);
+  for(const box of dialog.querySelectorAll('.setting[data-key]')){
+    const why=reasons[box.dataset.key]||'';box.classList.toggle('unused',!!why);box.querySelector('.unused-note').textContent=why;
+  }
+}
 const pct=v=>Math.round(v*1000)/10+'%',ms=r=>r[0]+'–'+r[1]+' ms',secs=r=>r[0]/1000+'–'+r[1]/1000+' s',onOff=b=>b?'on':'off',span=r=>r[0]+'–'+r[1];
 // The editor's defaults: a new pattern's values.
 let dynamicDefaults=null;
 function dynamicDefault(key){dynamicDefaults=dynamicDefaults||defaultDynamicPattern();return dynamicDefaults[key];}
 // A setting with its help, its default and a button back to it.
 function helped(node,key,label,defText,onReset){
-  const box=el('div','setting');box.appendChild(node);
-  const help=el('p','setting-help');help.textContent=HELP[key]||'';box.appendChild(help);
+  const box=el('div','setting'),h=HELP[key]||{};box.dataset.key=key;
+  if(h.title){box.classList.add('titled');const t=el('div','setting-title');t.textContent=h.title;box.appendChild(t);}
+  box.appendChild(node);
+  if(h.what){const what=el('p','setting-help');what.textContent=h.what;box.appendChild(what);}
+  if(h.points){const ul=el('ul','setting-points');for(const [value,meaning] of h.points){const li=el('li'),b=el('b');b.textContent=value;li.append(b,': '+meaning);ul.appendChild(li);}box.appendChild(ul);}
+  box.appendChild(el('p','unused-note'));
   if(defText!==undefined){
     const row=el('div','setting-default'),text=el('span');text.textContent='Default: '+defText;row.appendChild(text);
     if(onReset){const b=el('button','btn sm');b.type='button';b.textContent='↺ Default';b.setAttribute('aria-label','Default for '+label);
-      b.onclick=()=>{onReset();dynamicDirty=true;$('#dynamicError').textContent='';};row.appendChild(b);}
+      b.onclick=()=>{onReset();dynamicDirty=true;$('#dynamicError').textContent='';refreshUnused();};row.appendChild(b);}
     box.appendChild(row);
   }
   return box;
@@ -1077,7 +1120,7 @@ function helped(node,key,label,defText,onReset){
 const copy=v=>JSON.parse(JSON.stringify(v));
 function dynamicCheck(label,text,value,change){
   const field=el('label','dynamic-field check'),check=el('input');check.type='checkbox';check.checked=value;check.setAttribute('aria-label',label);
-  check.onchange=()=>{change(check.checked);dynamicDirty=true;};field.append(check,' '+text);return field;
+  check.onchange=()=>{change(check.checked);dynamicDirty=true;refreshUnused();};field.append(check,' '+text);return field;
 }
 function renderDynamicKeys(){
   const box=$('#dynamicKeys'),keys=dynamicDraft.keys;box.replaceChildren();
@@ -1095,17 +1138,18 @@ function renderDynamicAware(){
       'edge_margin','Turn at map edges',pct(d('edge_margin')),()=>p.edge_margin=d('edge_margin'));
   add(dynamicNumber('Stuck after (seconds)',p.stuck_after_ms/1000,0,600,1,n=>p.stuck_after_ms=Number.isFinite(n)?Math.round(n*1000):NaN,'Stuck after (s) · 0 = off'),
       'stuck_after_ms','Stuck after',d('stuck_after_ms')/1000+' s',()=>p.stuck_after_ms=d('stuck_after_ms'));
-  add(dynamicCheck('Face mobs','Turn to face mobs',p.face_mobs,v=>p.face_mobs=v),'face_mobs','Face mobs',onOff(d('face_mobs')),()=>p.face_mobs=d('face_mobs'));
   add(dynamicCheck('Smart mode','Smart: attack only when a mob is in reach',p.smart,v=>p.smart=v),'smart','Smart mode',onOff(d('smart')),()=>p.smart=d('smart'));
   add(dynamicNumber('Auto-pause (%)',Math.round(p.auto_pause*1000)/10,0,90,1,n=>p.auto_pause=n/100,'Auto-pause below (% of most mobs seen) · 0 = off'),
       'auto_pause','Auto-pause',pct(d('auto_pause')),()=>p.auto_pause=d('auto_pause'));
   add(dynamicCheck('Walk to mobs','Walk to mobs you can see but not reach',p.approach,v=>p.approach=v),'approach','Walk to mobs',onOff(d('approach')),()=>p.approach=d('approach'));
   add(dynamicRange('Walking: hop every (ms)',p.walk_hold,50,5000),'walk_hold','Walking: hop every',ms(d('walk_hold')),()=>p.walk_hold=copy(d('walk_hold')));
+  refreshUnused();
 }
 function renderDynamicHome(){
   const box=$('#dynamicHome'),p=dynamicDraft;box.replaceChildren();
   box.appendChild(helped(dynamicNumber('Home range (%)',Math.round(p.home_range*1000)/10,0,50,1,n=>p.home_range=n/100,'Stay near home (% of minimap) · 0 = off'),
     'home_range','Home range',pct(dynamicDefault('home_range')),()=>{p.home_range=dynamicDefault('home_range');renderDynamicHome();}));
+  refreshUnused();
 }
 function renderDynamicPotions(){
   const list=$('#dynamicPotions');list.replaceChildren();
@@ -1125,6 +1169,7 @@ function renderDynamicPotions(){
       helped(dynamicRange(label+' gap after tap (ms)',potion.after,0,90000),'potion.after',label+' gap after tap',ms(def.after),()=>{potion.after=copy(def.after);redo();dynamicDirty=true;}));
     card.appendChild(details);list.appendChild(card);
   }
+  refreshUnused();
 }
 function renderDynamicFields(){
   const main=$('#dynamicMain'),p=dynamicDraft,d=dynamicDefault,redo=renderDynamicFields;main.replaceChildren();
@@ -1135,6 +1180,7 @@ function renderDynamicFields(){
   add(main,dynamicNumber('Move while attacking (%)',Math.round(p.glide*1000)/10,0,100,1,n=>p.glide=n/100,'Move while attacking (% of sets) · 0 = off'),'glide','Move while attacking',pct(d('glide')),()=>p.glide=d('glide'));
   const timings=$('#dynamicTimings');timings.replaceChildren();
   DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>add(timings,dynamicRange(label+' (ms)',p[key],min,max),key,label,ms(d(key)),()=>p[key]=copy(d(key))));
+  refreshUnused();
 }
 function applyDynamicPreset(name){
   const preset=DYNAMIC_PRESETS[name];
@@ -1162,6 +1208,7 @@ function renderDynamicSkills(){
     card.appendChild(details);list.appendChild(card);
   });
   $('#dynamicAddSkill').disabled=dynamicDraft.skills.length>=8;
+  refreshUnused();
 }
 function closeDynamicEditor(){if(dynamicDirty&&!confirm('Discard changes to this dynamic pattern?'))return false;dynamicDirty=false;$('#dynamicDialog').close();return true;}
 function applyDynamicPattern(){
@@ -2177,6 +2224,7 @@ async function pollStatus(){
     $("#monDown").textContent=down.length?down.join(" "):"none";
     renderLiveStats(status.live);
     renderNotices(status.notices,status.live);
+    refreshUnused();   // the pattern editor greys out what the screen reader would drive
     renderGrid();updateDirty();
   }catch(e){}
   statusBusy=false;

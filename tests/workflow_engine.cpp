@@ -385,6 +385,10 @@ int main() {
         q.edgeMarginPermille=0;q.faceMobs=true;aware.setPattern(q);
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_RIGHT);});
         assert((dirs()==std::vector<uint8_t>{L,R,R}));
+        // The same with an older pattern's face_mobs off: mobs in reach are always faced now.
+        q.faceMobs=false;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_RIGHT);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));q.faceMobs=true;
         // Mobs on both sides: face the nearer one (left nearer: stays left; right nearer: turns right).
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_LEFT|MOB_RIGHT);});
         assert((dirs()==std::vector<uint8_t>{L,L}));

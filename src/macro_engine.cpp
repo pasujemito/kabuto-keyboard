@@ -597,7 +597,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(stopReason(live))return true;
                     mapCheck(live);
                     {int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);}
-                    int want=liveFacing(true,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
+                    int want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;turn();}
                     publish(SMART_ATTACK);
                     if(pattern->stuckAfterMs){
@@ -688,7 +688,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(stop||set+1==sets)break;
                     // Live facing (map edge, mobs) wins; otherwise the turn chance.
                     LiveStats live=liveStatsSnapshot();
-                    int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
+                    int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;
                     else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;

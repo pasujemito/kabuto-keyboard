@@ -3,6 +3,19 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.15
+
+- 🏠 **Home stays where you pressed the button**: it could move by itself.
+  Three causes, all fixed: the map's name misread for a moment (something
+  over it, or "-") counted as a new map and set a new home, now only a name
+  it knows that shows for 3 s does; not getting home within 10 s made where
+  you stood the new home, now home is kept and walking back is tried again
+  20 s later; and the map position dropping out for a moment set a new home,
+  now the same spot is kept. On the PC, a minimap found a pixel or two off
+  (or hidden for a moment) no longer restarts the count of how far it has
+  slid, which shifted every map position, home included. **Update the PC
+  script too**
+
 ## 1.18.14
 
 - 🛑 **Smart no longer attacks blindly**: with no fresh readings from the PC

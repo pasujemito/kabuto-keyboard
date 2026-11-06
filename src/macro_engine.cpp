@@ -484,23 +484,38 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 std::string lastMap;
                 AutoPause autoPause;
                 bool approachOff=false;uint32_t approachOffAt=0;
+                bool homeOff=false;uint32_t homeOffAt=0;   // couldn't get home: not tried again for HOME_RETRY_MS (home kept)
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
                 auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;};
                 // Home is set as soon as there's a position (every pattern, so the dashboard and the
                 // game layer can show it; only Smart walks back to it). A home from the minimap dot
                 // can't be compared with a map position (or back): it's set again from the new one.
+                // Home only moves when you press the button or arrive on another map. If the map
+                // position comes or goes (the dot found, the minimap's slide lost), the same spot is
+                // kept in the other units, using the slide (map position - dot) last seen.
+                int slide=0;bool haveSlide=false;
                 auto homeCheck=[&](const LiveStats& live,bool havePos,int pos){
+                    if(live.fresh&&live.wx!=LIVE_NO_POS&&live.x>=0){slide=live.wx-live.x;haveSlide=true;}
                     if(!havePos)return;
-                    if(haveHome&&homeOnMap==(live.wx!=LIVE_NO_POS))return;
+                    bool onMap=live.wx!=LIVE_NO_POS;
+                    if(haveHome&&homeOnMap==onMap)return;
+                    if(haveHome&&haveSlide){home+=onMap?slide:-slide;homeOnMap=onMap;logStep(s,pc,millis(),0,true,"home kept (position read another way)");return;}
                     bool again=haveHome;setHome(live,pos);
                     char label[48];std::snprintf(label,sizeof(label),again?"home set again: %d.%d%%":"home set: %d.%d%%",pos/10,(pos<0?-pos:pos)%10);
                     logStep(s,pc,millis(),0,true,label);
                 };
-                // The map's name changed: home is wherever you arrive.
+                // Another map: home is wherever you arrive. Only a name it knows counts ("-", a name
+                // it can't read, is often just something over the name for a moment), and only once
+                // it has stayed MAP_CHANGE_MS, so a misread reading or two never moves home.
+                std::string mapSeen;uint32_t mapSeenAt=0;
                 auto mapCheck=[&](const LiveStats& live){
-                    if(!live.fresh||!live.map[0]||lastMap==live.map)return;
-                    bool moved=!lastMap.empty();lastMap=live.map;
-                    if(moved&&haveHome){haveHome=false;logStep(s,pc,millis(),0,true,"smart: new map, new home");}
+                    if(!live.fresh||!live.map[0]||!strcmp(live.map,"-"))return;
+                    if(lastMap.empty()){lastMap=live.map;return;}
+                    if(lastMap==live.map){mapSeen.clear();return;}
+                    if(mapSeen!=live.map){mapSeen=live.map;mapSeenAt=millis();return;}
+                    if(millis()-mapSeenAt<MAP_CHANGE_MS)return;
+                    lastMap=live.map;mapSeen.clear();
+                    if(haveHome){haveHome=false;logStep(s,pc,millis(),0,true,"new map, new home");}
                 };
                 // What the dashboard shows.
                 auto publish=[&](uint8_t action){
@@ -510,7 +525,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 };
                 auto smartInput=[&](const LiveStats& live,bool havePos,int pos){
                     SmartInput in;in.fresh=live.fresh;in.mobs=live.mobs;in.seenLeft=live.ml;in.seenRight=live.mr;in.nearLeft=live.dl;in.nearRight=live.dr;
-                    in.havePos=havePos;in.pos=pos;in.haveHome=haveHome;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;
+                    if(homeOff&&millis()-homeOffAt>=HOME_RETRY_MS)homeOff=false;
+                    in.havePos=havePos;in.pos=pos;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;
+                    in.haveHome=haveHome&&!homeOff&&mapSeen.empty();   // another map's name showing: the old home means nothing there
                     in.approach=pattern->approach&&(!approachOff||millis()-approachOffAt>=10000);
                     in.paused=autoPause.update(live.fresh&&live.ml>=0&&live.mr>=0?live.ml+live.mr:-1,pattern->autoPausePermille,millis());
                     return in;
@@ -580,7 +597,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         bool toMobs=act==SMART_APPROACH_LEFT||act==SMART_APPROACH_RIGHT;
                         int kind=act==SMART_WALK_RIGHT?(int)SMART_WALK_LEFT:act==SMART_APPROACH_RIGHT?(int)SMART_APPROACH_LEFT:(int)act;
                         if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
-                        if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"smart: can't get home, home is here now");setHome(live,pos);homing=false;continue;}
+                        if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"can't get home: home kept, trying again in 20 s");homeOff=true;homeOffAt=millis();homing=false;doing=-1;continue;}
                         if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
                         if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;walk(facing());}
                         else{stopWalking();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
@@ -611,7 +628,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     return false;
                 };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
-                {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);if(live.fresh)lastMap=live.map;}
+                {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);if(live.fresh&&strcmp(live.map,"-"))lastMap=live.map;}
                 publish(SMART_ATTACK);
                 // Establish the actual initial facing before the first attack (gliding: in the first jump).
                 turn();

@@ -144,6 +144,8 @@ const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4, MOB_READ = 8;
 // detector on this map: Smart can't tell where mobs are, so it stands still
 // (SMART_NO_READINGS / SMART_NO_DETECTOR) rather than attack blindly.
 const int HOME_SETTLE = 60;   // tenths of a minimap width: "at home" within this (3% once walking)
+const uint32_t MAP_CHANGE_MS = 3000;   // another map's name must hold this long before home moves there
+const uint32_t HOME_RETRY_MS = 20000;  // couldn't walk home in 10 s: home is kept, walking back tried again after this
 enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT,
                              SMART_NO_READINGS, SMART_NO_DETECTOR };
 struct SmartInput {

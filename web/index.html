@@ -247,6 +247,18 @@
   .dynamic-range legend{font-size:12px;color:var(--muted)}
   .dynamic-field{display:grid;gap:6px;font-size:12px;min-width:0;flex:1}
   .dynamic-field input{width:100%;min-width:0;padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px}
+  .setting{display:grid;gap:4px;align-content:start;min-width:0}
+  .setting-title{font-weight:600;font-size:13px}
+  .setting.titled>.dynamic-field>.field-label,.setting.titled>.dynamic-range>legend{display:none}
+  .setting-points{margin:0;padding-left:18px;font-size:12px;line-height:1.5;color:var(--muted)}
+  .setting-points b{color:var(--ink);font-weight:600}
+  .unused-note{display:none;margin:0;font-size:12px;color:var(--amber)}
+  .setting.unused>:not(.unused-note):not(.setting-title){opacity:.5}
+  .setting.unused .unused-note{display:block}
+  .setting-help{margin:0;font-size:12px;line-height:1.45;color:var(--muted)}
+  .setting-default{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+  .setting-default .btn{padding:2px 8px;font-size:11px}
+  .dynamic-field.check{display:flex;align-items:center;gap:8px}
   .dynamic-skill{padding:12px;border:1px solid var(--edge);border-radius:8px;margin:10px 0;display:grid;gap:12px}
   .dynamic-skill details>.dynamic-range,.dynamic-skill details>.dynamic-field{margin:10px 0}
   #dynamicDialog{overflow:auto}#dynamicDialog>header{position:sticky;top:-16px;background:var(--panel);z-index:1}#dynamicName{width:100%;margin:10px 0}
@@ -473,27 +485,32 @@
 <dialog class="json-dialog edit-dialog" id="dynamicDialog" aria-labelledby="dynamicTitle">
   <header><h3 id="dynamicTitle">Dynamic jump-attack</h3><button class="btn sm" id="dynamicClose">Close</button></header>
   <label>Name <input class="name" id="dynamicName" aria-label="Dynamic pattern name"></label>
-  <p class="hint">Fresh sets on every play. Jump → attack → release jump → release attack stays in order. Counts and timings use center-weighted triangular sampling.</p>
+  <p class="hint">Each button press plays a fresh pattern of jump-attacks. Every setting says in plain words what it does, with its default and a ↺ Default button to go back to it.</p>
   <div class="recording-actions" id="dynamicPresets" aria-label="Pattern presets"><span class="hint">Start from:</span></div>
   <p class="hint" id="dynamicPresetHint"></p>
   <div class="dynamic-main" id="dynamicMain"></div>
-  <p class="hint">A set is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around. The starting direction is tapped first; there is no tap after the last set. Direction taps move the character; turn probability does not guarantee position balance.</p>
+  <p class="hint">A <b>set</b> is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around.</p>
   <details><summary id="dynamicKeysSummary">Keys</summary>
     <div class="dynamic-main" id="dynamicKeys"></div>
-    <p class="hint">Jump and attack can be Alt, Ctrl, Shift or any key. They overlap as a chord; turns are tapped between sets.</p>
+    <p class="hint">Jump and attack can be Alt, Ctrl, Shift or any key. Skills and potions can't use these four keys.</p>
   </details>
   <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
+  <details open><summary>Home</summary>
+    <p class="hint">Home is set by itself each time you press the button. The boundary below decides whether it's used.</p>
+    <div class="dynamic-main" id="dynamicHome"></div>
+  </details>
   <details><summary>Screen awareness</summary>
+    <p class="hint">These need the PC screen reader running (on the USB cable). Without it they do nothing and the pattern just attacks. Death, a disconnect or the game's test popup always stop playing.</p>
     <div class="dynamic-main" id="dynamicAware"></div>
-    <p class="hint">Uses the PC screen reader's minimap and mob readings; does nothing without them. Map edges come first, then mobs (the nearer side when both have some), then the turn chance. When stuck, it turns around once, then stops. <b>Smart</b> also waits (no attacks) while no mobs are in your hitbox, and walks back home (where you pressed the button, or arrived on a new map) once you drift past the home range, or as soon as there's nothing left to fight nearby, so it hunts around that spot. <b>Auto-pause</b> waits for respawn once most of the mobs you could see are killed (fewer than its % of the most seen lately), for up to 20 s. <b>Walk to mobs</b> heads for the nearer mobs in sight when none are in reach, staying within ¾ of the home range. Walking holds the arrow the whole way with a hop now and then (Walking: hop every), as you would. Counts, distances and maps need the screen reader's mob sprites. Death and disconnects always stop playback.</p>
   </details>
   <details open><summary>HP &amp; Mana</summary>
-    <p class="hint">While the PC screen reader (tools/screen_stats.py) sends your bars, a potion drinks when its bar drops below its %. With its bar total and per tap set, it taps just enough to refill without waste (up to 10); otherwise it uses its taps. Without readings, or at 0%, it fires on its timer. Either way it's tapped in the gap right after the next attack, as many quick taps as fit, so the attacks never pause.</p>
+    <p class="hint">Potions are tapped in the pause right after an attack, so attacking never stops to drink.</p>
     <div id="dynamicPotions"></div>
   </details>
   <details open><summary>Skills</summary>
-    <p class="hint">Each enabled skill gets a chance after each set (after HP and Mana), with no movement key held. "Use again after" is a wait counted from the end of each use, drawn fresh from its range every time; it is not a deadline. With 100% chance the skill fires at the first set boundary after the wait. The first use can occur after the first set. Cooldowns persist across Stop/Start until config reload or reboot.</p>
+    <p class="hint">Skills are used between sets, standing still. Waits carry on across Stop and Start until the pad restarts.</p>
     <div id="dynamicSkills"></div><div class="recording-actions"><button class="btn sm" id="dynamicAddSkill">Add skill</button><label><input type="checkbox" id="dynamicShuffle"> Shuffle skill order when several run</label></div>
+    <p class="setting-help">On: when several skills are due, uses them in a random order. Off: in the listed order. Default: on.</p>
   </details>
   <p class="hint">Variable sequences can still repeat. These settings do not guarantee unique patterns or avoidance of detection.</p>
   <p role="alert" id="dynamicError"></p>
@@ -981,9 +998,9 @@ function validateDynamicPattern(p){
 }
 let dynamicTarget=null,dynamicDraft=null,dynamicDirty=false,generatedPreview=null;
 function dynamicNumber(label,value,min,max,step,change,displayLabel=label){
-  const wrapper=el('label','dynamic-field');wrapper.append(document.createTextNode(displayLabel));
+  const wrapper=el('label','dynamic-field'),text=el('span','field-label');text.textContent=displayLabel;wrapper.appendChild(text);
   const input=el('input');input.type='number';input.min=min;input.max=max;input.step=step;input.value=value;input.setAttribute('aria-label',label);
-  input.oninput=()=>{change(input.value===''?NaN:Number(input.value));dynamicDirty=true;$('#dynamicError').textContent='';};wrapper.appendChild(input);return wrapper;
+  input.oninput=()=>{change(input.value===''?NaN:Number(input.value));dynamicDirty=true;$('#dynamicError').textContent='';refreshUnused();};wrapper.appendChild(input);return wrapper;
 }
 // scale shows stored milliseconds in larger units, e.g. 1000 for seconds.
 function dynamicRange(label,range,min,max,scale=1){
@@ -998,7 +1015,7 @@ function openDynamicEditor(id=null){
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
   normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';
-  renderDynamicFields();renderDynamicKeys();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();
+  renderDynamicFields();renderDynamicKeys();renderDynamicHome();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();refreshUnused();
 }
 function dynamicKeySelect(label,value,options,change){
   const select=el('select');select.setAttribute('aria-label',label);
@@ -1007,53 +1024,163 @@ function dynamicKeySelect(label,value,options,change){
 }
 // Keys skills and potions may use: anything that isn't a movement key.
 function dynamicTapKeys(){const movement=new Set(Object.values(dynamicDraft.keys));return meta.keys.filter(k=>k&&!movement.has(k));}
+/* Plain-words help for every pattern setting: what it does, what its values
+   mean, and its default (what a new pattern gets), with a button to go back
+   to it. Shown right under each setting. */
+const SKILL_DEFAULT={enabled:false,chance:.1,repeats:[1,1],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]};
+// Each setting: a title in plain words, one sentence on what it does, and
+// what its values mean, as bullet points.
+const HELP={
+  attacks_per_set:{title:'Attacks in a row before it may turn',what:'How many jump-attacks it does facing one way. Each run picks a number between Min and Max.',
+    points:[['1–3','turns very often'],['4–7','medium runs'],['8–10','long runs one way']]},
+  sets:{title:'Runs per button press',what:'How many runs of attacks one button press plays. Then it stops by itself.',
+    points:[['5','a short play (about 15 s)'],['10','about half a minute'],['30','a long play (a few minutes)']]},
+  turn_chance:{title:'How often it flips direction (%)',what:'After each run of attacks, the chance it turns to face the other side. Mobs and map edges decide first, when the screen reader sees them.',
+    points:[['0%','always faces the same way'],['20%','occasionally flips sides'],['50%','flips about every other run'],['100%','flips after every run (with 1 attack per run: after every attack)']]},
+  tempo_drift:{title:'Rhythm drift (%)',what:'Lets the pause between attacks slowly get a bit longer or shorter, like a person who speeds up and slows down. The attacks themselves don\'t change.',
+    points:[['0%','the same pause every time (robotic)'],['15%','natural (recommended)'],['30%','very uneven']]},
+  glide:{title:'Move while attacking (% of runs)',what:'Holds the arrow while it jump-attacks, so the character drifts sideways through the air instead of jumping on the spot.',
+    points:[['0%','off: attacks on the spot, turns with a short tap (a small step)'],['50%','half the runs on the move'],['100%','always on the move']]},
+  jump_to_attack:{title:'Jump → attack (ms)',what:'Time from pressing jump to pressing attack.',points:[['shorter','attacks early in the jump'],['longer','attacks near the top of the jump']]},
+  attack_to_jump_up:{title:'Attack → let go of jump (ms)',what:'Time from pressing attack to letting go of jump.'},
+  jump_up_to_attack_up:{title:'Let go of jump → let go of attack (ms)',what:'Time from letting go of jump to letting go of attack.'},
+  combo_gap:{title:'Pause between attacks (ms)',what:'The wait after each jump-attack before the next one. Potions are tapped inside it.',points:[['shorter','faster attacking'],['longer','slower, calmer play']]},
+  dir_hold:{title:'Turn tap: hold (ms)',what:'How long the arrow is held for a turn tap.'},
+  dir_after:{title:'Turn tap: pause after (ms)',what:'Pause after a turn tap, before the next jump.'},
+  jump:{title:'Jump key',what:'The key your game jumps with.'},attack:{title:'Attack key',what:'The key your game attacks with.'},
+  left:{title:'Left key',what:'Turns and walks left.'},right:{title:'Right key',what:'Turns and walks right.'},
+  edge_margin:{title:'Turn back before the map edge (% of map width)',what:'How far from each side of the map it turns back, in % of the map\'s width.',
+    points:[['0%','off: it can walk right to the edge'],['10%','turns 10% from each edge: uses the middle 80% of the map'],['20%','uses the middle 60%'],['40%','uses only the middle 20%']]},
+  stuck_after_ms:{title:'Stuck check (seconds)',what:'If your place on the map hasn\'t changed for this long, it turns around. Still stuck after the same time again, it stops.',
+    points:[['0','off'],['10 s','reacts quickly'],['60 s','very patient']]},
+  smart:{title:'Smart: attack only when a mob is near',what:'Uses the screen reader to see mobs.',
+    points:[['on','attacks only with a mob in reach; with none, stands still and waits (still drinking potions)'],['off','attacks all the time, mob or not']]},
+  auto_pause:{title:'Wait for respawn (% of mobs left)',what:'When most of the mobs are dead, it waits for new ones instead of chasing the last few. It compares the mobs on screen now with the most it saw lately, and waits at most 20 s. Smart only.',
+    points:[['0%','off: keeps chasing the last mob'],['30%','waits once fewer than 30% are left (2 of 8 mobs)'],['60%','waits early (4 of 8 mobs)'],['90%','waits after a couple of kills']]},
+  approach:{title:'Walk to mobs',what:'What it does with mobs it can see but can\'t reach yet. Smart only.',
+    points:[['on','walks to them, then attacks'],['off','stays put and waits for them to come close']]},
+  walk_hold:{title:'Walking: time between hops (ms)',what:'When it walks (back home, or to mobs), it holds the arrow and hops now and then.',
+    points:[['lower','hops more often'],['higher','longer runs between hops']]},
+  home_range:{title:'Distance boundary from home (% of map width)',what:'Home is where you pressed the button (or where you arrived on a new map). Go further than this and it walks back. Smart on or off.',
+    points:[['0%','disabled: no home, wanders freely'],['20%','narrow (use on platforms)'],['50%','wide (use on flat ground)']]},
+  'potion.enabled':{title:'Use this potion',what:'',points:[['on','drinks it'],['off','never drinks it']]},
+  'potion.key':{title:'Potion key',what:'The key your game drinks this potion with.'},
+  'potion.below':{title:'Drink when the bar is below (%)',what:'Goes by your bar on screen (needs the screen reader; without it, the timer below is used).',
+    points:[['0%','ignores the bar: timer only'],['30%','drinks when it\'s low'],['70%','keeps the bar high (uses more potions)']]},
+  'potion.bar_max':{title:'Bar total (optional)',what:'Your bar\'s full amount. With Restored per tap too, it taps just enough to refill.',points:[['0','off: uses Taps'],['5000','for 5000 HP']]},
+  'potion.per_tap':{title:'Restored per tap (optional)',what:'How much one potion gives back. Goes with Bar total.',points:[['0','off'],['800','for an 800 HP potion']]},
+  'potion.every_ms':{title:'Timer (seconds)',what:'Wait between drinks, in seconds, when it isn\'t going by the bar.'},
+  'potion.repeats':{title:'Taps',what:'How many times it taps the key for one drink.'},
+  'potion.hold':{title:'Tap: hold (ms)',what:'How long each tap is held down.'},'potion.after':{title:'Tap: pause after (ms)',what:'Pause after each tap.'},
+  'skill.enabled':{title:'Use this skill',what:'',points:[['on','uses it'],['off','never uses it (it stays in the list)']]},
+  'skill.key':{title:'Skill key',what:'The key your game uses this skill with.'},
+  'skill.chance':{title:'Chance after each run (%)',what:'After each run of attacks, once its wait is over, the chance it uses this skill.',
+    points:[['0%','never'],['10%','now and then'],['50%','about every other run'],['100%','as soon as it\'s ready']]},
+  'skill.repeats':{title:'Taps',what:'How many times it taps the key for one use.'},
+  'skill.cooldown_ms':{title:'Wait before using it again (seconds)',what:'In seconds, counted from the end of each use.',points:[['0','no wait'],['30','for a 30 s buff or cooldown']]},
+  'skill.hold':{title:'Tap: hold (ms)',what:'How long each tap is held down.'},'skill.after':{title:'Tap: pause after (ms)',what:'Pause after each tap (the skill\'s animation).'},
+};
+// What isn't used right now, and why: shown greyed out with the reason.
+function unusedReasons(p){
+  const r={},live=!!(status&&status.live&&status.live.fresh);
+  if(!live)for(const k of ['edge_margin','stuck_after_ms','smart','auto_pause','approach','home_range','walk_hold','potion.below','potion.bar_max','potion.per_tap'])
+    r[k]='Not in use right now: no readings from the PC screen reader (run screen_stats.py with the pad on the USB cable).';
+  if(!p.smart)for(const k of ['auto_pause','approach'])r[k]=r[k]||'Not used: Smart is off.';
+  if(p.glide>0)for(const k of ['dir_hold','dir_after'])r[k]='Not used: turns happen in the air while Move while attacking is above 0%.';
+  if(!(p.home_range>0)&&!(p.smart&&p.approach))r.walk_hold=r.walk_hold||'Not used: nothing walks (Distance from home is 0%, and Walk to mobs is off or Smart is off).';
+  return r;
+}
+function refreshUnused(){
+  const dialog=$('#dynamicDialog');if(!dynamicDraft||!dialog||!dialog.open)return;
+  const reasons=unusedReasons(dynamicDraft);
+  for(const box of dialog.querySelectorAll('.setting[data-key]')){
+    const why=reasons[box.dataset.key]||'';box.classList.toggle('unused',!!why);box.querySelector('.unused-note').textContent=why;
+  }
+}
+const pct=v=>Math.round(v*1000)/10+'%',ms=r=>r[0]+'–'+r[1]+' ms',secs=r=>r[0]/1000+'–'+r[1]/1000+' s',onOff=b=>b?'on':'off',span=r=>r[0]+'–'+r[1];
+// The editor's defaults: a new pattern's values.
+let dynamicDefaults=null;
+function dynamicDefault(key){dynamicDefaults=dynamicDefaults||defaultDynamicPattern();return dynamicDefaults[key];}
+// A setting with its help, its default and a button back to it.
+function helped(node,key,label,defText,onReset){
+  const box=el('div','setting'),h=HELP[key]||{};box.dataset.key=key;
+  if(h.title){box.classList.add('titled');const t=el('div','setting-title');t.textContent=h.title;box.appendChild(t);}
+  box.appendChild(node);
+  if(h.what){const what=el('p','setting-help');what.textContent=h.what;box.appendChild(what);}
+  if(h.points){const ul=el('ul','setting-points');for(const [value,meaning] of h.points){const li=el('li'),b=el('b');b.textContent=value;li.append(b,': '+meaning);ul.appendChild(li);}box.appendChild(ul);}
+  box.appendChild(el('p','unused-note'));
+  if(defText!==undefined){
+    const row=el('div','setting-default'),text=el('span');text.textContent='Default: '+defText;row.appendChild(text);
+    if(onReset){const b=el('button','btn sm');b.type='button';b.textContent='↺ Default';b.setAttribute('aria-label','Default for '+label);
+      b.onclick=()=>{onReset();dynamicDirty=true;$('#dynamicError').textContent='';refreshUnused();};row.appendChild(b);}
+    box.appendChild(row);
+  }
+  return box;
+}
+const copy=v=>JSON.parse(JSON.stringify(v));
+function dynamicCheck(label,text,value,change){
+  const field=el('label','dynamic-field check'),check=el('input');check.type='checkbox';check.checked=value;check.setAttribute('aria-label',label);
+  check.onchange=()=>{change(check.checked);dynamicDirty=true;refreshUnused();};field.append(check,' '+text);return field;
+}
 function renderDynamicKeys(){
   const box=$('#dynamicKeys'),keys=dynamicDraft.keys;box.replaceChildren();
   for(const [slot,label] of DYNAMIC_KEY_SLOTS){
     const field=el('label','dynamic-field');field.append(label);
     field.appendChild(dynamicKeySelect(label+' key',keys[slot],[...DYNAMIC_MODIFIERS.slice(0,3),...meta.keys.filter(Boolean)],v=>{keys[slot]=v;renderDynamicKeys();renderDynamicPotions();renderDynamicSkills();}));
-    box.appendChild(field);
+    box.appendChild(helped(field,slot,label+' key',DYNAMIC_DEFAULT_KEYS[slot],()=>{keys[slot]=DYNAMIC_DEFAULT_KEYS[slot];renderDynamicKeys();renderDynamicPotions();renderDynamicSkills();}));
   }
   $('#dynamicKeysSummary').textContent=`Keys · jump ${keys.jump}, attack ${keys.attack}, turn ${keys.left}/${keys.right}`;
 }
 function renderDynamicAware(){
-  const box=$('#dynamicAware'),p=dynamicDraft;box.replaceChildren();
-  box.appendChild(dynamicNumber('Turn at map edges (%)',Math.round(p.edge_margin*1000)/10,0,40,1,n=>p.edge_margin=n/100,'Turn at map edges (%) · 0 = off'));
-  box.appendChild(dynamicNumber('Stuck after (seconds)',p.stuck_after_ms/1000,0,600,1,n=>p.stuck_after_ms=Number.isFinite(n)?Math.round(n*1000):NaN,'Stuck after (s) · 0 = off'));
-  const mobs=el('label','dynamic-field'),check=el('input');check.type='checkbox';check.checked=p.face_mobs;check.setAttribute('aria-label','Face mobs');
-  check.onchange=()=>{p.face_mobs=check.checked;dynamicDirty=true;};mobs.append(check,' Turn to face mobs');box.appendChild(mobs);
-  const smart=el('label','dynamic-field'),smartCheck=el('input');smartCheck.type='checkbox';smartCheck.checked=p.smart;smartCheck.setAttribute('aria-label','Smart mode');
-  smartCheck.onchange=()=>{p.smart=smartCheck.checked;dynamicDirty=true;};smart.append(smartCheck,' Smart: face mobs, wait when there are none, walk back home');box.appendChild(smart);
-  box.appendChild(dynamicNumber('Home range (%)',Math.round(p.home_range*1000)/10,0,50,1,n=>p.home_range=n/100,'Home range (% of minimap) · 0 = no home'));
-  box.appendChild(dynamicNumber('Auto-pause (%)',Math.round(p.auto_pause*1000)/10,0,90,1,n=>p.auto_pause=n/100,'Auto-pause below (% of most mobs seen) · 0 = off'));
-  const approach=el('label','dynamic-field'),approachCheck=el('input');approachCheck.type='checkbox';approachCheck.checked=p.approach;approachCheck.setAttribute('aria-label','Walk to mobs');
-  approachCheck.onchange=()=>{p.approach=approachCheck.checked;dynamicDirty=true;};approach.append(approachCheck,' Walk to mobs you can see but not reach');box.appendChild(approach);
-  box.appendChild(dynamicRange('Walking: hop every (ms)',p.walk_hold,50,5000));
-  box.appendChild(dynamicNumber('Move while attacking (%)',Math.round(p.glide*1000)/10,0,100,1,n=>p.glide=n/100,'Move while attacking (% of sets) · arrow held through the jump-attacks, turns in the air · 0 = off'));
+  const box=$('#dynamicAware'),p=dynamicDraft,d=dynamicDefault,redo=renderDynamicAware;box.replaceChildren();
+  const add=(node,key,label,text,reset)=>box.appendChild(helped(node,key,label,text,()=>{reset();redo();}));
+  add(dynamicNumber('Turn at map edges (%)',Math.round(p.edge_margin*1000)/10,0,40,1,n=>p.edge_margin=n/100,'Turn at map edges (%) · 0 = off'),
+      'edge_margin','Turn at map edges',pct(d('edge_margin')),()=>p.edge_margin=d('edge_margin'));
+  add(dynamicNumber('Stuck after (seconds)',p.stuck_after_ms/1000,0,600,1,n=>p.stuck_after_ms=Number.isFinite(n)?Math.round(n*1000):NaN,'Stuck after (s) · 0 = off'),
+      'stuck_after_ms','Stuck after',d('stuck_after_ms')/1000+' s',()=>p.stuck_after_ms=d('stuck_after_ms'));
+  add(dynamicCheck('Smart mode','Smart: attack only when a mob is in reach',p.smart,v=>p.smart=v),'smart','Smart mode',onOff(d('smart')),()=>p.smart=d('smart'));
+  add(dynamicNumber('Auto-pause (%)',Math.round(p.auto_pause*1000)/10,0,90,1,n=>p.auto_pause=n/100,'Auto-pause below (% of most mobs seen) · 0 = off'),
+      'auto_pause','Auto-pause',pct(d('auto_pause')),()=>p.auto_pause=d('auto_pause'));
+  add(dynamicCheck('Walk to mobs','Walk to mobs you can see but not reach',p.approach,v=>p.approach=v),'approach','Walk to mobs',onOff(d('approach')),()=>p.approach=d('approach'));
+  add(dynamicRange('Walking: hop every (ms)',p.walk_hold,50,5000),'walk_hold','Walking: hop every',ms(d('walk_hold')),()=>p.walk_hold=copy(d('walk_hold')));
+  refreshUnused();
+}
+function renderDynamicHome(){
+  const box=$('#dynamicHome'),p=dynamicDraft;box.replaceChildren();
+  box.appendChild(helped(dynamicNumber('Home range (%)',Math.round(p.home_range*1000)/10,0,50,1,n=>p.home_range=n/100,'Stay near home (% of minimap) · 0 = off'),
+    'home_range','Home range',pct(dynamicDefault('home_range')),()=>{p.home_range=dynamicDefault('home_range');renderDynamicHome();}));
+  refreshUnused();
 }
 function renderDynamicPotions(){
   const list=$('#dynamicPotions');list.replaceChildren();
   for(const potion of dynamicDraft.potions){
-    const label=POTION_LABELS[potion.id],card=el('div','dynamic-skill'),head=el('div','recording-actions');
-    const on=el('label'),check=el('input');check.type='checkbox';check.checked=potion.enabled;check.setAttribute('aria-label','Enable '+label);
-    check.onchange=()=>{potion.enabled=check.checked;dynamicDirty=true;};on.append(check,' '+label);head.appendChild(on);
-    head.appendChild(dynamicKeySelect(label+' key',potion.key,dynamicTapKeys(),v=>potion.key=v));card.appendChild(head);
-    card.append(dynamicNumber(label+' drink below (%)',potion.below,0,100,1,n=>potion.below=Number.isFinite(n)?Math.round(n):NaN,label+' drink below (%) · 0 = timer only'),
-      dynamicNumber(label+' bar total',potion.bar_max,0,10000000,1,n=>potion.bar_max=Number.isFinite(n)?Math.round(n):NaN,label+' bar total (e.g. 5000) · 0 = off'),
-      dynamicNumber(label+' per tap',potion.per_tap,0,10000000,1,n=>potion.per_tap=Number.isFinite(n)?Math.round(n):NaN,label+' restored per tap (e.g. 800)'),
-      dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),dynamicRange(label+' taps',potion.repeats,1,10));
+    const label=POTION_LABELS[potion.id],card=el('div','dynamic-skill'),def=defaultPotion(potion.id),redo=renderDynamicPotions;
+    const add=(node,key,name,text,reset)=>card.appendChild(helped(node,'potion.'+key,label+' '+name,text,()=>{reset();redo();}));
+    add(dynamicCheck('Enable '+label,label,potion.enabled,v=>potion.enabled=v),'enabled','on/off',onOff(def.enabled),()=>potion.enabled=def.enabled);
+    const keyField=el('label','dynamic-field');keyField.append(label+' key');keyField.appendChild(dynamicKeySelect(label+' key',potion.key,dynamicTapKeys(),v=>potion.key=v));
+    add(keyField,'key','key',def.key,()=>potion.key=def.key);
+    add(dynamicNumber(label+' drink below (%)',potion.below,0,100,1,n=>potion.below=Number.isFinite(n)?Math.round(n):NaN,label+' drink below (%) · 0 = timer only'),'below','drink below',def.below+'%',()=>potion.below=def.below);
+    add(dynamicNumber(label+' bar total',potion.bar_max,0,10000000,1,n=>potion.bar_max=Number.isFinite(n)?Math.round(n):NaN,label+' bar total (e.g. 5000) · 0 = off'),'bar_max','bar total',String(def.bar_max),()=>potion.bar_max=def.bar_max);
+    add(dynamicNumber(label+' per tap',potion.per_tap,0,10000000,1,n=>potion.per_tap=Number.isFinite(n)?Math.round(n):NaN,label+' restored per tap (e.g. 800)'),'per_tap','per tap',String(def.per_tap),()=>potion.per_tap=def.per_tap);
+    add(dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),'every_ms','every',secs(def.every_ms),()=>potion.every_ms=copy(def.every_ms));
+    add(dynamicRange(label+' taps',potion.repeats,1,10),'repeats','taps',span(def.repeats),()=>potion.repeats=copy(def.repeats));
     const details=el('details'),summary=el('summary');summary.textContent='Tap timing';details.appendChild(summary);
-    details.append(dynamicRange(label+' hold (ms)',potion.hold,1,90000),dynamicRange(label+' gap after tap (ms)',potion.after,0,90000));
+    details.append(helped(dynamicRange(label+' hold (ms)',potion.hold,1,90000),'potion.hold',label+' hold',ms(def.hold),()=>{potion.hold=copy(def.hold);redo();dynamicDirty=true;}),
+      helped(dynamicRange(label+' gap after tap (ms)',potion.after,0,90000),'potion.after',label+' gap after tap',ms(def.after),()=>{potion.after=copy(def.after);redo();dynamicDirty=true;}));
     card.appendChild(details);list.appendChild(card);
   }
+  refreshUnused();
 }
 function renderDynamicFields(){
-  const main=$('#dynamicMain');main.replaceChildren();
-  for(const key of ['attacks_per_set','sets']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);main.appendChild(dynamicRange(label,dynamicDraft[key],min,max));}
-  main.appendChild(dynamicNumber('Turn around after a set (%)',dynamicDraft.turn_chance*100,0,100,.1,n=>dynamicDraft.turn_chance=n/100));
-  main.appendChild(dynamicNumber('Tempo drift (%)',dynamicDraft.tempo_drift*100,0,30,1,n=>dynamicDraft.tempo_drift=n/100));
+  const main=$('#dynamicMain'),p=dynamicDraft,d=dynamicDefault,redo=renderDynamicFields;main.replaceChildren();
+  const add=(box,node,key,label,text,reset)=>box.appendChild(helped(node,key,label,text,()=>{reset();redo();}));
+  for(const key of ['attacks_per_set','sets']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);add(main,dynamicRange(label,p[key],min,max),key,label,span(d(key)),()=>p[key]=copy(d(key)));}
+  add(main,dynamicNumber('Turn around after a set (%)',p.turn_chance*100,0,100,.1,n=>p.turn_chance=n/100),'turn_chance','Turn around after a set',pct(d('turn_chance')),()=>p.turn_chance=d('turn_chance'));
+  add(main,dynamicNumber('Tempo drift (%)',p.tempo_drift*100,0,30,1,n=>p.tempo_drift=n/100),'tempo_drift','Tempo drift',pct(d('tempo_drift')),()=>p.tempo_drift=d('tempo_drift'));
+  add(main,dynamicNumber('Move while attacking (%)',Math.round(p.glide*1000)/10,0,100,1,n=>p.glide=n/100,'Move while attacking (% of sets) · 0 = off'),'glide','Move while attacking',pct(d('glide')),()=>p.glide=d('glide'));
   const timings=$('#dynamicTimings');timings.replaceChildren();
-  DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>timings.appendChild(dynamicRange(label+' (ms)',dynamicDraft[key],min,max)));
+  DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>add(timings,dynamicRange(label+' (ms)',p[key],min,max),key,label,ms(d(key)),()=>p[key]=copy(d(key))));
+  refreshUnused();
 }
 function applyDynamicPreset(name){
   const preset=DYNAMIC_PRESETS[name];
@@ -1063,20 +1190,25 @@ function applyDynamicPreset(name){
 function renderDynamicSkills(){
   const list=$('#dynamicSkills');list.replaceChildren();
   dynamicDraft.skills.forEach((skill,index)=>{
-    const card=el('div','dynamic-skill'),head=el('div','recording-actions');
-    const enabled=el('label'),check=el('input');check.type='checkbox';check.checked=skill.enabled;check.setAttribute('aria-label','Enable skill '+(index+1));check.onchange=()=>{skill.enabled=check.checked;dynamicDirty=true;};enabled.append(check,' Enabled');head.appendChild(enabled);
-    const key=el('select');key.setAttribute('aria-label','Skill '+(index+1)+' key');
+    const n='Skill '+(index+1),card=el('div','dynamic-skill'),head=el('div','recording-actions'),def=SKILL_DEFAULT,redo=renderDynamicSkills;
+    const add=(box,node,key,name,text,reset)=>box.appendChild(helped(node,'skill.'+key,n+' '+name,text,reset&&(()=>{reset();redo();})));
+    const remove=el('button','btn sm');remove.type='button';remove.textContent='Remove skill';remove.onclick=()=>{dynamicDraft.skills.splice(index,1);dynamicDirty=true;renderDynamicSkills();};
+    const title=el('b');title.textContent=n;head.append(title,remove);card.appendChild(head);
+    add(card,dynamicCheck('Enable skill '+(index+1),'Enabled',skill.enabled,v=>skill.enabled=v),'enabled','on/off',onOff(def.enabled),()=>skill.enabled=def.enabled);
+    const keyField=el('label','dynamic-field'),key=el('select');keyField.append(n+' key');key.setAttribute('aria-label',n+' key');
     (skill.key&&!dynamicTapKeys().includes(skill.key)?[skill.key,...dynamicTapKeys()]:dynamicTapKeys()).forEach(k=>{const o=el('option');o.value=k;o.textContent=k;key.appendChild(o);});key.value=skill.key;
-    key.onchange=()=>{skill.key=key.value;dynamicDirty=true;renderDynamicSkills();};head.appendChild(key);
-    const remove=el('button','btn sm');remove.type='button';remove.textContent='Remove skill';remove.onclick=()=>{dynamicDraft.skills.splice(index,1);dynamicDirty=true;renderDynamicSkills();};head.appendChild(remove);card.appendChild(head);
-    card.append(dynamicNumber('Skill '+(index+1)+' chance after each set (%)',skill.chance*100,0,100,.1,n=>skill.chance=n/100),
-      dynamicRange('Skill '+(index+1)+' taps',skill.repeats,1,10),
-      dynamicRange('Skill '+(index+1)+' use again after (seconds)',skill.cooldown_ms,0,86400000,1000));
+    key.onchange=()=>{skill.key=key.value;dynamicDirty=true;renderDynamicSkills();};keyField.appendChild(key);
+    add(card,keyField,'key','key',undefined,null);
+    add(card,dynamicNumber(n+' chance after each set (%)',skill.chance*100,0,100,.1,v=>skill.chance=v/100),'chance','chance',pct(def.chance),()=>skill.chance=def.chance);
+    add(card,dynamicRange(n+' taps',skill.repeats,1,10),'repeats','taps',span(def.repeats),()=>skill.repeats=copy(def.repeats));
+    add(card,dynamicRange(n+' use again after (seconds)',skill.cooldown_ms,0,86400000,1000),'cooldown_ms','use again after',secs(def.cooldown_ms),()=>skill.cooldown_ms=copy(def.cooldown_ms));
     const details=el('details'),summary=el('summary');summary.textContent='Tap timing';details.appendChild(summary);
-    details.append(dynamicRange('Skill '+(index+1)+' hold (ms)',skill.hold,1,90000),dynamicRange('Skill '+(index+1)+' gap after tap (ms)',skill.after,0,90000));
+    add(details,dynamicRange(n+' hold (ms)',skill.hold,1,90000),'hold','hold',ms(def.hold),()=>skill.hold=copy(def.hold));
+    add(details,dynamicRange(n+' gap after tap (ms)',skill.after,0,90000),'after','gap after tap',ms(def.after),()=>skill.after=copy(def.after));
     card.appendChild(details);list.appendChild(card);
   });
   $('#dynamicAddSkill').disabled=dynamicDraft.skills.length>=8;
+  refreshUnused();
 }
 function closeDynamicEditor(){if(dynamicDirty&&!confirm('Discard changes to this dynamic pattern?'))return false;dynamicDirty=false;$('#dynamicDialog').close();return true;}
 function applyDynamicPattern(){
@@ -2092,6 +2224,7 @@ async function pollStatus(){
     $("#monDown").textContent=down.length?down.join(" "):"none";
     renderLiveStats(status.live);
     renderNotices(status.notices,status.live);
+    refreshUnused();   // the pattern editor greys out what the screen reader would drive
     renderGrid();updateDirty();
   }catch(e){}
   statusBusy=false;
@@ -2110,7 +2243,7 @@ $("#dynamicAddSkill").onclick=()=>{
   if(dynamicDraft.skills.length>=8)return;
   // Start on a key nothing else in the pattern presses yet.
   const used=new Set([...dynamicDraft.potions,...dynamicDraft.skills].map(x=>x.key)),free=dynamicTapKeys();
-  dynamicDraft.skills.push({id:freshId(),enabled:false,key:free.find(k=>!used.has(k))||free[0],chance:.1,repeats:[1,1],hold:[85,110],after:[880,1130],cooldown_ms:[0,0]});dynamicDirty=true;renderDynamicSkills();
+  dynamicDraft.skills.push({id:freshId(),...JSON.parse(JSON.stringify(SKILL_DEFAULT)),key:free.find(k=>!used.has(k))||free[0]});dynamicDirty=true;renderDynamicSkills();
 };
 $("#dynamicApply").onclick=applyDynamicPattern;
 $("#dynamicPreview").onclick=()=>{try{generatedPreview=generateDynamicSample(dynamicDraft);openJsonPreview('generated');}catch(e){$('#dynamicError').textContent=e.message;}};

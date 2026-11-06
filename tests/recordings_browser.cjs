@@ -127,7 +127,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('summary',{hasText:'Screen awareness'}).click();
   assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'12');
   assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'20');
-  assert(await page.getByLabel('Face mobs',{exact:true}).isChecked());
+  assert.equal(await page.getByLabel('Face mobs',{exact:true}).count(),0);   // mobs in reach are always faced now: no switch
   await page.getByLabel('Turn at map edges (%)',{exact:true}).fill('50');await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'Turn at map edges: enter a percentage from 0 to 40.');
   await page.getByLabel('Turn at map edges (%)',{exact:true}).fill('15');
@@ -151,8 +151,39 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#dynamicError').textContent(),'Walking hops: enter an ordered range from 50 to 5000.');
   await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).fill('300');
   assert.equal(await page.locator('#dynamicSkills .dynamic-skill').count(),0);
+  // Every setting explains itself in plain words, shows its default and goes back to it.
+  assert.match(await page.locator('#dynamicHome').textContent(),/Distance boundary from home \(% of map width\).*Smart on or off\..*0%: disabled.*20%: narrow \(use on platforms\).*50%: wide \(use on flat ground\).*Default: 50%/s);
+  assert.equal(await page.locator('#dynamicHome .setting-points li').count(),3);
+  // Not driven right now (no screen reader readings here): greyed out, saying why.
+  assert(await page.locator('#dynamicHome .setting[data-key="home_range"]').evaluate(e=>e.classList.contains('unused')));
+  assert.match(await page.locator('#dynamicHome .unused-note').textContent(),/no readings from the PC screen reader/);
+  assert.match(await page.locator('.setting[data-key="dir_hold"] .unused-note').textContent(),/turns happen in the air/);
+  await page.getByLabel('Move while attacking (%)',{exact:true}).fill('0');
+  assert.equal(await page.locator('.setting[data-key="dir_hold"] .unused-note').textContent(),'');   // tap turns are used again
+  await page.getByRole('button',{name:'Default for Move while attacking',exact:true}).click();
+  await page.getByLabel('Smart mode',{exact:true}).uncheck();
+  assert.match(await page.locator('.setting[data-key="approach"] .unused-note').textContent(),/no readings|Smart is off/);
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'10');
+  await page.getByRole('button',{name:'Default for Home range',exact:true}).click();
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'50');
+  await page.getByRole('button',{name:'Default for Walking: hop every',exact:true}).click();
+  assert.equal(await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).inputValue(),'600');
+  await page.getByLabel('Smart mode',{exact:true}).uncheck();await page.getByRole('button',{name:'Default for Smart mode',exact:true}).click();
+  assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
+  assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking \(% of runs\).*0%: off: attacks on the spot.*100%: always on the move.*Default: 60%/s);
+  assert.match(await page.locator('#dynamicMain').textContent(),/How often it flips direction \(%\).*0%: always faces the same way.*20%: occasionally flips sides/s);
+  assert.match(await page.locator('#dynamicAware').textContent(),/10%: turns 10% from each edge: uses the middle 80% of the map/);
+  assert.match(await page.locator('#dynamicPotions').textContent(),/HP drink below.*0%: ignores the bar.*Default: 50%/s);
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('70');await page.getByRole('button',{name:'Default for Mana drink below',exact:true}).click();
+  assert.equal(await page.getByLabel('Mana drink below (%)',{exact:true}).inputValue(),'30');
+  await page.getByLabel('Home range (%)',{exact:true}).fill('10');await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).fill('300');
+  await page.getByLabel('Mana drink below (%)',{exact:true}).fill('25');
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 key',{exact:true}).inputValue(),'A');   // first key nothing else uses
+  await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('80');
+  await page.getByRole('button',{name:'Default for Skill 1 chance',exact:true}).click();
+  assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'10');
+  if(process.env.SHOT)await page.locator('#dynamicDialog').screenshot({path:process.env.SHOT});
   // Presets change movement/rhythm and keep skills.
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('35');
   await page.getByRole('button',{name:'Flip',exact:true}).click();

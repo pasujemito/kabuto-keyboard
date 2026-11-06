@@ -385,6 +385,10 @@ int main() {
         q.edgeMarginPermille=0;q.faceMobs=true;aware.setPattern(q);
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_RIGHT);});
         assert((dirs()==std::vector<uint8_t>{L,R,R}));
+        // The same with an older pattern's face_mobs off: mobs in reach are always faced now.
+        q.faceMobs=false;aware.setPattern(q);
+        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_RIGHT);});
+        assert((dirs()==std::vector<uint8_t>{L,R,R}));q.faceMobs=true;
         // Mobs on both sides: face the nearer one (left nearer: stays left; right nearer: turns right).
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_LEFT|MOB_RIGHT);});
         assert((dirs()==std::vector<uint8_t>{L,L}));
@@ -521,6 +525,18 @@ int main() {
                   walked=walked||hopsWhileHeld(L)>=2;
                   liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});
          assert(walked&&(dirs()==std::vector<uint8_t>{L})&&attacks()==3&&attacksHolding(L)==3&&held.empty());}
+        // Home on its own: Smart off, a home range set, drifted past it: walks back
+        // (arrow held, hopping), then attacks there; nothing is waited for.
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={3,3};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=100;g.walkHold={280,650};
+         aware.setPattern(g);walked=false;calls=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,300,500);return;}   // home: map x 300
+                  walked=walked||hopsWhileHeld(L)>=1;
+                  liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,walked?320:450,500);});   // drifted to 450, no mobs
+         assert(walked&&attacks()==3&&held.empty());
+         // No home range: Smart off attacks where it is, whatever the drift.
+         g.homeRangePermille=0;aware.setPattern(g);calls=0;
+         playWith([](long){return 0L;},[&]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,calls==1?300:450,500);});
+         assert(hopsWhileHeld(L)==0&&attacks()==3);}
         // Home is set at the start of every pattern (not only Smart), for the
         // dashboard and the game layer; a home from the dot is set again once map
         // positions come, rather than compared with them.

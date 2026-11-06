@@ -45,9 +45,9 @@ struct DynamicPattern {
     // Screen awareness (needs tools/screen_stats.py); off in older patterns.
     uint16_t edgeMarginPermille = 0;  // turn back within this far of a minimap edge
     uint32_t stuckAfterMs = 0;        // minimap dot still this long: turn, then stop
-    bool faceMobs = false;            // turn towards mobs (the nearer side when both)
-    bool smart = false;               // no mobs: wait for them; drifted: walk back home
-    uint16_t homeRangePermille = 0;   // smart: how far from home you may drift (0 = no home)
+    bool faceMobs = false;            // saved by older versions; mobs in reach are always faced now
+    bool smart = false;               // no mobs: wait for them (and, with a home, hunt around it)
+    uint16_t homeRangePermille = 0;   // how far from home you may drift, Smart or not (0 = no home)
     uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
     bool approach = false;            // smart: walk to mobs you can see but not reach
     DynamicRange walkHold{280,650};   // smart: walking (home or to mobs) holds the arrow, jumping after each of these

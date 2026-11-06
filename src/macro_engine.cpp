@@ -562,7 +562,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     executeSteps(hop,stop,state,depth+1);
                 };
                 auto smartWait=[&]{
-                    static const char* const labels[]={"","smart: waiting for mobs","smart: walking home","smart: walking home",
+                    static const char* const labels[]={"","smart: waiting for mobs","walking home","walking home",
                         "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs"};
                     int doing=-1;uint32_t walkStarted=0;   // the action under way (either way counts as one)
                     while(!stop){
@@ -571,7 +571,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         mapCheck(live);
                         int pos=0;bool havePos=livePos(live,pos);
                         homeCheck(live,havePos,pos);
-                        uint8_t act=smartDecide(smartInput(live,havePos,pos));
+                        // Smart decides everything; with Smart off, only Home's walk back.
+                        uint8_t act=pattern->smart?smartDecide(smartInput(live,havePos,pos)):homeDecide(smartInput(live,havePos,pos));
                         publish(act);
                         if(act==SMART_ATTACK)break;
                         homing=act==SMART_WALK_LEFT||act==SMART_WALK_RIGHT;
@@ -590,13 +591,13 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(doing>=0){stuck=StuckWatch();if(!stop)logStep(s,pc,millis(),0,true,"smart: mobs found");}   // standing still on purpose isn't stuck
                 };
                 auto screenCheck=[&]{
-                    if(pattern->smart){smartWait();if(stop)return true;}
+                    if(pattern->smart||pattern->homeRangePermille){smartWait();if(stop)return true;}   // Home works with Smart off too
                     LiveStats live=liveStatsSnapshot();
                     if(!live.fresh)return false;
                     if(stopReason(live))return true;
                     mapCheck(live);
                     {int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);}
-                    int want=liveFacing(true,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
+                    int want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;turn();}
                     publish(SMART_ATTACK);
                     if(pattern->stuckAfterMs){
@@ -687,7 +688,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(stop||set+1==sets)break;
                     // Live facing (map edge, mobs) wins; otherwise the turn chance.
                     LiveStats live=liveStatsSnapshot();
-                    int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,pattern->faceMobs||pattern->smart,live.mobs);
+                    int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;
                     else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;

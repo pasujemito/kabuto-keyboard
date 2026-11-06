@@ -599,8 +599,9 @@ are gone with Wi-Fi readings).
     lately (auto-pause's bar).
   - **"Mobs not counted"** when there are no mob readings, with why: the map
     isn't taught yet (press Which map / F9 on it), or there's no mob
-    detection on it. Smart can only stop for mobs it can see, so a playing
-    smart pattern then shows **⚠ Can't see mobs: attacking anyway**; a
+    detection on it. Smart can only attack mobs it can see, so a playing
+    smart pattern then stands still and shows **⚠ No mob detection on this
+    map: not attacking** (since 1.18.14; it used to attack blindly); a
     pattern with Smart turned off shows **Smart off**. The game layer's strip
     says the same in red ("new map, mobs not seen: F9", "not looking for
     mobs").
@@ -658,8 +659,11 @@ are gone with Wi-Fi readings).
       after each random time in that range, as you would. The arrow is let go
       before it attacks, waits or turns round, unless the pattern moves while
       attacking (below): then a walk runs straight into the jump-attacks.
-    It needs the mob detector set up in the script; without it, or without
-    fresh readings, the pattern plays as normal. Walking to mobs and
+    It needs the mob detector set up in the script. Without fresh readings
+    (the script not running, or the USB cable charge-only) or without mob
+    detection on the map, Smart **stands still** and the dashboard says why
+    (⚠ No readings from the PC / ⚠ No mob detection on this map), instead of
+    attacking blindly; turn Smart off to attack all the time. Walking to mobs and
     auto-pause need mob sprites (the counts); older patterns have both off.
     To stop while it waits, press the key again as usual.
   - **Facing mobs** (automatic, no switch since 1.18.13): it turns to face

@@ -423,9 +423,15 @@ int main() {
         uint32_t stopAt=millis()+1500;
         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ);if(millis()>=stopAt)engine.stopFlag_=true;});
         assert(attacks()==0&&held.empty()&&!heldMods&&engine.stopFlag_);engine.stopFlag_=false;
-        // Without a mob detector (no "mobs" in the readings) smart mode just attacks.
-        play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0);});
-        assert(attacks()==3);
+        // Without a mob detector (no "mobs" in the readings) Smart can't see mobs: it
+        // stands still rather than attack blindly, and the dashboard says why.
+        {uint32_t stopNoDetector=millis()+3000;bool told=false;
+         play([&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,0);told=told||patternViewSnapshot().action==SMART_NO_DETECTOR;if(millis()>=stopNoDetector)engine.stopFlag_=true;});
+         assert(attacks()==0&&told&&held.empty());engine.stopFlag_=false;}
+        // No readings at all (the script not running, a charge-only cable): the same.
+        {liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;uint32_t stopNoReadings=millis()+3000;bool told=false;
+         play([&]{told=told||patternViewSnapshot().action==SMART_NO_READINGS;if(millis()>=stopNoReadings)engine.stopFlag_=true;});
+         assert(attacks()==0&&told&&held.empty());engine.stopFlag_=false;}
         // Readings with mobs in sight (counts, nearest distances) and the map's name.
         auto seen=[&](uint8_t mobs,int ml,int mr,int dl,int dr,int wx=LIVE_NO_POS,const char* map=""){
             StatsReading r;r.hp=r.mana=500;r.x=r.y=500;r.mobs=mobs;r.ml=ml;r.mr=mr;r.dl=dl;r.dr=dr;r.wx=wx;r.wy=wx==LIVE_NO_POS?LIVE_NO_POS:500;

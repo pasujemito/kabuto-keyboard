@@ -136,8 +136,8 @@ static void handleStatus(AsyncWebServerRequest* req) {
     PatternView view = patternViewSnapshot();
     if (view.active) {
         JsonObject p = d["pattern"].to<JsonObject>();
-        static const char* const actions[] = {"attack", "wait", "home", "home", "pause", "approach", "approach"};
-        p["smart"] = view.smart; p["action"] = view.action < 7 ? actions[view.action] : "attack";
+        static const char* const actions[] = {"attack", "wait", "home", "home", "pause", "approach", "approach", "noreadings", "nodetector"};
+        p["smart"] = view.smart; p["action"] = view.action < 9 ? actions[view.action] : "attack";
         p["facing"] = view.facingLeft ? "left" : "right";
         if (view.haveHome) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; }
         if (view.peak >= 0) p["peak"] = view.peak;

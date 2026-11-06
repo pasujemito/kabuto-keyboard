@@ -1512,6 +1512,10 @@ class Ground:
     def reset(self):
         self.feet, self.last, self.since = None, None, None
 
+def same_minimap(a, b, slack=4):
+    """Two minimap boxes that are the same one, found a few pixels apart."""
+    return bool(a and b) and all(abs(a[k] - b[k]) <= slack for k in ("x1", "y1", "x2", "y2"))
+
 class Screen:
     """Everything read each tick, plus what's learned at start (the map)."""
     def __init__(self, sct, config, sprites_dir=None):
@@ -1529,6 +1533,8 @@ class Screen:
         self.current = None   # the taught map you're on ("" untaught, None no map library)
         self.sizes = {}       # {map: its minimap size}, from map.json
         self.box = None       # the minimap box last read
+        self.frames = {}      # {map: its minimap box as last found on screen}
+        self.tracked = None   # the map the slide (map position) is counted on
         self.map_mobs = {}    # {map: its mob PNGs}, from map.json
         self.searches = {}    # {map: ShapeSearch}
         self.you = None       # (x, feet) where your name tag says you are, else None
@@ -1583,7 +1589,10 @@ class Screen:
             return map_box(mm, size)
         frame = self.frame()
         if frame:
-            return dict(mm, x2=frame[0] - 1, y2=frame[1] - 1)
+            self.frames[name] = dict(mm, x2=frame[0] - 1, y2=frame[1] - 1)
+            return self.frames[name]
+        if name in self.frames:   # hidden for a moment (a window, a hit effect): this map's last one stands
+            return self.frames[name]
         return mm
 
     def mob_shapes(self, name, found, tolerance):
@@ -1733,8 +1742,12 @@ class Screen:
         self.current = name
         dot, world, mm, dot_y = None, None, self.minimap_box(name), None
         if mm:
-            if mm != self.box:   # another size: the slide so far doesn't carry over
-                self.box, self.minimap = mm, MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
+            if mm != self.box:
+                if same_minimap(self.box, mm) and name == self.tracked:
+                    self.minimap.prev = None   # the same minimap a pixel or two off: the slide (and home) carry on
+                else:   # another map, or another size: the slide so far doesn't carry over
+                    self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
+                self.box, self.tracked = mm, name
             w, h = mm["x2"] - mm["x1"] + 1, mm["y2"] - mm["y1"] + 1
             raw = grab(self.sct, mm["x1"], mm["y1"], w, h)
             dot = find_dot(raw, w, h, mm["dot"], mm.get("tolerance", 40), top=mm.get("header", 0))
@@ -4121,6 +4134,9 @@ def selftest():
     assert (screen.box["x1"], screen.box["y1"], screen.box["x2"], screen.box["y2"], screen.box["header"]) == (630, 40, 689, 79, 0), screen.box
     assert abs(r["x"] - 20.3) < 3 and abs(r["y"] - 30.8) < 5, r
     assert marked_box({"x1": 600, "y1": 10}, (689, 79), (630, 40)) == {"width": 60, "height": 40, "left": 30, "top": 30}
+    # The slide (map position, and home with it) isn't thrown away when the found minimap wobbles a pixel or two.
+    box = {"x1": 0, "y1": 0, "x2": 199, "y2": 99}
+    assert same_minimap(box, dict(box, x2=201)) and not same_minimap(box, dict(box, x2=230)) and not same_minimap(None, box)
     assert marked_box({"x1": 0, "y1": 0}, (5, 5), (9, 60)) is None   # too thin to be a minimap
     assert map_box({"x1": 0, "y1": 0, "header": 72}, {"width": 100, "height": 50}) == {"x1": 0, "y1": 0, "x2": 99, "y2": 49, "header": 72}
     assert marked_name_area((160, 213), (100, 200)) == {"x1": 100, "y1": 200, "x2": 160, "y2": 213, "light": 170}

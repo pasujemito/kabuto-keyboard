@@ -140,10 +140,12 @@ const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4, MOB_READ = 8;
 // range. Then, with a home and the mob detector, nothing to fight nearby
 // means back home: walk until within HOME_SETTLE / 2 of it whenever farther
 // than HOME_SETTLE, so you hunt around home rather than wherever the last
-// mob led you (auto-pause waits there too). No fresh reading or no mob
-// detector: just attack.
+// mob led you (auto-pause waits there too). No fresh reading, or no mob
+// detector on this map: Smart can't tell where mobs are, so it stands still
+// (SMART_NO_READINGS / SMART_NO_DETECTOR) rather than attack blindly.
 const int HOME_SETTLE = 60;   // tenths of a minimap width: "at home" within this (3% once walking)
-enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT };
+enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT,
+                             SMART_NO_READINGS, SMART_NO_DETECTOR };
 struct SmartInput {
     bool fresh = false;
     uint8_t mobs = 0;              // in reach: MOB_LEFT | MOB_RIGHT | MOB_READ ...
@@ -164,7 +166,7 @@ inline uint8_t homeDecide(const SmartInput& in) {
     return SMART_ATTACK;
 }
 inline uint8_t smartDecide(const SmartInput& in) {
-    if (!in.fresh) return SMART_ATTACK;
+    if (!in.fresh) return SMART_NO_READINGS;
     bool any = in.mobs & (MOB_LEFT | MOB_RIGHT), homed = in.havePos && in.haveHome && in.range;
     int off = homed ? in.pos - in.home : 0;
     uint8_t back = homeDecide(in);
@@ -179,7 +181,7 @@ inline uint8_t smartDecide(const SmartInput& in) {
         if (!homed || (goLeft ? off > -limit : off < limit)) return goLeft ? SMART_APPROACH_LEFT : SMART_APPROACH_RIGHT;
     }
     if (away) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;   // nothing to fight here: back home
-    return (in.mobs & MOB_READ) ? SMART_WAIT : SMART_ATTACK;
+    return (in.mobs & MOB_READ) ? SMART_WAIT : SMART_NO_DETECTOR;
 }
 // The decision with mobs in reach only (no counts, approach or auto-pause).
 inline uint8_t smartAction(bool fresh, uint8_t mobs, bool havePos, int pos, bool haveHome, int home, uint16_t range, bool homing) {

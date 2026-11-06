@@ -70,7 +70,9 @@ int main(){
     // Smart mode: attack with mobs, wait without; walk home when drifted (range 100).
     const uint8_t none=MOB_READ,left=MOB_READ|MOB_LEFT;
     assert(smartAction(true,left,true,500,true,500,100,false)==SMART_ATTACK&&smartAction(true,none,true,500,true,500,100,false)==SMART_WAIT);
-    assert(smartAction(true,0,true,500,true,500,100,false)==SMART_ATTACK&&smartAction(false,none,true,900,true,500,100,false)==SMART_ATTACK);   // no detector / stale
+    // Can't see mobs (no detector on this map / no fresh readings): stands still, never attacks blindly.
+    assert(smartAction(true,0,true,500,true,500,100,false)==SMART_NO_DETECTOR&&smartAction(false,none,true,900,true,500,100,false)==SMART_NO_READINGS);
+    assert(smartAction(false,left,true,500,true,500,100,false)==SMART_NO_READINGS);   // a stale "mob in reach" isn't trusted either
     assert(smartAction(true,none,true,650,true,500,100,false)==SMART_WALK_LEFT&&smartAction(true,none,true,-200,true,-50,100,false)==SMART_WALK_RIGHT);
     assert(smartAction(true,left,true,650,true,500,100,false)==SMART_ATTACK&&smartAction(true,left,true,750,true,500,100,false)==SMART_WALK_LEFT);   // mobs keep you, unless far
     // Nothing to fight: back home, to hunt around it. Walks when over HOME_SETTLE (6%) away, until within half that.
@@ -87,7 +89,7 @@ int main(){
     assert(smartAction(true,none,true,540,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,525,true,500,100,true)==SMART_WAIT);
     assert(smartAction(true,none,true,420,true,500,100,false)==SMART_WALK_RIGHT);           // either side
     assert(smartAction(true,left,true,570,true,500,100,false)==SMART_ATTACK);               // mobs in reach: fight them first
-    assert(smartAction(true,0,true,570,true,500,100,false)==SMART_ATTACK);                  // no mob detector: can't tell, attack
+    assert(smartAction(true,0,true,570,true,500,100,false)==SMART_NO_DETECTOR);             // no mob detector: can't tell, stand still
     assert(smartAction(true,none,true,900,true,500,0,false)==SMART_WAIT&&smartAction(true,none,false,0,true,500,100,false)==SMART_WAIT);   // no home / no position
     // With mobs in sight (counts and distances): approach walks to the nearer
     // side's mobs when none are in reach, but not past 3/4 of the home range;

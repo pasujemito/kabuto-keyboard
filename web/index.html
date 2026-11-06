@@ -500,7 +500,7 @@
     <div class="dynamic-main" id="dynamicHome"></div>
   </details>
   <details><summary>Screen awareness</summary>
-    <p class="hint">These need the PC screen reader running (on the USB cable). Without it they do nothing and the pattern just attacks. Death, a disconnect or the game's test popup always stop playing.</p>
+    <p class="hint">These need the PC screen reader running (on the USB cable). Without it, Smart stands still (it can't see mobs) and the rest do nothing. Death, a disconnect or the game's test popup always stop playing.</p>
     <div class="dynamic-main" id="dynamicAware"></div>
   </details>
   <details open><summary>HP &amp; Mana</summary>
@@ -2077,7 +2077,8 @@ async function pollMacroLog(){
 }
 /* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
 // What a playing dynamic pattern is doing, as /api/status reports it.
-const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Walking home',approach:'🚶 Walking to mobs'};
+const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Walking home',approach:'🚶 Walking to mobs',
+  noreadings:'⚠ No readings from the PC: not attacking',nodetector:'⚠ No mob detection on this map: not attacking'};
 function runningLabel(){
   const k=cfg?.layers[status.activeLayer]?.keys[status.runningKey];if(!k)return 'Button '+(status.runningKey+1);
   const a=assignmentFor(k);return k.name||(a.ids.length?recordingName(a.ids[0]):'')||'Button '+(status.runningKey+1);
@@ -2093,7 +2094,7 @@ function renderLiveStats(live,pattern=status.pattern){
   if(pattern){chip(PATTERN_ACTIONS[pattern.action]||PATTERN_ACTIONS.attack,pattern.action);chip(pattern.facing==='left'?'◀ Facing left':'Facing right ▶','','Which way the character faces');
     // Smart only stops for missing mobs when the screen reader is looking for them.
     if(!pattern.smart)chip('Smart off','dim','This pattern attacks whatever is around: turn Smart on in its Screen awareness');
-    else if(live&&live.fresh&&!(live.mobs&8))chip('⚠ Can\'t see mobs: attacking anyway','attack','No mob readings on this map, so Smart can\'t tell when they are gone');}
+    else if(pattern.action!=='noreadings'&&pattern.action!=='nodetector'&&live&&live.fresh&&!(live.mobs&8))chip('⚠ Can\'t see mobs','attack','No mob readings on this map: Smart stands still until the map is taught (F9)');}
   else chip(status.running?'▶ Playing':'■ Idle','dim');
   if(status.running&&status.runningKey>=0)chip('Button '+(status.runningKey+1)+' · '+runningLabel(),'dim');
   if(fresh&&live.map)chip(live.map==='-'?'🗺 Map not taught':'🗺 '+mobName(live.map),live.map==='-'?'dim':'','The map the screen reader recognised by its name');

@@ -3,6 +3,17 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.14
+
+- 🛑 **Smart no longer attacks blindly**: with no fresh readings from the PC
+  (since 1.18.12 they come only over a USB data cable: a charge-only cable,
+  an old script or none running means none) or with no mob detection on the
+  map (not taught with F9), Smart quietly fell back to attacking all the
+  time, mobs in range or not. Now it stands still and the dashboard says why:
+  **⚠ No readings from the PC: not attacking** or **⚠ No mob detection on
+  this map: not attacking** (the log too). Turn Smart off to attack all the
+  time on purpose
+
 ## 1.18.13
 
 - 📖 **Every setting explains itself**: in the pattern editor each setting

@@ -3,6 +3,17 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.2
+
+- 🧍 **Much less walking home**: 1.19.1 walked back into the zone whenever
+  the character was near its edge with a mob in reach only on the outside,
+  and a slip past the line meant walking back to 3/4 of the boundary; with
+  Move while attacking drifting it towards mobs, it walked in again and
+  again. Now near the edge it **stands still** facing inwards (no walking, no
+  attacking the air) and fights mobs on the inside when they come; only
+  past the line does it step back in, and only just inside (a tenth of the
+  boundary). The log and dashboard say "back into the home zone" when it does
+
 ## 1.19.1
 
 - 🎯 **No more attacking the air at the home zone's edge**: past 3/4 of the

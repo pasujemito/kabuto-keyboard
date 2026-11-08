@@ -612,7 +612,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     executeSteps(hop,stop,state,depth+1);
                 };
                 auto smartWait=[&]{
-                    static const char* const labels[]={"","smart: waiting for mobs","walking home","walking home",
+                    static const char* const labels[]={"","smart: waiting for mobs","back into the home zone (it went past the boundary)","back into the home zone (it went past the boundary)",
                         "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs",
                         "smart: no readings from the PC, not attacking","smart: no mob detection on this map (teach it with F9), not attacking"};
                     int doing=-1;uint32_t walkStarted=0;   // the action under way (either way counts as one)

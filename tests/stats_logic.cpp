@@ -84,19 +84,19 @@ int main(){
         h.pos=560;assert(homeDecide(h)==SMART_ATTACK);                 // within range, nothing in reach: attacks (Smart would wait)
         h.pos=650;assert(homeDecide(h)==SMART_WALK_LEFT);h.pos=350;assert(homeDecide(h)==SMART_WALK_RIGHT);
         h.pos=650;h.mobs=MOB_READ|MOB_LEFT;assert(homeDecide(h)==SMART_WALK_LEFT);   // outside: back in, a mob in reach or not
-        h.mobs=MOB_READ;h.homing=true;h.pos=580;assert(homeDecide(h)==SMART_WALK_LEFT);   // walking: on until 3/4 of the range
+        h.mobs=MOB_READ;h.homing=true;h.pos=595;assert(homeDecide(h)==SMART_WALK_LEFT);   // walking: on until just inside (90%)
         h.pos=570;assert(homeDecide(h)==SMART_ATTACK);h.homing=false;
         h.range=0;h.pos=900;assert(homeDecide(h)==SMART_ATTACK);h.range=100;h.fresh=false;assert(homeDecide(h)==SMART_ATTACK);
     }
-    assert(smartAction(true,none,true,580,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,570,true,500,100,true)==SMART_WAIT);
+    assert(smartAction(true,none,true,595,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,590,true,500,100,true)==SMART_WAIT);   // a short step back in
     assert(smartAction(true,none,true,380,true,500,100,false)==SMART_WALK_RIGHT&&smartAction(true,none,true,420,true,500,100,false)==SMART_WAIT);   // either side
     // At the zone's edge (past 3/4 of the range) only mobs on the inside count: a mob in reach
     // only on the outside means step back in, not attack the air facing inwards.
     {const uint8_t right=MOB_READ|MOB_RIGHT,both=MOB_READ|MOB_LEFT|MOB_RIGHT;
-     assert(smartAction(true,right,true,580,true,500,100,false)==SMART_WALK_LEFT);   // 8% right of home, mob further right
+     assert(smartAction(true,right,true,580,true,500,100,false)==SMART_WAIT);   // 8% right of home, mob further right: stands, no walking
      assert(smartAction(true,left,true,580,true,500,100,false)==SMART_ATTACK);       // mob on the inside: fight
      assert(smartAction(true,both,true,580,true,500,100,false)==SMART_ATTACK);
-     assert(smartAction(true,left,true,420,true,500,100,false)==SMART_WALK_RIGHT);   // the left edge, mob further left
+     assert(smartAction(true,left,true,420,true,500,100,false)==SMART_WAIT);   // the left edge, mob further left: stands
      assert(smartAction(true,right,true,560,true,500,100,false)==SMART_ATTACK);      // nearer home: any side
      assert(smartAction(true,right,true,580,true,500,0,false)==SMART_ATTACK);}       // no home: any side
     {StatsReading r=parseStatsForm("ml=3&mr=4&ir=2");assert(r.ir==2&&r.ml==3);StatsReading none=parseStatsForm("ml=1");assert(none.ir==-1);}

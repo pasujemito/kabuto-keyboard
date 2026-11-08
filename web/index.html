@@ -1127,7 +1127,7 @@ const HELP={
     points:[['on','walks to them, then attacks (staying inside the home zone)'],['off','stays put and waits for them to come close']]},
   walk_hold:{title:'Walking: time between hops (ms)',what:'When it walks (back home, or to mobs), it holds the arrow and hops now and then.',
     points:[['lower','hops more often'],['higher','longer runs between hops']]},
-  home_range:{title:'Distance boundary from home (% of map width)',what:'A zone this far either side of home (where you pressed the button) where the character fights. Inside it nothing pulls it back. If mobs lead it outside, it walks back in first, then carries on; at the zone\'s edge it turns to face inwards. Smart on or off.',
+  home_range:{title:'Distance boundary from home (% of map width)',what:'A zone this far either side of home (where you pressed the button) where the character fights. Inside it nothing pulls it back. Near the edge it faces inwards and only fights mobs on the inside (mobs past the edge: it stands and waits). Only if it ends up past the line does it step back in, just inside. Smart on or off.',
     points:[['0%','disabled: no home, wanders freely'],['20%','narrow (use on platforms)'],['50%','wide (use on flat ground)']]},
   'potion.enabled':{title:'Use this potion',what:'',points:[['on','drinks it'],['off','never drinks it']]},
   'potion.key':{title:'Potion key',what:'The key your game drinks this potion with.'},
@@ -2296,7 +2296,7 @@ async function pollMacroLog(){
 }
 /* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
 // What a playing dynamic pattern is doing, as /api/status reports it.
-const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Walking home',approach:'🚶 Walking to mobs',
+const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Back into the home zone',approach:'🚶 Walking to mobs',
   noreadings:'⚠ No readings from the PC: not attacking',support:'🧪 Support only: potions & skills',nodetector:'⚠ No mob detection on this map: not attacking'};
 function runningLabel(){
   const k=cfg?.layers[status.activeLayer]?.keys[status.runningKey];if(!k)return 'Button '+(status.runningKey+1);

@@ -648,7 +648,8 @@ are gone with Wi-Fi readings).
   console and the dashboard always show "in reach 2 (7)": 2 mobs inside your
   reach (the red box with F10), 7 seen in all. Smart attacks only when the
   first number is above 0; at the home zone's edge only mobs on the inside
-  count (with mobs in reach only outside, it steps back in first).
+  count (with mobs in reach only outside, it stands and waits; it steps
+  back in, just inside the line, only once it's past it).
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.

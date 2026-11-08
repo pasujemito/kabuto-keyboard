@@ -173,6 +173,16 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking \(% of runs\).*0%: off: attacks on the spot.*100%: always on the move.*Default: 60%/s);
   assert.match(await page.locator('#dynamicMain').textContent(),/How often it flips direction \(%\).*0%: always faces the same way.*20%: occasionally flips sides/s);
   assert.match(await page.locator('#dynamicAware').textContent(),/10%: turns 10% from each edge: uses the middle 80% of the map/);
+  // Attack off: support only. Everything about fighting greys out and says so; potions and skills don't.
+  assert(await page.getByLabel('Attack',{exact:true}).isChecked());
+  await page.getByLabel('Attack',{exact:true}).uncheck();
+  assert.match(await page.locator('.setting[data-key="attacks_per_set"] .unused-note').textContent(),/Attack is off \(support only/);
+  assert.match(await page.locator('.setting[data-key="smart"] .unused-note').textContent(),/Attack is off/);
+  assert.equal(await page.locator('.setting[data-key="skill.chance"].unused').count(),0);
+  assert.match(await page.locator('#dynamicMain').textContent(),/off: support only: never jumps, attacks or moves/);
+  await page.getByRole('button',{name:'Default for Attack',exact:true}).click();
+  assert(await page.getByLabel('Attack',{exact:true}).isChecked());
+  assert.equal(await page.locator('.setting[data-key="attacks_per_set"] .unused-note').textContent(),'');
   assert.match(await page.locator('#dynamicPotions').textContent(),/HP drink below.*0%: ignores the bar.*Default: 50%/s);
   await page.getByLabel('Mana drink below (%)',{exact:true}).fill('70');await page.getByRole('button',{name:'Default for Mana drink below',exact:true}).click();
   assert.equal(await page.getByLabel('Mana drink below (%)',{exact:true}).inputValue(),'30');

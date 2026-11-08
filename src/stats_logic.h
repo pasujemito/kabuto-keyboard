@@ -147,7 +147,8 @@ const int HOME_SETTLE = 60;   // tenths of a minimap width: "at home" within thi
 const uint32_t MAP_CHANGE_MS = 3000;   // another map's name must hold this long before home moves there
 const uint32_t HOME_RETRY_MS = 20000;  // couldn't walk home in 10 s: home is kept, walking back tried again after this
 enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT,
-                             SMART_NO_READINGS, SMART_NO_DETECTOR };
+                             SMART_NO_READINGS, SMART_NO_DETECTOR, SMART_SUPPORT };
+const uint32_t SUPPORT_CHECK_MS = 1000;   // support only (attack off): potions and skills are looked at this often
 struct SmartInput {
     bool fresh = false;
     uint8_t mobs = 0;              // in reach: MOB_LEFT | MOB_RIGHT | MOB_READ ...

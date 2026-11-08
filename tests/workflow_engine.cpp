@@ -574,6 +574,25 @@ int main() {
                   liveStatsUpdate(500,500,-1,LIVE_OK,420,500,0,mapPos?1420:LIVE_NO_POS,500);
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home!=(v.homeOnMap?1420:420))sameSpot=false;});
          assert(sameSpot&&hopsWhileHeld(L)==0&&hopsWhileHeld(R)==0&&attacks()==4);}
+        // Support only (attack off): never jumps, attacks or presses an arrow; drinks by the
+        // bar, uses skills once their wait is over, until stopped; stops on death too.
+        {DynamicPattern g=p;g.attacking=false;g.potions.clear();g.skills.clear();
+         DynamicSkill hp;hp.id="hp";hp.keycode=6;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={3000,3000};hp.belowPercent=50;hp.hold={50,50};hp.after={100,100};g.potions.push_back(hp);
+         DynamicSkill buff;buff.id="buff";buff.keycode=20;buff.chancePermille=1000;buff.repeats={1,1};buff.cooldown={4000,4000};buff.hold={50,50};buff.after={500,500};g.skills.push_back(buff);
+         aware.setPattern(g);engine.dynamicSkillTimers_.clear();uint32_t t0=0;calls=0;bool told=false;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();liveStatsUpdate(300,800,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT);   // HP 30%: low
+                  told=told||patternViewSnapshot().action==SMART_SUPPORT;if(millis()-t0>9500)engine.stopFlag_=true;});
+         auto presses=[&](uint8_t key){int n=0;for(auto e:hidEvents)if(e.down&&e.key==key)++n;return n;};
+         bool movement=false;for(auto e:hidEvents)if(e.down&&(e.mods||e.key==L||e.key==R))movement=true;
+         assert(!movement&&attacks()==0&&told);
+         assert(presses(6)>=3&&presses(6)<=4);    // HP every 3 s while low
+         assert(presses(20)>=2&&presses(20)<=3);  // the buff every 4 s (plus its own time)
+         assert(held.empty()&&!heldMods);engine.stopFlag_=false;
+         // Death stops it.
+         uint32_t dieAt=millis()+1500;calls=0;
+         playWith([](long){return 0L;},[&]{liveStatsUpdate(800,800,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});
+         assert(engine.stopFlag_&&held.empty());engine.stopFlag_=false;
+         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;}
         // Home is set at the start of every pattern (not only Smart), for the
         // dashboard and the game layer; a home from the dot is set again once map
         // positions come, rather than compared with them.

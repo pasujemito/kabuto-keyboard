@@ -50,6 +50,7 @@ struct DynamicPattern {
     uint16_t homeRangePermille = 0;   // how far from home you may drift, Smart or not (0 = no home)
     uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
     bool approach = false;            // smart: walk to mobs you can see but not reach
+    bool attacking = true;            // off: support only, no jump/attack/arrows, just potions and skills until stopped
     DynamicRange walkHold{280,650};   // smart: walking (home or to mobs) holds the arrow, jumping after each of these
     uint16_t glidePermille = 0;       // share of sets moving while jump-attacking (arrow held); >0 also turns in the air
     // Defaults match patterns saved before keys were configurable.

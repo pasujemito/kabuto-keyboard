@@ -627,6 +627,27 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     }
                     return false;
                 };
+                // Support only (attack off): no jump, attack or arrows. Potions (by the bars, else
+                // their timers) and skills (once their wait is over, at their chance) are looked at
+                // every SUPPORT_CHECK_MS until stopped, or until death, a disconnect or the test popup.
+                if(!pattern->attacking){
+                    logStep(s,pc,stepStartedAt,0,true,"support only: potions and skills, no attacking");
+                    publish(SMART_SUPPORT);
+                    while(!stop){
+                        LiveStats live=liveStatsSnapshot();
+                        if(stopReason(live))break;
+                        for(const auto& potion:pattern->potions)if(!stop&&potionDue(potion))drink(potion);
+                        std::vector<size_t> ready;
+                        for(size_t i=0;i<pattern->skills.size();++i)if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))ready.push_back(i);
+                        if(pattern->shuffleSkills)for(size_t i=ready.size();i>1;--i)std::swap(ready[i-1],ready[random((long)i)]);
+                        for(size_t index:ready){if(stop)break;use(pattern->skills[index],pattern->id+"/"+pattern->skills[index].id);}
+                        std::vector<Step> rest{delay(SUPPORT_CHECK_MS)};executeSteps(rest,stop,state,depth+1);
+                    }
+                    patternViewSet(PatternView());
+                    releaseTracked();
+                    logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,"support only: stopped");
+                    break;
+                }
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);if(live.fresh&&strcmp(live.map,"-"))lastMap=live.map;}
                 publish(SMART_ATTACK);

@@ -5,6 +5,15 @@ and show up in the pad's **Updates** panel.
 
 ## 1.18.15
 
+- 🧪 **Support only: potions and skills, no attacking**: a new **Attack**
+  switch at the top of each pattern. Off, the pad never jumps, attacks or
+  presses an arrow: it drinks potions (by your bars with the screen reader,
+  else their timers) and uses skills and buffs once their wait is over
+  (checked about every second, at their chance) until you press the button
+  again, or you die, disconnect or get the test popup. Play by hand
+  meanwhile. Everything about fighting greys out in the editor while it's
+  off; the dashboard shows **🧪 Support only**. Saved patterns keep attacking
+
 - 🏠 **Home stays where you pressed the button**: it could move by itself.
   Three causes, all fixed: the map's name misread for a moment (something
   over it, or "-") counted as a new map and set a new home, now only a name

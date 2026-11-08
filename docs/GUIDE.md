@@ -614,6 +614,12 @@ are gone with Wi-Fi readings).
 - **Mobs in reach are always faced** when the screen reader sees them (the
   old Face mobs switch is gone); the flip-direction % decides only when
   there's no mob to face.
+- **Attack** (on by default): off makes the pattern **support only**. It
+  never jumps, attacks or presses an arrow; it drinks potions (by your bars,
+  else their timers) and uses skills and buffs once their wait is over,
+  checked about every second, until you press the button again (or you die,
+  disconnect or get the test popup). Play by hand meanwhile; keep one
+  pattern for full auto and one support-only pattern on another button.
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.

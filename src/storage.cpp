@@ -93,6 +93,9 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (!chance(o["auto_pause"],p.autoPausePermille) || p.autoPausePermille>900) return false;
     if (!o["approach"].isNull() && !o["approach"].is<bool>()) return false;
     p.approach = o["approach"] | false;
+    // "attack": false = support only (potions and skills, no attacking). Missing: on.
+    if (!o["attack"].isNull() && !o["attack"].is<bool>()) return false;
+    p.attacking = o["attack"] | true;
     if (!range(o["walk_hold"],p.walkHold,50,5000)) return false;   // walking: time between jumps, arrow held
     // "glide": the share of sets in which the arrow stays held through the
     // jump-attacks (fluid movement; turns made in the air). 0 / missing: off.
@@ -413,7 +416,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
-            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;
+            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;d["attack"]=p->attacking;
             range(d,"walk_hold",p->walkHold);d["glide"]=p->glidePermille/1000.0;
             auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
             JsonObject keys=d["keys"].to<JsonObject>();

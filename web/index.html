@@ -259,6 +259,10 @@
   .setting-default{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
   .setting-default .btn{padding:2px 8px;font-size:11px}
   .dynamic-field.check{display:flex;align-items:center;gap:8px}
+  .dynamic-field.backups{grid-template-columns:1fr 1fr}
+  .dynamic-field.backups input{width:100%;min-width:0;padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px}
+  .dynamic-field.backups>.field-label{grid-column:1/-1}
+  .dynamic-field select{width:100%;min-width:0;padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px}
   .dynamic-skill{padding:12px;border:1px solid var(--edge);border-radius:8px;margin:10px 0;display:grid;gap:12px}
   .dynamic-skill details>.dynamic-range,.dynamic-skill details>.dynamic-field{margin:10px 0}
   #dynamicDialog{overflow:auto}#dynamicDialog>header{position:sticky;top:-16px;background:var(--panel);z-index:1}#dynamicName{width:100%;margin:10px 0}
@@ -919,9 +923,9 @@ const DYNAMIC_KEY_SLOTS=[['jump','Jump'],['attack','Attack'],['left','Turn left'
 const DYNAMIC_DEFAULT_KEYS={jump:'ALT',attack:'CTRL',left:'LEFT',right:'RIGHT'};
 const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
-  return {id,enabled,key:id==='hp'?'C':'V',below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
+  return {id,enabled,key:id==='hp'?'C':'V',backup_keys:[],below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,attack:true,skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -933,7 +937,7 @@ function normalizeDynamicPattern(p){
   for(const [slot,name] of Object.entries(DYNAMIC_DEFAULT_KEYS))if(!p.keys[slot])p.keys[slot]=name;
   if(!Array.isArray(p.potions))p.potions=[];
   p.potions=['hp','mana'].map(id=>p.potions.find(x=>x?.id===id)||defaultPotion(id,false));
-  for(const x of p.potions){if(x.below===undefined)x.below=0;if(x.bar_max===undefined)x.bar_max=0;if(x.per_tap===undefined)x.per_tap=0;}   // saved before live bars / amounts
+  for(const x of p.potions){if(!Array.isArray(x.backup_keys))x.backup_keys=[];x.backup_keys=x.backup_keys.map(b=>typeof b==='string'?{key:b,per_tap:0}:b);if(x.below===undefined)x.below=0;if(x.bar_max===undefined)x.bar_max=0;if(x.per_tap===undefined)x.per_tap=0;}   // saved before live bars / amounts
   // Saved before screen awareness: all off.
   if(p.edge_margin===undefined)p.edge_margin=0;
   if(p.stuck_after_ms===undefined)p.stuck_after_ms=0;
@@ -944,7 +948,8 @@ function normalizeDynamicPattern(p){
   if(p.auto_pause===undefined)p.auto_pause=0;   // saved before auto-pause / walking to mobs
   if(p.approach===undefined)p.approach=false;
   if(p.walk_hold===undefined)p.walk_hold=[280,650];
-  if(p.glide===undefined)p.glide=0;   // saved before fluid movement: turns tapped on the ground, as before
+  if(p.glide===undefined)p.glide=0;
+  if(p.attack===undefined)p.attack=true;   // saved before support-only mode: attacks   // saved before fluid movement: turns tapped on the ground, as before
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -973,12 +978,18 @@ function validateDynamicPattern(p){
   if(typeof p.auto_pause!=='number'||!(p.auto_pause>=0&&p.auto_pause<=.9))throw new Error('Auto-pause: enter a percentage from 0 to 90.');
   if(typeof p.approach!=='boolean')throw new Error('Choose whether to walk to mobs.');
   range(p.walk_hold,'Walking hops',50,5000);
+  if(typeof p.attack!=='boolean')throw new Error('Choose whether the pattern attacks.');
   if(typeof p.glide!=='number'||!(p.glide>=0&&p.glide<=1))throw new Error('Move while attacking: enter a percentage from 0 to 100.');
   if(!Array.isArray(p.potions)||p.potions.length>2||new Set(p.potions.map(x=>x.id)).size!==p.potions.length||p.potions.some(x=>!POTION_LABELS[x.id]))throw new Error('Use one HP and one Mana entry.');
   for(const x of p.potions){
     const label=POTION_LABELS[x.id];
     if(typeof x.enabled!=='boolean')throw new Error('Choose whether '+label+' is on.');
     tapKey(x.key,label+' key');range(x.repeats,label+' taps',1,10);
+    if(!Array.isArray(x.backup_keys)||x.backup_keys.length>3)throw new Error(label+' backup keys: up to 3.');
+    x.backup_keys.forEach((b,i)=>{tapKey(b?.key,label+' backup key '+(i+1));
+      if(!Number.isInteger(b.per_tap)||b.per_tap<0||b.per_tap>10000000)throw new Error(label+' backup key '+(i+1)+' per tap: enter a whole number, 0 = same as the main key.');
+      if(b.per_tap&&(!x.bar_max||b.per_tap>x.bar_max))throw new Error(label+' backup key '+(i+1)+' per tap: set the bar total first, and no more than it.');});
+    if(new Set([x.key,...x.backup_keys.map(b=>b.key)]).size!==x.backup_keys.length+1)throw new Error(label+' backup keys: each must be a different key.');
     if(!Number.isInteger(x.below)||x.below<0||x.below>100)throw new Error(label+' drink below: enter a percentage from 0 to 100.');range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
     try{range(x.every_ms,'',0,86400000);}catch(e){throw new Error(label+' every: enter an ordered range from 0 to 86400 seconds.');}
     for(const v of [x.bar_max,x.per_tap])if(!Number.isInteger(v)||v<0||v>10000000)throw new Error(label+' amounts: enter whole numbers from 0 to 10,000,000.');
@@ -1031,6 +1042,8 @@ const SKILL_DEFAULT={enabled:false,chance:.1,repeats:[1,1],hold:[85,110],after:[
 // Each setting: a title in plain words, one sentence on what it does, and
 // what its values mean, as bullet points.
 const HELP={
+  attacking:{title:'Attack',what:'Whether this pattern fights at all.',
+    points:[['on','jump-attacks, with all the settings below'],['off','support only: never jumps, attacks or moves; it just drinks potions and uses skills (checked about every second) until you press the button again, or you die, disconnect or get the test popup. Play by hand meanwhile']]},
   attacks_per_set:{title:'Attacks in a row before it may turn',what:'How many jump-attacks it does facing one way. Each run picks a number between Min and Max.',
     points:[['1–3','turns very often'],['4–7','medium runs'],['8–10','long runs one way']]},
   sets:{title:'Runs per button press',what:'How many runs of attacks one button press plays. Then it stops by itself.',
@@ -1065,6 +1078,8 @@ const HELP={
     points:[['0%','disabled: no home, wanders freely'],['20%','narrow (use on platforms)'],['50%','wide (use on flat ground)']]},
   'potion.enabled':{title:'Use this potion',what:'',points:[['on','drinks it'],['off','never drinks it']]},
   'potion.key':{title:'Potion key',what:'The key your game drinks this potion with.'},
+  'potion.backup_keys':{title:'Backup keys',what:'More keys with the same kind of potion, used in turn when one runs out. It notices from the bar: two drinks in a row that don\'t refill it mean that key is empty, so it moves to the next one (and back to the main key after the last). Needs the screen reader; without it only the main key is used. Next to each key, what one tap of it restores, if it differs from the main key (used with Bar total).',
+    points:[['none','only the main key'],['1–3 keys','for example B and N for your second and third HP potions'],['per tap empty','restores the same as the main key'],['per tap 300','a weaker potion: tapped more to fill the same gap']]},
   'potion.below':{title:'Drink when the bar is below (%)',what:'Goes by your bar on screen (needs the screen reader; without it, the timer below is used).',
     points:[['0%','ignores the bar: timer only'],['30%','drinks when it\'s low'],['70%','keeps the bar high (uses more potions)']]},
   'potion.bar_max':{title:'Bar total (optional)',what:'Your bar\'s full amount. With Restored per tap too, it taps just enough to refill.',points:[['0','off: uses Taps'],['5000','for 5000 HP']]},
@@ -1074,7 +1089,7 @@ const HELP={
   'potion.hold':{title:'Tap: hold (ms)',what:'How long each tap is held down.'},'potion.after':{title:'Tap: pause after (ms)',what:'Pause after each tap.'},
   'skill.enabled':{title:'Use this skill',what:'',points:[['on','uses it'],['off','never uses it (it stays in the list)']]},
   'skill.key':{title:'Skill key',what:'The key your game uses this skill with.'},
-  'skill.chance':{title:'Chance after each run (%)',what:'After each run of attacks, once its wait is over, the chance it uses this skill.',
+  'skill.chance':{title:'Chance after each run (%)',what:'After each run of attacks (with Attack off: at each check, about every second), once its wait is over, the chance it uses this skill.',
     points:[['0%','never'],['10%','now and then'],['50%','about every other run'],['100%','as soon as it\'s ready']]},
   'skill.repeats':{title:'Taps',what:'How many times it taps the key for one use.'},
   'skill.cooldown_ms':{title:'Wait before using it again (seconds)',what:'In seconds, counted from the end of each use.',points:[['0','no wait'],['30','for a 30 s buff or cooldown']]},
@@ -1083,9 +1098,11 @@ const HELP={
 // What isn't used right now, and why: shown greyed out with the reason.
 function unusedReasons(p){
   const r={},live=!!(status&&status.live&&status.live.fresh);
-  if(!live)for(const k of ['edge_margin','stuck_after_ms','smart','auto_pause','approach','home_range','walk_hold','potion.below','potion.bar_max','potion.per_tap'])
+  if(!live)for(const k of ['edge_margin','stuck_after_ms','smart','auto_pause','approach','home_range','walk_hold','potion.below','potion.bar_max','potion.per_tap','potion.backup_keys'])
     r[k]='Not in use right now: no readings from the PC screen reader (run screen_stats.py with the pad on the USB cable).';
   if(!p.smart)for(const k of ['auto_pause','approach'])r[k]=r[k]||'Not used: Smart is off.';
+  if(!p.attack)for(const k of ['attacks_per_set','sets','turn_chance','tempo_drift','glide','jump_to_attack','attack_to_jump_up','jump_up_to_attack_up','combo_gap','dir_hold','dir_after',
+    'edge_margin','stuck_after_ms','smart','auto_pause','approach','walk_hold','home_range','jump','attack','left','right'])r[k]='Not used: Attack is off (support only: potions and skills).';
   if(p.glide>0)for(const k of ['dir_hold','dir_after'])r[k]='Not used: turns happen in the air while Move while attacking is above 0%.';
   if(!(p.home_range>0)&&!(p.smart&&p.approach))r.walk_hold=r.walk_hold||'Not used: nothing walks (Distance from home is 0%, and Walk to mobs is off or Smart is off).';
   return r;
@@ -1159,6 +1176,18 @@ function renderDynamicPotions(){
     add(dynamicCheck('Enable '+label,label,potion.enabled,v=>potion.enabled=v),'enabled','on/off',onOff(def.enabled),()=>potion.enabled=def.enabled);
     const keyField=el('label','dynamic-field');keyField.append(label+' key');keyField.appendChild(dynamicKeySelect(label+' key',potion.key,dynamicTapKeys(),v=>potion.key=v));
     add(keyField,'key','key',def.key,()=>potion.key=def.key);
+    const backups=el('div','dynamic-field backups'),title=el('span','field-label');title.textContent=label+' backup keys';backups.appendChild(title);
+    // Each backup: its key, and what one tap of it restores (0 = the same as the main key).
+    const rows=[];
+    const collect=()=>{potion.backup_keys=rows.map(([s,n])=>({key:s.value,per_tap:n.value===''?0:Math.round(Number(n.value))})).filter(b=>b.key);dynamicDirty=true;$('#dynamicError').textContent='';};
+    for(let i=0;i<3;i++){
+      const b=potion.backup_keys[i]||{key:'',per_tap:0},select=el('select'),amount=el('input');select.setAttribute('aria-label',label+' backup key '+(i+1));
+      for(const k of ['',...(b.key&&!dynamicTapKeys().includes(b.key)?[b.key]:[]),...dynamicTapKeys()]){const o=el('option');o.value=k;o.textContent=k||'—';select.appendChild(o);}
+      select.value=b.key;amount.type='number';amount.min=0;amount.step=1;amount.value=b.per_tap||'';amount.placeholder='per tap';
+      amount.setAttribute('aria-label',label+' backup key '+(i+1)+' restored per tap');
+      select.onchange=collect;amount.oninput=collect;rows.push([select,amount]);backups.append(select,amount);
+    }
+    add(backups,'backup_keys','backup keys','none',()=>potion.backup_keys=[]);
     add(dynamicNumber(label+' drink below (%)',potion.below,0,100,1,n=>potion.below=Number.isFinite(n)?Math.round(n):NaN,label+' drink below (%) · 0 = timer only'),'below','drink below',def.below+'%',()=>potion.below=def.below);
     add(dynamicNumber(label+' bar total',potion.bar_max,0,10000000,1,n=>potion.bar_max=Number.isFinite(n)?Math.round(n):NaN,label+' bar total (e.g. 5000) · 0 = off'),'bar_max','bar total',String(def.bar_max),()=>potion.bar_max=def.bar_max);
     add(dynamicNumber(label+' per tap',potion.per_tap,0,10000000,1,n=>potion.per_tap=Number.isFinite(n)?Math.round(n):NaN,label+' restored per tap (e.g. 800)'),'per_tap','per tap',String(def.per_tap),()=>potion.per_tap=def.per_tap);
@@ -1174,6 +1203,7 @@ function renderDynamicPotions(){
 function renderDynamicFields(){
   const main=$('#dynamicMain'),p=dynamicDraft,d=dynamicDefault,redo=renderDynamicFields;main.replaceChildren();
   const add=(box,node,key,label,text,reset)=>box.appendChild(helped(node,key,label,text,()=>{reset();redo();}));
+  add(main,dynamicCheck('Attack','Attack (off: potions and skills only)',p.attack,v=>p.attack=v),'attacking','Attack',onOff(d('attack')),()=>p.attack=d('attack'));
   for(const key of ['attacks_per_set','sets']){const [,label,min,max]=DYNAMIC_RANGES.find(r=>r[0]===key);add(main,dynamicRange(label,p[key],min,max),key,label,span(d(key)),()=>p[key]=copy(d(key)));}
   add(main,dynamicNumber('Turn around after a set (%)',p.turn_chance*100,0,100,.1,n=>p.turn_chance=n/100),'turn_chance','Turn around after a set',pct(d('turn_chance')),()=>p.turn_chance=d('turn_chance'));
   add(main,dynamicNumber('Tempo drift (%)',p.tempo_drift*100,0,30,1,n=>p.tempo_drift=n/100),'tempo_drift','Tempo drift',pct(d('tempo_drift')),()=>p.tempo_drift=d('tempo_drift'));
@@ -2078,7 +2108,7 @@ async function pollMacroLog(){
 /* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
 // What a playing dynamic pattern is doing, as /api/status reports it.
 const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Walking home',approach:'🚶 Walking to mobs',
-  noreadings:'⚠ No readings from the PC: not attacking',nodetector:'⚠ No mob detection on this map: not attacking'};
+  noreadings:'⚠ No readings from the PC: not attacking',support:'🧪 Support only: potions & skills',nodetector:'⚠ No mob detection on this map: not attacking'};
 function runningLabel(){
   const k=cfg?.layers[status.activeLayer]?.keys[status.runningKey];if(!k)return 'Button '+(status.runningKey+1);
   const a=assignmentFor(k);return k.name||(a.ids.length?recordingName(a.ids[0]):'')||'Button '+(status.runningKey+1);

@@ -144,8 +144,11 @@ const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4, MOB_READ = 8;
 // detector on this map: Smart can't tell where mobs are, so it stands still
 // (SMART_NO_READINGS / SMART_NO_DETECTOR) rather than attack blindly.
 const int HOME_SETTLE = 60;   // tenths of a minimap width: "at home" within this (3% once walking)
+const uint32_t MAP_CHANGE_MS = 3000;   // another map's name must hold this long before home moves there
+const uint32_t HOME_RETRY_MS = 20000;  // couldn't walk home in 10 s: home is kept, walking back tried again after this
 enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT,
-                             SMART_NO_READINGS, SMART_NO_DETECTOR };
+                             SMART_NO_READINGS, SMART_NO_DETECTOR, SMART_SUPPORT };
+const uint32_t SUPPORT_CHECK_MS = 1000;   // support only (attack off): potions and skills are looked at this often
 struct SmartInput {
     bool fresh = false;
     uint8_t mobs = 0;              // in reach: MOB_LEFT | MOB_RIGHT | MOB_READ ...
@@ -249,6 +252,34 @@ struct StuckWatch {
         if (now - since < afterMs) return 0;
         since = now;
         return ++strikes >= 2 ? 2 : 1;
+    }
+};
+
+// ---- backup potion keys ---------------------------------------------------------
+// A potion with backup keys (more of the same kind) watches its bar: a drink is
+// checked POTION_CHECK_MS later, and POTION_MISSES drinks in a row that didn't
+// raise the bar by POTION_RISE (tenths of a %) mean that key ran out: the next
+// key is used, round to the first again after the last. Without fresh readings
+// nothing is judged.
+const uint32_t POTION_CHECK_MS = 2000;
+const int POTION_RISE = 5;
+const uint8_t POTION_MISSES = 2;
+struct PotionKeys {
+    uint8_t active = 0, count = 1, misses = 0;   // the key in use (0 = the main one) of `count`
+    bool armed = false; int before = 0; uint32_t at = 0;
+    void drank(bool fresh, int value, uint32_t now) {
+        if (count < 2 || !fresh || value < 0) return;
+        armed = true; before = value; at = now + POTION_CHECK_MS;
+    }
+    // True when it moved on to the next key.
+    bool check(bool fresh, int value, uint32_t now) {
+        if (!armed || (int32_t)(now - at) < 0) return false;
+        armed = false;
+        if (!fresh || value < 0) return false;
+        if (value >= before + POTION_RISE) { misses = 0; return false; }
+        if (++misses < POTION_MISSES) return false;
+        misses = 0; active = (uint8_t)((active + 1) % count);
+        return true;
     }
 };
 

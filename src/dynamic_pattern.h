@@ -28,6 +28,8 @@ struct DynamicSkill {
     DynamicRange cooldown{0,0}; // wait after each use; a fresh draw every time
     uint8_t belowPercent = 0;   // potions: with live bars, drink below this % (0 = timer only)
     uint32_t barMax = 0, perTap = 0;   // potions: the bar's real total and what one tap restores (0 = taps range)
+    std::vector<uint8_t> backupKeys;   // potions: more keys of the same kind, used in turn when one runs out (up to 3)
+    std::vector<uint32_t> backupPerTap;   // what each backup restores per tap (0: the same as perTap)
 };
 struct DynamicPattern {
     std::string id;
@@ -50,6 +52,7 @@ struct DynamicPattern {
     uint16_t homeRangePermille = 0;   // how far from home you may drift, Smart or not (0 = no home)
     uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
     bool approach = false;            // smart: walk to mobs you can see but not reach
+    bool attacking = true;            // off: support only, no jump/attack/arrows, just potions and skills until stopped
     DynamicRange walkHold{280,650};   // smart: walking (home or to mobs) holds the arrow, jumping after each of these
     uint16_t glidePermille = 0;       // share of sets moving while jump-attacking (arrow held); >0 also turns in the air
     // Defaults match patterns saved before keys were configurable.
@@ -74,6 +77,10 @@ inline std::string dynamicKeyProblem(const DynamicPattern& p) {
         for (const auto& s : *list) {
             DynamicKey k = dynamicKeycode(s.keycode);
             if (k == p.jump || k == p.attack || k == p.left || k == p.right) return "skills and potions can't use a movement key";
+            for (uint8_t b : s.backupKeys) {
+                DynamicKey bk = dynamicKeycode(b);
+                if (bk == p.jump || bk == p.attack || bk == p.left || bk == p.right) return "skills and potions can't use a movement key";
+            }
         }
     return "";
 }

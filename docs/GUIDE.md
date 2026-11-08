@@ -614,6 +614,19 @@ are gone with Wi-Fi readings).
 - **Mobs in reach are always faced** when the screen reader sees them (the
   old Face mobs switch is gone); the flip-direction % decides only when
   there's no mob to face.
+- **Attack** (on by default): off makes the pattern **support only**. It
+  never jumps, attacks or presses an arrow; it drinks potions (by your bars,
+  else their timers) and uses skills and buffs once their wait is over,
+  checked about every second, until you press the button again (or you die,
+  disconnect or get the test popup). Play by hand meanwhile; keep one
+  pattern for full auto and one support-only pattern on another button.
+- **Backup potion keys**: each of HP and Mana can have up to 3 more keys
+  (your second and third potions of that kind). After a drink the pad looks
+  at the bar 2 s later; two drinks in a row that don't raise it mean that
+  key ran out, so it uses the next one, and goes back to the main key after
+  the last. Needs the screen reader's bar readings. Each backup can have its
+  own **restored per tap** (empty: the same as the main key), so with Bar
+  total set it taps just enough for whichever potion is in use.
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.
@@ -643,17 +656,19 @@ are gone with Wi-Fi readings).
       that with no mobs in reach, or twice that whatever's around, and it
       walks back. This part works with Smart off too;
     - **Home is where you press the button**: set by itself where you stand
-      when any dynamic pattern starts (or where you arrive on a new map), and
+      when any dynamic pattern starts (or where you arrive on a new map: a
+      map name it knows, showing for 3 s; a name misread for a moment never
+      moves home), and
       shown on the dashboard and on the game layer's minimap (a green line,
       the range a band under it; the strip says "you 41% · home 37% ◀", amber
       when out of range). To hunt somewhere else, walk there and press it
-      again. Only Smart walks back to it;
+      again. Nothing else moves it;
     - **It hunts around home**: it fights mobs in reach where they are and
       walks to ones in sight (within ¾ of the range), but once there's
       nothing to fight it walks back to home (when more than 6% of the
       minimap away, until within 3%), and auto-pause waits there too. If it
-      can't get home in 10 s (a wall, another platform), home moves to where
-      it is;
+      can't get home in 10 s (a wall, another platform), home stays where it
+      is and walking back is tried again 20 s later;
     - **Walking: hop every** (600–1300 ms for new patterns): walking, home or
       to mobs, holds the arrow key down the whole way and hops (a quick jump)
       after each random time in that range, as you would. The arrow is let go

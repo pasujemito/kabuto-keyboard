@@ -80,14 +80,17 @@ int main(){
     assert(pattern&&pattern->potions[1].cooldown.max==45000&&pattern->potions[0].after.max==700&&pattern->shuffleSkills);
     // Custom movement keys survive a round trip; potions and skills keep separate shapes.
     String customKeys(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"k","keys":{"jump":"SPACE","attack":"X","left":"A","right":"D"},)"
-                      R"("edge_margin":0.12,"stuck_after_ms":20000,"face_mobs":true,"smart":true,"home_range":0.1,"home_at":0.425,"auto_pause":0.3,"approach":true,"walk_hold":[300,700],"glide":0.6,"potions":[{"id":"mana","key":"V","below":35,"bar_max":5000,"per_tap":800,"every_ms":[1000,2000]}],"skills":[{"id":"s","key":"Q","chance":0.5,"cooldown_ms":3000}]}}]}]}]})");
+                      R"("edge_margin":0.12,"stuck_after_ms":20000,"face_mobs":true,"smart":true,"home_range":0.1,"home_at":0.425,"auto_pause":0.3,"approach":true,"walk_hold":[300,700],"glide":0.6,"attack":false,"potions":[{"id":"mana","key":"V","below":35,"bar_max":5000,"per_tap":800,"every_ms":[1000,2000],"backup_keys":["B",{"key":"N","per_tap":300}]}],"skills":[{"id":"s","key":"Q","chance":0.5,"cooldown_ms":3000}]}}]}]}]})");
     assert(saveRawJson(customKeys,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
     pattern=roundtrip.layers[0].keys[0].steps[0].pattern();
     assert(pattern->jump.keycode==0x2C&&!pattern->jump.mods&&pattern->attack.keycode==0x1B&&pattern->left.keycode==0x04&&pattern->right.keycode==0x07);
     assert(pattern->potions.size()==1&&pattern->potions[0].id=="mana"&&pattern->potions[0].cooldown.max==2000&&pattern->potions[0].chancePermille==1000);
     assert(pattern->potions[0].belowPercent==35&&pattern->potions[0].barMax==5000&&pattern->potions[0].perTap==800);
+    assert(pattern->potions[0].backupKeys.size()==2&&pattern->potions[0].backupKeys[0]==0x05&&pattern->potions[0].backupKeys[1]==0x11);   // B, N
+    assert(pattern->potions[0].backupPerTap.size()==2&&pattern->potions[0].backupPerTap[0]==0&&pattern->potions[0].backupPerTap[1]==300);
+    {std::string saved=readRawJson();assert(saved.find("{\"key\":\"N\",\"per_tap\":300}")!=std::string::npos);}
     assert(pattern->edgeMarginPermille==120&&pattern->stuckAfterMs==20000&&pattern->faceMobs&&pattern->smart&&pattern->homeRangePermille==100);
-    assert(pattern->autoPausePermille==300&&pattern->approach&&pattern->walkHold.min==300&&pattern->walkHold.max==700&&pattern->glidePermille==600);
+    assert(pattern->autoPausePermille==300&&pattern->approach&&pattern->walkHold.min==300&&pattern->walkHold.max==700&&pattern->glidePermille==600&&!pattern->attacking);
     {std::string saved=readRawJson();assert(saved.find("home_at")==std::string::npos);}   // 1.18.6's home_at: loads, ignored, dropped
     assert(pattern->skills[0].keycode==0x14&&pattern->skills[0].cooldown.min==3000&&pattern->skills[0].chancePermille==500);
     {std::string saved=readRawJson();assert(saved.find("\"jump\":\"SPACE\"")!=std::string::npos&&saved.find("\"every_ms\"")!=std::string::npos);}
@@ -96,7 +99,7 @@ int main(){
     assert(saveRawJson(legacyJson,err));assert(loadConfig(cfg));
     pattern=cfg.layers[0].keys[0].steps[0].pattern();
     assert(pattern&&pattern->attacksPerSet.min==3&&pattern->attacksPerSet.max==4&&pattern->sets.min==5&&pattern->sets.max==6);
-    assert(!pattern->autoPausePermille&&!pattern->approach&&pattern->walkHold.min==280&&pattern->walkHold.max==650&&!pattern->glidePermille);   // saved before these: off, default strides
+    assert(!pattern->autoPausePermille&&!pattern->approach&&pattern->walkHold.min==280&&pattern->walkHold.max==650&&!pattern->glidePermille&&pattern->attacking);   // saved before these: off, default strides, attacking
     assert(saveConfig(cfg));
     {std::string saved=readRawJson();assert(saved.find("\"attacks_per_set\"")!=std::string::npos&&saved.find("sides")==std::string::npos);}
     assert(pattern->tempoDriftPermille==0); // absent in older presets: no drift
@@ -162,7 +165,16 @@ int main(){
       R"({"id":"p","walk_hold":[400,300],"skills":[]})",
       R"({"id":"p","walk_hold":[300,6000],"skills":[]})",
       R"({"id":"p","glide":1.5,"skills":[]})",
-      R"({"id":"p","glide":true,"skills":[]})"
+      R"({"id":"p","glide":true,"skills":[]})",
+      R"({"id":"p","attack":"no","skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":["C"]}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":["B","B"]}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":["B","N","M","K"]}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":["LEFT"]}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":"B"}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":[{"key":"B","per_tap":300}]}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","bar_max":1000,"per_tap":500,"backup_keys":[{"key":"B","per_tap":2000}]}],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","bar_max":1000,"per_tap":500,"backup_keys":[{"key":"B","per_tap":"x"}]}],"skills":[]})"
     };
     for(auto bad:badPatterns){
       String raw(std::string("{\"layers\":[{\"keys\":[{\"steps\":[{\"type\":\"dynamic\",\"pattern\":")+bad+"}]}]}]}");

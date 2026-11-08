@@ -173,6 +173,16 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking \(% of runs\).*0%: off: attacks on the spot.*100%: always on the move.*Default: 60%/s);
   assert.match(await page.locator('#dynamicMain').textContent(),/How often it flips direction \(%\).*0%: always faces the same way.*20%: occasionally flips sides/s);
   assert.match(await page.locator('#dynamicAware').textContent(),/10%: turns 10% from each edge: uses the middle 80% of the map/);
+  // Attack off: support only. Everything about fighting greys out and says so; potions and skills don't.
+  assert(await page.getByLabel('Attack',{exact:true}).isChecked());
+  await page.getByLabel('Attack',{exact:true}).uncheck();
+  assert.match(await page.locator('.setting[data-key="attacks_per_set"] .unused-note').textContent(),/Attack is off \(support only/);
+  assert.match(await page.locator('.setting[data-key="smart"] .unused-note').textContent(),/Attack is off/);
+  assert.equal(await page.locator('.setting[data-key="skill.chance"].unused').count(),0);
+  assert.match(await page.locator('#dynamicMain').textContent(),/off: support only: never jumps, attacks or moves/);
+  await page.getByRole('button',{name:'Default for Attack',exact:true}).click();
+  assert(await page.getByLabel('Attack',{exact:true}).isChecked());
+  assert.equal(await page.locator('.setting[data-key="attacks_per_set"] .unused-note').textContent(),'');
   assert.match(await page.locator('#dynamicPotions').textContent(),/HP drink below.*0%: ignores the bar.*Default: 50%/s);
   await page.getByLabel('Mana drink below (%)',{exact:true}).fill('70');await page.getByRole('button',{name:'Default for Mana drink below',exact:true}).click();
   assert.equal(await page.getByLabel('Mana drink below (%)',{exact:true}).inputValue(),'30');
@@ -207,6 +217,14 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('20');
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   await page.getByLabel('Skill 2 key',{exact:true}).selectOption('H');
+  // Backup potion keys: none by default; the same key twice is refused; one is kept.
+  await page.locator('#dynamicPotions').evaluate(e=>e.closest('details').open=true);
+  assert.equal(await page.getByLabel('HP backup key 1',{exact:true}).inputValue(),'');
+  await page.getByLabel('HP backup key 1',{exact:true}).selectOption('D');await page.getByLabel('HP backup key 2',{exact:true}).selectOption('D');
+  await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'HP backup keys: each must be a different key.');
+  await page.getByLabel('HP backup key 2',{exact:true}).selectOption('');
+  await page.getByLabel('HP backup key 1 restored per tap',{exact:true}).fill('300');   // a weaker potion than the main one
   const dynamicBounds=await page.locator('#dynamicDialog').boundingBox();assert(dynamicBounds.x>=0&&dynamicBounds.x+dynamicBounds.width<=390);
   assert(await page.locator('#dynamicDialog').evaluate(d=>d.scrollWidth<=d.clientWidth));
   await page.screenshot({path:'/tmp/kabuto-dynamic-mobile.png'});
@@ -223,6 +241,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'75');
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
   assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');
+  assert.equal(await page.getByLabel('HP backup key 1',{exact:true}).inputValue(),'D');assert.equal(await page.getByLabel('HP backup key 2',{exact:true}).inputValue(),'');
+  assert.deepEqual(await page.evaluate(()=>cfg.workflows.find(w=>w.steps[0]?.type==='dynamic').steps[0].pattern.potions.map(x=>x.backup_keys)),[[{key:'D',per_tap:300}],[]]);
+  assert.equal(await page.getByLabel('HP backup key 1 restored per tap',{exact:true}).inputValue(),'300');
   assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'15');assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   await page.locator('#dynamicClose').click();
   // Updates: a newer release is announced; installing needs a confirmation.

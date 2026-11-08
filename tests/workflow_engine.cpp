@@ -543,6 +543,67 @@ int main() {
          g.homeRangePermille=0;aware.setPattern(g);calls=0;
          playWith([](long){return 0L;},[&]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,calls==1?300:450,500);});
          assert(hopsWhileHeld(L)==0&&attacks()==3);}
+        // Home stays where the button set it. A map name misread for a moment ("-", or
+        // another name under 3 s) doesn't move it; a new map that stays does.
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={6,6};g.skills.clear();g.potions.clear();g.smart=true;g.homeRangePermille=100;
+         aware.setPattern(g);calls=0;bool moved=false;uint32_t t0=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();uint32_t t=millis()-t0;
+                  const char* map=t>1000&&t<1400?"-":t>2000&&t<3500?"Ellinia":"Henesys";   // flickers, and another name for 1.5 s
+                  seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,map);
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home!=300)moved=true;});
+         assert(!moved&&attacks()==6);
+         g.attacksPerSet={10,10};aware.setPattern(g);calls=0;bool rehomed=false;   // long enough to see the 3 s pass
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();uint32_t t=millis()-t0;
+                  bool there=t>1000;seen(MOB_READ|MOB_LEFT,1,0,40,-1,there?900:300,there?"Ellinia":"Henesys");   // really moved to Ellinia
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home==900)rehomed=true;});
+         assert(rehomed&&attacks()==10);}
+        // Can't walk home within 10 s (a wall): home is kept, and walking back is tried again 20 s later.
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={3,3};g.skills.clear();g.potions.clear();g.smart=true;g.homeRangePermille=100;g.walkHold={280,650};
+         aware.setPattern(g);calls=0;bool moved=false;uint32_t t0=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1){t0=millis();seen(MOB_READ,0,0,-1,-1,300,"Henesys");return;}
+                  seen(MOB_READ,0,0,-1,-1,450,"Henesys");   // drifted 15%, and walking never gets you closer
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home!=300)moved=true;
+                  if(millis()-t0>45000)engine.stopFlag_=true;});   // walk 10 s, give up 20 s, walk 10 s again
+         int walks=0;bool down=false;uint32_t at=0;
+         for(auto e:hidEvents)if(e.key==L){if(e.down){down=true;at=e.at;}else if(down){if(e.at-at>=5000)++walks;down=false;}}
+         assert(!moved&&walks==2&&attacks()==0&&held.empty());engine.stopFlag_=false;}
+        // The map position dropping out and coming back keeps the same home (in the other units).
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={4,4};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=100;
+         aware.setPattern(g);calls=0;bool sameSpot=true;
+         playWith([](long){return 0L;},[&]{++calls;bool mapPos=calls<3||calls>6;   // map position, then the dot only, then the map position again
+                  liveStatsUpdate(500,500,-1,LIVE_OK,420,500,0,mapPos?1420:LIVE_NO_POS,500);
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home!=(v.homeOnMap?1420:420))sameSpot=false;});
+         assert(sameSpot&&hopsWhileHeld(L)==0&&hopsWhileHeld(R)==0&&attacks()==4);}
+        // Support only (attack off): never jumps, attacks or presses an arrow; drinks by the
+        // bar, uses skills once their wait is over, until stopped; stops on death too.
+        {DynamicPattern g=p;g.attacking=false;g.potions.clear();g.skills.clear();
+         DynamicSkill hp;hp.id="hp";hp.keycode=6;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={3000,3000};hp.belowPercent=50;hp.hold={50,50};hp.after={100,100};g.potions.push_back(hp);
+         DynamicSkill buff;buff.id="buff";buff.keycode=20;buff.chancePermille=1000;buff.repeats={1,1};buff.cooldown={4000,4000};buff.hold={50,50};buff.after={500,500};g.skills.push_back(buff);
+         aware.setPattern(g);engine.dynamicSkillTimers_.clear();uint32_t t0=0;calls=0;bool told=false;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();liveStatsUpdate(300,800,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT);   // HP 30%: low
+                  told=told||patternViewSnapshot().action==SMART_SUPPORT;if(millis()-t0>9500)engine.stopFlag_=true;});
+         auto presses=[&](uint8_t key){int n=0;for(auto e:hidEvents)if(e.down&&e.key==key)++n;return n;};
+         bool movement=false;for(auto e:hidEvents)if(e.down&&(e.mods||e.key==L||e.key==R))movement=true;
+         assert(!movement&&attacks()==0&&told);
+         assert(presses(6)>=3&&presses(6)<=4);    // HP every 3 s while low
+         assert(presses(20)>=2&&presses(20)<=3);  // the buff every 4 s (plus its own time)
+         assert(held.empty()&&!heldMods);engine.stopFlag_=false;
+         // Backup keys: the bar never rises after two drinks with the main key: the backup is used.
+         g.potions[0].backupKeys={5};g.skills.clear();aware.setPattern(g);engine.dynamicSkillTimers_.clear();calls=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();liveStatsUpdate(300,800,-1,LIVE_OK,500,500,MOB_READ);   // HP stuck at 30%
+                  if(millis()-t0>9500)engine.stopFlag_=true;});
+         assert(presses(6)==2&&presses(5)==2&&held.empty());engine.stopFlag_=false;
+         // Each key its own amount: HP 30% of 1000 (700 to refill); the main key restores 350 (2 taps),
+         // the backup 100 (7 taps), so the backup is tapped more for the same gap.
+         g.potions[0].barMax=1000;g.potions[0].perTap=350;g.potions[0].backupPerTap={100};aware.setPattern(g);engine.dynamicSkillTimers_.clear();calls=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();liveStatsUpdate(300,800,-1,LIVE_OK,500,500,MOB_READ);
+                  if(millis()-t0>9500)engine.stopFlag_=true;});
+         assert(presses(6)==2*2&&presses(5)>=7&&presses(5)%7==0&&held.empty());engine.stopFlag_=false;   // 2 drinks of 2 taps, then 7 taps a drink
+         // Death stops it.
+         uint32_t dieAt=millis()+1500;calls=0;
+         playWith([](long){return 0L;},[&]{liveStatsUpdate(800,800,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});
+         assert(engine.stopFlag_&&held.empty());engine.stopFlag_=false;
+         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;}
         // Home is set at the start of every pattern (not only Smart), for the
         // dashboard and the game layer; a home from the dot is set again once map
         // positions come, rather than compared with them.

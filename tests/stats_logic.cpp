@@ -158,6 +158,18 @@ int main(){
     assert(std::string(toolKeyName(TOOL_OUTLINES))=="outlines"&&std::string(toolKeyName(99))=="");
     assert(toolKeyFromName("looser")==TOOL_LOOSER&&toolKeyFromName("stricter")==TOOL_STRICTER&&std::string(toolKeyName(TOOL_STRICTER))=="stricter");
     assert(toolKeyFromName("area")==TOOL_AREA&&std::string(toolKeyName(TOOL_AREA))=="area");
+    {   // Backup potion keys: two drinks in a row that don't raise the bar move on to the next key
+        PotionKeys k;k.count=3;
+        k.drank(true,300,0);assert(!k.check(true,300,POTION_CHECK_MS-1));            // not yet
+        assert(!k.check(true,300,POTION_CHECK_MS)&&k.active==0&&k.misses==1);        // one miss
+        k.drank(true,300,5000);assert(k.check(true,302,5000+POTION_CHECK_MS)&&k.active==1);   // two: the first backup
+        k.drank(true,300,9000);assert(!k.check(true,450,9000+POTION_CHECK_MS)&&k.active==1&&k.misses==0);   // it refills: stays
+        k.drank(true,300,0);k.check(true,290,POTION_CHECK_MS);k.drank(true,290,0);assert(k.check(true,280,POTION_CHECK_MS)&&k.active==2);
+        k.drank(true,280,0);k.check(true,280,POTION_CHECK_MS);k.drank(true,280,0);assert(k.check(true,280,POTION_CHECK_MS)&&k.active==0);   // round to the main key
+        k.drank(false,300,0);assert(!k.armed);k.drank(true,-1,0);assert(!k.armed);    // no fresh bar: nothing judged
+        k.drank(true,300,0);assert(!k.check(false,300,POTION_CHECK_MS)&&k.misses==0);  // reading gone by the check: not a miss
+        PotionKeys one;one.drank(true,300,0);assert(!one.armed);                         // no backups: never judged
+    }
     {   // home, told back with each reading
         char f[48];
         homeReplyForm(f,sizeof(f),true,true,1415,true,500);assert(std::string(f)=="home=1415&hm=1&hr=500");

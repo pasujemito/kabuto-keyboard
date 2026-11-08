@@ -93,6 +93,9 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (!chance(o["auto_pause"],p.autoPausePermille) || p.autoPausePermille>900) return false;
     if (!o["approach"].isNull() && !o["approach"].is<bool>()) return false;
     p.approach = o["approach"] | false;
+    // "attack": false = support only (potions and skills, no attacking). Missing: on.
+    if (!o["attack"].isNull() && !o["attack"].is<bool>()) return false;
+    p.attacking = o["attack"] | true;
     if (!range(o["walk_hold"],p.walkHold,50,5000)) return false;   // walking: time between jumps, arrow held
     // "glide": the share of sets in which the arrow stays held through the
     // jump-attacks (fluid movement; turns made in the air). 0 / missing: off.
@@ -132,6 +135,24 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
                 if (!s[k].isNull() && (!s[k].is<uint32_t>() || s[k].as<uint32_t>() > 10000000U)) return false;
             skill.barMax = s["bar_max"] | 0U; skill.perTap = s["per_tap"] | 0U;
             if (!skill.barMax != !skill.perTap || skill.perTap > skill.barMax) return false;
+            // "backup_keys": up to 3 more keys of the same potion, each different:
+            // {"key": "B", "per_tap": 300} (per_tap: what it restores, 0 = the main
+            // key's; needs bar_max), or just "B".
+            JsonVariantConst backups = s["backup_keys"];
+            if (!backups.isNull()) {
+                if (!backups.is<JsonArrayConst>() || backups.size() > 3) return false;
+                for (JsonVariantConst b : backups.as<JsonArrayConst>()) {
+                    JsonVariantConst name = b.is<JsonObjectConst>() ? b["key"] : b;
+                    uint8_t code = name.is<const char*>() ? keycodeFromName(String(name.as<const char*>())) : 0;
+                    if (!code || code == skill.keycode) return false;
+                    for (uint8_t other : skill.backupKeys) if (other == code) return false;
+                    JsonVariantConst amount = b.is<JsonObjectConst>() ? b["per_tap"] : JsonVariantConst();
+                    if (!amount.isNull() && !amount.is<uint32_t>()) return false;
+                    uint32_t perTap = amount | 0U;
+                    if (perTap && (!skill.barMax || perTap > skill.barMax)) return false;
+                    skill.backupKeys.push_back(code); skill.backupPerTap.push_back(perTap);
+                }
+            }
         }
         JsonVariantConst wait = s[potion ? "every_ms" : "cooldown_ms"];
         // A single number is the older fixed interval; a [min,max] range is drawn after each use.
@@ -413,13 +434,15 @@ static void stepToJson(const Step& s, JsonObject o) {
             range(d,"attacks_per_set",p->attacksPerSet);range(d,"sets",p->sets);
             d["turn_chance"]=p->turnChancePermille/1000.0;d["tempo_drift"]=p->tempoDriftPermille/1000.0;d["shuffle_skills"]=p->shuffleSkills;
             d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
-            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;
+            d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;d["attack"]=p->attacking;
             range(d,"walk_hold",p->walkHold);d["glide"]=p->glidePermille/1000.0;
             auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
             JsonObject keys=d["keys"].to<JsonObject>();
             keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);
             JsonArray potions=d["potions"].to<JsonArray>();
-            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
+            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;
+                if(!potion.backupKeys.empty()){JsonArray b=k["backup_keys"].to<JsonArray>();
+                    for(size_t i=0;i<potion.backupKeys.size();++i){JsonObject e=b.add<JsonObject>();e["key"]=keyNameFromCode(potion.backupKeys[i]);e["per_tap"]=i<potion.backupPerTap.size()?potion.backupPerTap[i]:0;}}range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
             JsonArray skills=d["skills"].to<JsonArray>();
             for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;

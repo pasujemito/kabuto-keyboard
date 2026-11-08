@@ -614,6 +614,20 @@ are gone with Wi-Fi readings).
 - **Mobs in reach are always faced** when the screen reader sees them (the
   old Face mobs switch is gone); the flip-direction % decides only when
   there's no mob to face.
+- **Characters** (Recordings → Characters, since 1.19.0): a character holds
+  the movement keys, HP & Mana (with backup keys and amounts) and skills,
+  set once. A pattern's **Use <character>'s keys / HP & Mana / skills**
+  switches (above those sections) take them from the active character
+  instead of its own, each on its own: a pattern can use the character's
+  potions but its own buff list. Up to 4 characters; the ● one is active and
+  every pattern follows it (Save to send the change to the pad). Potion and
+  skill waits are the character's, shared by its patterns. **Make one from
+  "<pattern>"** builds Character 1 from your first pattern and points every
+  pattern with the very same keys, potions or skills at it. Deleting the last
+  character leaves patterns with their own settings. In the saved config:
+  `"characters": [{"id", "name", "keys", "potions", "skills",
+  "shuffle_skills"}]`, `"active_character"`, and per pattern `"char_keys"`,
+  `"char_potions"`, `"char_skills"`.
 - **Attack** (on by default): off makes the pattern **support only**. It
   never jumps, attacks or presses an arrow; it drinks potions (by your bars,
   else their timers) and uses skills and buffs once their wait is over,

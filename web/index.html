@@ -248,6 +248,13 @@
   .dynamic-field{display:grid;gap:6px;font-size:12px;min-width:0;flex:1}
   .dynamic-field input{width:100%;min-width:0;padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px}
   .setting{display:grid;gap:4px;align-content:start;min-width:0}
+  #dynamicDialog.character .pattern-only,#dynamicDialog:not(.character) .character-only{display:none}
+  .char-use{display:grid;gap:4px;margin:8px 0}
+  .char-use label{display:flex;align-items:center;gap:8px;font-weight:600}
+  .char-use .hint{margin:0}
+  .characters-list{display:grid;gap:6px;margin:6px 0}
+  .character-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .character-row label{display:flex;align-items:center;gap:6px;flex:1;min-width:120px}
   .setting-title{font-weight:600;font-size:13px}
   .setting.titled>.dynamic-field>.field-label,.setting.titled>.dynamic-range>legend{display:none}
   .setting-points{margin:0;padding-left:18px;font-size:12px;line-height:1.5;color:var(--muted)}
@@ -268,6 +275,7 @@
   .setting-default{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
   .setting-default .btn{padding:2px 8px;font-size:11px}
   .dynamic-field.check{display:flex;align-items:center;gap:8px}
+  .dynamic-field.check input{width:auto;flex:none;margin:0}
   .dynamic-field.backups{grid-template-columns:1fr 1fr}
   .dynamic-field.backups input{width:100%;min-width:0;padding:8px;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:6px}
   .dynamic-field.backups>.field-label{grid-column:1/-1}
@@ -421,6 +429,7 @@
     <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
     <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
     <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
+    <details class="storage-box" id="charactersBox" open><summary id="charactersSummary">Characters</summary><div class="storage" id="characters" aria-label="Characters"></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
     <button class="btn sm" id="newSetupLayer" title="A layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">🍁 Setup layer</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
@@ -498,36 +507,40 @@
 <dialog class="json-dialog edit-dialog" id="dynamicDialog" aria-labelledby="dynamicTitle">
   <header><h3 id="dynamicTitle">Dynamic jump-attack</h3><button class="btn sm" id="dynamicClose">Close</button></header>
   <label>Name <input class="name" id="dynamicName" aria-label="Dynamic pattern name"></label>
-  <p class="hint">Each button press plays a fresh pattern of jump-attacks. Every setting says in plain words what it does, with its default and a ↺ Default button to go back to it.</p>
-  <div class="recording-actions" id="dynamicPresets" aria-label="Pattern presets"><span class="hint">Start from:</span></div>
-  <p class="hint" id="dynamicPresetHint"></p>
-  <div class="dynamic-main" id="dynamicMain"></div>
-  <p class="hint">A <b>set</b> is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around.</p>
+  <p class="hint pattern-only">Each button press plays a fresh pattern of jump-attacks. Every setting says in plain words what it does, with its default and a ↺ Default button to go back to it.</p>
+  <p class="hint character-only">A character's keys, potions and skills are set here once, and every pattern that uses the character picks them up.</p>
+  <div class="recording-actions pattern-only" id="dynamicPresets" aria-label="Pattern presets"><span class="hint">Start from:</span></div>
+  <p class="hint pattern-only" id="dynamicPresetHint"></p>
+  <div class="dynamic-main pattern-only" id="dynamicMain"></div>
+  <p class="hint pattern-only">A <b>set</b> is a run of jump-attacks facing one way. Between sets, skills may fire and the character may turn around.</p>
   <details><summary id="dynamicKeysSummary">Keys</summary>
+    <div class="char-use pattern-only" data-part="keys"></div>
     <div class="dynamic-main" id="dynamicKeys"></div>
     <p class="hint">Jump and attack can be Alt, Ctrl, Shift or any key. Skills and potions can't use these four keys.</p>
   </details>
-  <details><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
-  <details open><summary>Home</summary>
+  <details class="pattern-only"><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
+  <details open class="pattern-only"><summary>Home</summary>
     <p class="hint">Home is set by itself each time you press the button. The boundary below decides whether it's used.</p>
     <div class="dynamic-main" id="dynamicHome"></div>
   </details>
-  <details><summary>Screen awareness</summary>
+  <details class="pattern-only"><summary>Screen awareness</summary>
     <p class="hint">These need the PC screen reader running (on the USB cable). Without it, Smart stands still (it can't see mobs) and the rest do nothing. Death, a disconnect or the game's test popup always stop playing.</p>
     <div class="dynamic-main" id="dynamicAware"></div>
   </details>
   <details open><summary>HP &amp; Mana</summary>
     <p class="hint">Potions are tapped in the pause right after an attack, so attacking never stops to drink.</p>
+    <div class="char-use pattern-only" data-part="potions"></div>
     <div id="dynamicPotions"></div>
   </details>
   <details open><summary>Skills</summary>
     <p class="hint">Skills are used between sets, standing still. Waits carry on across Stop and Start until the pad restarts.</p>
-    <div id="dynamicSkills"></div><div class="recording-actions"><button class="btn sm" id="dynamicAddSkill">Add skill</button><label><input type="checkbox" id="dynamicShuffle"> Shuffle skill order when several run</label></div>
-    <p class="setting-help">On: when several skills are due, uses them in a random order. Off: in the listed order. Default: on.</p>
+    <div class="char-use pattern-only" data-part="skills"></div>
+    <div class="own-skills"><div id="dynamicSkills"></div><div class="recording-actions"><button class="btn sm" id="dynamicAddSkill">Add skill</button><label><input type="checkbox" id="dynamicShuffle"> Shuffle skill order when several run</label></div>
+    <p class="setting-help">On: when several skills are due, uses them in a random order. Off: in the listed order. Default: on.</p></div>
   </details>
-  <p class="hint">Variable sequences can still repeat. These settings do not guarantee unique patterns or avoidance of detection.</p>
+  <p class="hint pattern-only">Variable sequences can still repeat. These settings do not guarantee unique patterns or avoidance of detection.</p>
   <p role="alert" id="dynamicError"></p>
-  <div class="json-actions"><button class="btn" id="dynamicPreview">Preview example JSON</button><button class="btn primary" id="dynamicApply">Apply pattern</button></div>
+  <div class="json-actions"><button class="btn pattern-only" id="dynamicPreview">Preview example JSON</button><button class="btn primary" id="dynamicApply">Apply pattern</button></div>
 </dialog>
 <dialog class="json-dialog edit-dialog" id="editDialog" aria-labelledby="editTitle">
   <header><h3 id="editTitle">Edit recording</h3><button class="btn sm" id="editClose">Close</button></header>
@@ -590,6 +603,8 @@ function blankKey(){return{name:"",trigger:"tap",steps:[]};}
 function currentBinding(){return selectedWorkflow===null?cfg.layers[selLayer].keys[selKey]:cfg.workflows.find(w=>w.id===selectedWorkflow);}
 function normalize(){
   if(!Array.isArray(cfg.workflows))cfg.workflows=[];
+  if(!Array.isArray(cfg.characters))cfg.characters=[];
+  for(const c of cfg.characters)normalizeCharacter(c);
   for(const workflow of cfg.workflows){if(!workflow.steps)workflow.steps=[];if(!workflow.kind)workflow.kind="nano";for(const step of workflow.steps)if(step.type==='dynamic')normalizeDynamicPattern(step.pattern);}
   if(selectedWorkflow!==null&&!cfg.workflows.some(w=>w.id===selectedWorkflow))selectedWorkflow=null;
   if(typeof cfg.randomizedDelay!=="boolean")cfg.randomizedDelay=true;
@@ -934,7 +949,7 @@ const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
   return {id,enabled,key:id==='hp'?'C':'V',backup_keys:[],below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,attack:true,skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,attack:true,char_keys:!!activeCharacter(),char_potions:!!activeCharacter(),char_skills:!!activeCharacter(),skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -958,7 +973,8 @@ function normalizeDynamicPattern(p){
   if(p.approach===undefined)p.approach=false;
   if(p.walk_hold===undefined)p.walk_hold=[280,650];
   if(p.glide===undefined)p.glide=0;
-  if(p.attack===undefined)p.attack=true;   // saved before support-only mode: attacks   // saved before fluid movement: turns tapped on the ground, as before
+  if(p.attack===undefined)p.attack=true;   // saved before support-only mode: attacks
+  for(const k of ['char_keys','char_potions','char_skills'])if(p[k]===undefined)p[k]=false;   // saved before characters: its own   // saved before fluid movement: turns tapped on the ground, as before
   // A single number is the older fixed skill interval.
   for(const s of Array.isArray(p.skills)?p.skills:[])if(typeof s?.cooldown_ms==='number')s.cooldown_ms=[s.cooldown_ms,s.cooldown_ms];
   return p;
@@ -988,6 +1004,7 @@ function validateDynamicPattern(p){
   if(typeof p.approach!=='boolean')throw new Error('Choose whether to walk to mobs.');
   range(p.walk_hold,'Walking hops',50,5000);
   if(typeof p.attack!=='boolean')throw new Error('Choose whether the pattern attacks.');
+  for(const k of ['char_keys','char_potions','char_skills'])if(typeof p[k]!=='boolean')throw new Error('Choose whether to use the character.');
   if(typeof p.glide!=='number'||!(p.glide>=0&&p.glide<=1))throw new Error('Move while attacking: enter a percentage from 0 to 100.');
   if(!Array.isArray(p.potions)||p.potions.length>2||new Set(p.potions.map(x=>x.id)).size!==p.potions.length||p.potions.some(x=>!POTION_LABELS[x.id]))throw new Error('Use one HP and one Mana entry.');
   for(const x of p.potions){
@@ -1061,8 +1078,8 @@ function openDynamicEditor(id=null){
   if(id&&!dynamicTarget)return;
   dynamicDraft=JSON.parse(JSON.stringify(dynamicTarget?.steps[0]?.pattern||defaultDynamicPattern()));dynamicDirty=false;
   $('#dynamicName').value=dynamicTarget?.name||'Dynamic jump-attack';$('#dynamicTitle').textContent=dynamicTarget?'Edit dynamic pattern':'New dynamic pattern';$('#dynamicError').textContent='';
-  normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';
-  renderDynamicFields();renderDynamicKeys();renderDynamicHome();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();$('#dynamicDialog').showModal();refreshUnused();
+  normalizeDynamicPattern(dynamicDraft);$('#dynamicPresetHint').textContent='';setEditorMode(false);characterTarget=null;
+  renderDynamicFields();renderDynamicKeys();renderDynamicHome();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();renderCharUse();$('#dynamicDialog').showModal();refreshUnused();
 }
 function dynamicKeySelect(label,value,options,change){
   const select=el('select');select.setAttribute('aria-label',label);
@@ -1281,10 +1298,141 @@ function renderDynamicSkills(){
   $('#dynamicAddSkill').disabled=dynamicDraft.skills.length>=8;
   refreshUnused();
 }
+/* Characters: keys, HP & Mana and skills set once, used by every pattern that
+   ticks "Use the character's ..." (the active character). Edited in the same
+   dialog as patterns, showing only those sections. */
+const MAX_CHARACTERS=4;
+const CHARACTER_PARTS={keys:['char_keys','keys'],potions:['char_potions','HP & Mana'],skills:['char_skills','skills']};
+let characterTarget=null,characterMode=false;
+function activeCharacter(){const list=(cfg&&cfg.characters)||[];return list.find(c=>c.id===cfg.active_character)||list[0]||null;}
+function normalizeCharacter(c){
+  const tmp=normalizeDynamicPattern(JSON.parse(JSON.stringify(c)));
+  c.keys=tmp.keys;c.potions=tmp.potions;c.skills=Array.isArray(tmp.skills)?tmp.skills:[];
+  if(typeof c.shuffle_skills!=='boolean')c.shuffle_skills=true;
+  if(typeof c.name!=='string'||!c.name.trim())c.name='Character';
+}
+function characterSummary(c,part){
+  if(part==='keys'){const k=c.keys;return `jump ${k.jump}, attack ${k.attack}, turn ${k.left}/${k.right}`;}
+  if(part==='potions'){const on=c.potions.filter(x=>x.enabled);return on.length?on.map(x=>POTION_LABELS[x.id]+' '+x.key+(x.backup_keys.length?' (+'+x.backup_keys.map(b=>b.key).join(', ')+')':'')).join(' · '):'no potions on';}
+  const on=c.skills.filter(x=>x.enabled);return on.length?on.length+' skill'+(on.length>1?'s':'')+': '+on.map(x=>x.key).join(', '):'no skills on';
+}
+// The pattern as it would play with the active character's parts swapped in.
+function withActiveCharacter(p){
+  const c=activeCharacter(),out=JSON.parse(JSON.stringify(p));if(!c)return out;
+  if(p.char_keys)out.keys={...c.keys};
+  if(p.char_potions)out.potions=JSON.parse(JSON.stringify(c.potions));
+  if(p.char_skills){out.skills=JSON.parse(JSON.stringify(c.skills));out.shuffle_skills=c.shuffle_skills;}
+  return out;
+}
+// In the pattern editor: "Use <character>'s keys / HP & Mana / skills" above each section.
+function renderCharUse(){
+  const c=activeCharacter();
+  for(const box of document.querySelectorAll('#dynamicDialog .char-use')){
+    const part=box.dataset.part,[flag,label]=CHARACTER_PARTS[part];box.replaceChildren();
+    const lab=el('label'),cb=el('input');cb.type='checkbox';cb.checked=!!dynamicDraft[flag]&&!!c;cb.disabled=!c;
+    cb.setAttribute('aria-label',"Use the character's "+label);
+    cb.onchange=()=>{dynamicDraft[flag]=cb.checked;dynamicDirty=true;$('#dynamicError').textContent='';renderCharUse();refreshUnused();};
+    lab.append(cb,c?` Use ${c.name}'s ${label}`:` Use a character's ${label}`);box.appendChild(lab);
+    const note=el('p','hint');
+    note.textContent=!c?'No character yet: make one under Recordings → Characters.':cb.checked?`${characterSummary(c,part)}. Change them under Recordings → Characters → ${c.name}.`:"Off: this pattern's own, below.";
+    box.appendChild(note);
+    const own=part==='keys'?$('#dynamicKeys'):part==='potions'?$('#dynamicPotions'):document.querySelector('#dynamicDialog .own-skills');
+    own.hidden=!characterMode&&cb.checked;
+  }
+}
+function setEditorMode(character){
+  characterMode=character;$('#dynamicDialog').classList.toggle('character',character);
+  $('#dynamicApply').textContent=character?'Save character':'Apply pattern';
+  $('#dynamicName').setAttribute('aria-label',character?'Character name':'Dynamic pattern name');
+}
+function openCharacterEditor(id=null){
+  if(!cfg){toast('Configuration not loaded yet',true);return;}
+  cfg.characters=cfg.characters||[];
+  characterTarget=id?cfg.characters.find(c=>c.id===id):null;
+  if(id&&!characterTarget)return;
+  if(!characterTarget&&cfg.characters.length>=MAX_CHARACTERS){toast('At most '+MAX_CHARACTERS+' characters',true);return;}
+  const c=characterTarget||{id:freshId(),name:'Character '+(cfg.characters.length+1),keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],skills:[],shuffle_skills:true};
+  dynamicTarget=null;
+  dynamicDraft={...defaultDynamicPattern(),...JSON.parse(JSON.stringify(c)),char_keys:false,char_potions:false,char_skills:false};
+  normalizeDynamicPattern(dynamicDraft);dynamicDirty=false;setEditorMode(true);
+  $('#dynamicName').value=c.name;$('#dynamicTitle').textContent=characterTarget?'Edit character':'New character';$('#dynamicError').textContent='';
+  renderDynamicFields();renderDynamicKeys();renderDynamicHome();renderDynamicAware();renderDynamicPotions();$('#dynamicShuffle').checked=dynamicDraft.shuffle_skills;renderDynamicSkills();renderCharUse();
+  $('#dynamicDialog').showModal();refreshUnused();
+}
+function applyCharacter(){
+  validateDynamicPattern(dynamicDraft);
+  const name=$('#dynamicName').value.trim();
+  if(!name)throw new Error('Give the character a name.');
+  if(name.length>32)throw new Error('Character name: at most 32 characters.');
+  const c={id:dynamicDraft.id,name,keys:{...dynamicDraft.keys},potions:JSON.parse(JSON.stringify(dynamicDraft.potions)),skills:JSON.parse(JSON.stringify(dynamicDraft.skills)),shuffle_skills:dynamicDraft.shuffle_skills};
+  cfg.characters=cfg.characters||[];
+  const at=cfg.characters.findIndex(x=>x.id===c.id);
+  if(at>=0)cfg.characters[at]=c;else cfg.characters.push(c);
+  if(!cfg.active_character||!cfg.characters.some(x=>x.id===cfg.active_character))cfg.active_character=c.id;
+  // Patterns using it whose own keys now clash with its potions or skills: said, not blocked.
+  const clashes=dynamicPatterns().filter(p=>(p.char_keys||p.char_potions||p.char_skills)&&(()=>{try{validateDynamicPattern(withActiveCharacter(p));return false;}catch(e){return true;}})());
+  cfg.version=2;dynamicDirty=false;$('#dynamicDialog').close();renderRecordings();updateDirty();
+  toast(clashes.length?`Saved ${name}, but ${clashes.length} pattern(s) using it now have clashing keys: check them`:`Saved ${name} — Save to store it on the device`,!!clashes.length);
+}
+function dynamicPatterns(){return cfg.workflows.filter(w=>w.steps.length===1&&w.steps[0].type==='dynamic').map(w=>w.steps[0].pattern);}
+// A first character from an existing pattern's keys, potions and skills; every pattern
+// with the very same ones uses it from then on (each part on its own).
+function characterFromPattern(p,name){
+  const c={id:freshId(),name,keys:{...p.keys},potions:JSON.parse(JSON.stringify(p.potions)),skills:JSON.parse(JSON.stringify(p.skills)),shuffle_skills:p.shuffle_skills};
+  cfg.characters=cfg.characters||[];cfg.characters.push(c);cfg.active_character=c.id;
+  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);let linked=0;
+  for(const q of dynamicPatterns()){
+    if(same(q.keys,c.keys))q.char_keys=true;
+    if(same(q.potions,c.potions))q.char_potions=true;
+    if(same(q.skills,c.skills)&&q.shuffle_skills===c.shuffle_skills)q.char_skills=true;
+    if(q.char_keys||q.char_potions||q.char_skills)++linked;
+  }
+  return linked;
+}
+function renderCharacters(){
+  const box=$('#characters');if(!box||!cfg)return;box.replaceChildren();
+  const list=cfg.characters||(cfg.characters=[]),active=activeCharacter();
+  $('#charactersSummary').textContent=active?'Characters · '+active.name:'Characters';
+  const intro=el('p','hint');intro.textContent='Keys, HP & Mana and skills, set once per character. Patterns that use the character pick them up, so changing a key here changes it everywhere. The ● one is active.';
+  box.appendChild(intro);
+  const rows=el('div','characters-list');
+  for(const c of list){
+    const row=el('div','character-row'),lab=el('label'),radio=el('input'),name=el('b'),sum=el('small','hint');
+    radio.type='radio';radio.name='activeCharacter';radio.checked=c===active;radio.setAttribute('aria-label','Active character: '+c.name);
+    radio.onchange=()=>{cfg.active_character=c.id;cfg.version=2;renderCharacters();updateDirty();toast(c.name+' is active — Save to use it on the device');};
+    name.textContent=c.name;sum.textContent=characterSummary(c,'potions');lab.append(radio,name,sum);
+    const edit=el('button','btn sm');edit.type='button';edit.textContent='Edit';edit.setAttribute('aria-label','Edit character '+c.name);edit.onclick=()=>openCharacterEditor(c.id);
+    const del=el('button','btn sm danger');del.type='button';del.textContent='Delete';del.setAttribute('aria-label','Delete character '+c.name);
+    del.onclick=()=>{
+      const users=dynamicPatterns().filter(p=>p.char_keys||p.char_potions||p.char_skills).length;
+      if(!confirm(`Delete ${c.name}?`+(users&&list.length===1?`\n\n${users} pattern(s) use a character; they'll play with their own keys, potions and skills.`:'')))return;
+      cfg.characters=list.filter(x=>x!==c);
+      if(cfg.active_character===c.id)cfg.active_character=cfg.characters[0]?.id||'';
+      cfg.version=2;renderRecordings();updateDirty();
+    };
+    row.append(lab,edit,del);rows.appendChild(row);
+  }
+  box.appendChild(rows);
+  const actions=el('div','recording-actions'),add=el('button','btn sm');add.type='button';add.textContent='Add character';add.disabled=list.length>=MAX_CHARACTERS;add.onclick=()=>openCharacterEditor();
+  actions.appendChild(add);
+  const first=dynamicPatterns()[0],firstName=first&&cfg.workflows.find(w=>w.steps[0]?.pattern===first)?.name;
+  if(!list.length&&first){
+    const make=el('button','btn sm primary');make.type='button';make.textContent=`Make one from “${firstName}”`;
+    make.onclick=()=>{const n=characterFromPattern(first,'Character 1');cfg.version=2;renderRecordings();updateDirty();
+      toast(`Character 1 made from ${firstName}; ${n} pattern(s) use it — Save to keep it`);};
+    actions.appendChild(make);
+  }
+  box.appendChild(actions);
+}
 function closeDynamicEditor(){if(dynamicDirty&&!confirm('Discard changes to this dynamic pattern?'))return false;dynamicDirty=false;$('#dynamicDialog').close();return true;}
 function applyDynamicPattern(){
   try{
+    if(characterMode){applyCharacter();return;}
     validateDynamicPattern(dynamicDraft);
+    if(dynamicDraft.char_keys||dynamicDraft.char_potions||dynamicDraft.char_skills){
+      if(!activeCharacter())throw new Error('No character to use: make one under Recordings → Characters, or untick "Use the character\'s".');
+      try{validateDynamicPattern(withActiveCharacter(dynamicDraft));}catch(e){throw new Error('With '+activeCharacter().name+"'s keys, potions and skills: "+e.message);}
+    }
     if(!dynamicTarget&&cfg.workflows.length>=64)throw new Error('Recording storage is full.');
     const name=$('#dynamicName').value.trim()||'Dynamic jump-attack';
     const target=dynamicTarget||{id:freshId(),name,kind:'nano',recording:true,steps:[]};
@@ -1388,7 +1536,7 @@ function recordingUsage(){
 }
 const unlockedRecordings=new Set();   // per visit: assigned recordings are locked until unlocked
 function renderRecordings(){
-  renderStorage();
+  renderStorage();renderCharacters();
   const list=$('#recordings');list.replaceChildren();
   const recordings=recordingList(),usage=recordingUsage();
   if(!recordings.length){const p=el('p','hint');p.textContent='Record a workflow, give it a name, then add it to a button.';list.appendChild(p);}

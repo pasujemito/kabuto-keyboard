@@ -634,6 +634,24 @@ int main() {
          assert(second&&secondHome==300);
          // A new press: home is where you are now.
          secondHome=-1;second=true;replay({once},360,360);assert(secondHome==360);}
+        // Characters: a pattern using the active character's potions drinks with its key, and
+        // two such patterns share the wait (switching patterns doesn't drink again); a pattern
+        // with its own potions keeps its own.
+        {Character war;war.id="war";war.name="Warrior";
+         DynamicSkill hp;hp.id="hp";hp.keycode=7;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={60000,60000};hp.hold={50,50};hp.after={100,100};war.potions.push_back(hp);
+         engine.config().characters={war};engine.config().activeCharacter="war";
+         DynamicPattern a=p;a.id="pa";a.attacking=false;a.potions.clear();a.skills.clear();a.charPotions=true;
+         DynamicPattern b=a;b.id="pb";
+         DynamicPattern own=a;own.id="po";own.charPotions=false;own.potions={hp};
+         auto presses=[&](uint8_t key){int n=0;for(auto e:hidEvents)if(e.down&&e.key==key)++n;return n;};
+         auto play2s=[&](const DynamicPattern& g){aware.setPattern(g);uint32_t t0=millis();
+             playWith([](long){return 0L;},[&,t0]{liveStatsUpdate(800,800,-1,LIVE_OK,500,500,MOB_READ);if(millis()-t0>2000)engine.stopFlag_=true;});engine.stopFlag_=false;};
+         engine.dynamicSkillTimers_.clear();
+         play2s(a);assert(presses(7)==1);      // the character's key
+         play2s(b);assert(presses(7)==0);      // another pattern, same character: its wait still runs
+         play2s(own);assert(presses(7)==1);    // own potions: its own wait
+         engine.config().characters.clear();engine.config().activeCharacter.clear();
+         play2s(b);assert(presses(7)==0);}     // no character: the pattern's own (none here)
         // Home is set at the start of every pattern (not only Smart), for the
         // dashboard and the game layer; a home from the dot is set again once map
         // positions come, rather than compared with them.

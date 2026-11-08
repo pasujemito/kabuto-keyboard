@@ -15,7 +15,7 @@ firmware updates from this repo's GitHub releases.
 | --- | --- |
 | `src/main.cpp` | setup/loop, key matrix scan, status LED |
 | `src/macro_engine.*` | step model and playback (incl. dynamic patterns) |
-| `src/dynamic_pattern.h` | pattern struct, triangular sampler, tempo drift (pure) |
+| `src/dynamic_pattern.h` | pattern struct, characters (`Character`, `withCharacter`), triangular sampler, tempo drift (pure) |
 | `src/storage.*` | LittleFS + JSON parse/validate/save of `/macros.json` |
 | `src/web_server.*` | REST API; serves the gzipped UI from firmware |
 | `src/updater.*` | GitHub release checks, signed installs, rollback |

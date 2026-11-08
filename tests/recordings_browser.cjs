@@ -264,6 +264,48 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('HP backup key 1 restored per tap',{exact:true}).inputValue(),'300');
   assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'15');assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   await page.locator('#dynamicClose').click();
+  // Characters: keys, HP & Mana and skills set once and used by patterns.
+  await page.locator('#tabRecordings').click();
+  assert.match(await page.locator('#characters').textContent(),/set once per character/);
+  await page.getByRole('button',{name:/^Make one from/}).click();
+  assert.equal(await page.evaluate(()=>cfg.characters.length),1);
+  assert.equal(await page.evaluate(()=>cfg.active_character===cfg.characters[0].id),true);
+  assert.deepEqual(await page.evaluate(()=>{const p=dynamicPatterns()[0];return [p.char_keys,p.char_potions,p.char_skills];}),[true,true,true]);   // the same ones: used from now on
+  assert.equal(await page.locator('#charactersSummary').textContent(),'Characters · Character 1');
+  // Edit it: only Keys, HP & Mana and Skills show.
+  await page.getByRole('button',{name:'Edit character Character 1',exact:true}).click();
+  assert.equal(await page.locator('#dynamicTitle').textContent(),'Edit character');
+  assert(await page.locator('#dynamicMain').isHidden());assert(await page.locator('#dynamicHome').isHidden());
+  assert.equal(await page.getByRole('button',{name:'Save character',exact:true}).count(),1);
+  await page.locator('#dynamicPotions').evaluate(e=>e.closest('details').open=true);
+  await page.getByLabel('HP key',{exact:true}).selectOption('W');
+  await page.getByLabel('Character name',{exact:true}).fill('Warrior');
+  await page.getByRole('button',{name:'Save character',exact:true}).click();
+  assert.equal(await page.locator('#dynamicDialog[open]').count(),0);
+  assert.equal(await page.evaluate(()=>cfg.characters[0].name+' '+cfg.characters[0].potions.find(x=>x.id==='hp').key),'Warrior W');
+  // The pattern uses it: its own HP & Mana are hidden, the character's are summarised.
+  await page.locator('.recording-card').filter({hasText:'Dynamic ·'}).getByRole('button',{name:'Edit',exact:true}).click();
+  assert(await page.getByLabel("Use the character's HP & Mana",{exact:true}).isChecked());
+  assert(await page.locator('#dynamicPotions').isHidden());
+  assert.match(await page.locator('.char-use[data-part="potions"]').textContent(),/Use Warrior's HP & Mana.*HP W/s);
+  await page.getByLabel("Use the character's HP & Mana",{exact:true}).uncheck();
+  assert(await page.locator('#dynamicPotions').isVisible());
+  await page.getByLabel("Use the character's HP & Mana",{exact:true}).check();
+  await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicDialog[open]').count(),0);
+  // A second character, made active; then deleted again.
+  await page.locator('#tabRecordings').click();
+  await page.getByRole('button',{name:'Add character',exact:true}).click();
+  assert.equal(await page.locator('#dynamicTitle').textContent(),'New character');
+  await page.getByLabel('Character name',{exact:true}).fill('Mage');
+  await page.getByRole('button',{name:'Save character',exact:true}).click();
+  assert.equal(await page.evaluate(()=>cfg.characters.map(c=>c.name).join()),'Warrior,Mage');
+  await page.getByLabel('Active character: Mage',{exact:true}).check();
+  assert.equal(await page.locator('#charactersSummary').textContent(),'Characters · Mage');
+  page.once('dialog',d=>d.accept());
+  await page.getByRole('button',{name:'Delete character Mage',exact:true}).click();
+  assert.equal(await page.locator('#charactersSummary').textContent(),'Characters · Warrior');
+  await page.locator('#tabKeys').click();
   // Updates: a newer release is announced; installing needs a confirmation.
   await page.locator('#tabRecordings').click();
   assert.equal(await page.locator('#updateSummary').textContent(),'Update available: v1.15.0');

@@ -14,7 +14,7 @@
 #define KABUTO_STR(x)      KABUTO_STR_(x)
 #define FIRMWARE_VERSION   KABUTO_STR(KABUTO_VERSION)
 #else
-#define FIRMWARE_VERSION   "1.18.0"
+#define FIRMWARE_VERSION   "1.19.0"
 #endif
 
 // --- Key matrix -----------------------------------------------------------
@@ -45,6 +45,7 @@ static const int COL_PINS[MATRIX_COLS] = {6, 7, 15};
                                         //  with long wires; lower only if all solid)
 #define MAX_LAYERS         8
 #define MAX_MACRO_STEPS    256          // per macro
+#define MAX_CHARACTERS     4            // shared keys/potions/skills sets ("characters")
 #define MACRO_FILE         "/macros.json"
 #define MACRO_TMP_FILE     "/macros.tmp"  // uploads land here, then replace MACRO_FILE
 #define MAX_CONFIG_BYTES   (256 * 1024)   // reject larger config uploads

@@ -122,6 +122,12 @@ struct Workflow : KeyBinding {
 
 struct Config {
     std::vector<Workflow> workflows;
+    std::vector<Character> characters;   // up to MAX_CHARACTERS
+    std::string activeCharacter;         // its id ("" or unknown: the first)
+    const Character* character() const {
+        for (const auto& c : characters) if (c.id == activeCharacter) return &c;
+        return characters.empty() ? nullptr : &characters[0];
+    }
     const KeyBinding* findWorkflow(const std::string& id) const;
     std::vector<Layer> layers;
     bool randomizedDelay = true;

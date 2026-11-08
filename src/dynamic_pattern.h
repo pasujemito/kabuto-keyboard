@@ -53,6 +53,9 @@ struct DynamicPattern {
     uint16_t autoPausePermille = 0;   // smart: most mobs in sight killed (below this share): wait for respawn (0 = off)
     bool approach = false;            // smart: walk to mobs you can see but not reach
     bool attacking = true;            // off: support only, no jump/attack/arrows, just potions and skills until stopped
+    // From the active character (Config::characters) instead of the pattern's own:
+    // its movement keys, its HP/Mana potions, its skills (with skill order).
+    bool charKeys = false, charPotions = false, charSkills = false;
     DynamicRange walkHold{280,650};   // smart: walking (home or to mobs) holds the arrow, jumping after each of these
     uint16_t glidePermille = 0;       // share of sets moving while jump-attacking (arrow held); >0 also turns in the air
     // Defaults match patterns saved before keys were configurable.
@@ -63,6 +66,24 @@ struct DynamicPattern {
     std::vector<DynamicSkill> potions;           // "hp" and/or "mana", fired before skills
     std::vector<DynamicSkill> skills;
 };
+
+// A character: what belongs to whoever you play rather than to a pattern, set
+// once and used by every pattern that picks it up (keys, potions, skills).
+struct Character {
+    std::string id, name;
+    DynamicKey jump = dynamicModifier(0x04), attack = dynamicModifier(0x01), left = dynamicKeycode(0x50), right = dynamicKeycode(0x4F);
+    std::vector<DynamicSkill> potions, skills;
+    bool shuffleSkills = true;
+};
+// The pattern as it plays: the character's parts swapped in where it uses them.
+inline DynamicPattern withCharacter(const DynamicPattern& p, const Character* c) {
+    DynamicPattern out = p;
+    if (!c) return out;
+    if (p.charKeys) { out.jump = c->jump; out.attack = c->attack; out.left = c->left; out.right = c->right; }
+    if (p.charPotions) out.potions = c->potions;
+    if (p.charSkills) { out.skills = c->skills; out.shuffleSkills = c->shuffleSkills; }
+    return out;
+}
 
 // Why a pattern's keys clash, or "" if they don't. Jump and attack overlap
 // as a chord, turns are tapped between sets, and skills and potions must not

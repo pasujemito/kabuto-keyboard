@@ -423,6 +423,18 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 if (!pattern || depth>=8 || hasHeldInput() || state.combat) {
                     logStep(s,pc,stepStartedAt,0,true,"skipped: dynamic needs neutral input");break;
                 }
+                // The active character's keys, potions and skills where the pattern uses them.
+                // Its potion and skill waits are the character's, shared by all its patterns.
+                const Character* character=cfg_.character();
+                DynamicPattern merged;
+                std::string potionScope=pattern->id,skillScope=pattern->id;
+                if(character&&(pattern->charKeys||pattern->charPotions||pattern->charSkills)){
+                    merged=withCharacter(*pattern,character);
+                    if(!dynamicKeyProblem(merged).empty()){logStep(s,pc,stepStartedAt,0,true,"skipped: the character's keys clash with this pattern's");break;}
+                    if(pattern->charPotions)potionScope="character:"+character->id;
+                    if(pattern->charSkills)skillScope="character:"+character->id;
+                    pattern=&merged;
+                }
                 // Don't start attacking a death, login or test screen.
                 {LiveStats live=liveStatsSnapshot();const char* reason=live.fresh?liveStopReason(live.state):nullptr;
                  if(reason){char label[80];std::snprintf(label,sizeof(label),"skipped: %s",reason);logStep(s,pc,stepStartedAt,0,true,label);break;}}
@@ -459,7 +471,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 };
                 // A potion with a "drink below" threshold follows its bar while
                 // tools/screen_stats.py sends fresh readings; otherwise its timer.
-                auto potionKey=[&](const DynamicSkill& potion){return pattern->id+"/potion:"+potion.id;};
+                auto potionKey=[&](const DynamicSkill& potion){return potionScope+"/potion:"+potion.id;};
                 auto potionLive=[&](const DynamicSkill& potion,int& value){
                     LiveStats live=liveStatsSnapshot();value=potion.id=="hp"?live.hp:live.mana;
                     return liveDecides(potion.belowPercent,live.fresh&&value>=0);
@@ -662,9 +674,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         potionCheck();
                         for(const auto& potion:pattern->potions)if(!stop&&potionDue(potion))drink(potion);
                         std::vector<size_t> ready;
-                        for(size_t i=0;i<pattern->skills.size();++i)if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))ready.push_back(i);
+                        for(size_t i=0;i<pattern->skills.size();++i)if(due(pattern->skills[i],skillScope+"/"+pattern->skills[i].id))ready.push_back(i);
                         if(pattern->shuffleSkills)for(size_t i=ready.size();i>1;--i)std::swap(ready[i-1],ready[random((long)i)]);
-                        for(size_t index:ready){if(stop)break;use(pattern->skills[index],pattern->id+"/"+pattern->skills[index].id);}
+                        for(size_t index:ready){if(stop)break;use(pattern->skills[index],skillScope+"/"+pattern->skills[index].id);}
                         std::vector<Step> rest{delay(SUPPORT_CHECK_MS)};executeSteps(rest,stop,state,depth+1);
                     }
                     patternViewSet(PatternView());
@@ -744,12 +756,12 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(stop)break;
                     std::vector<size_t> skills;
                     for(size_t i=0;i<pattern->skills.size();++i)
-                        if(due(pattern->skills[i],pattern->id+"/"+pattern->skills[i].id))skills.push_back(i);
+                        if(due(pattern->skills[i],skillScope+"/"+pattern->skills[i].id))skills.push_back(i);
                     if(!skills.empty())stopWalking();   // skills are cast standing
                     if(pattern->shuffleSkills)for(size_t i=skills.size();i>1;--i)std::swap(skills[i-1],skills[random((long)i)]);
                     for(size_t index:skills){
                         if(stop)break;
-                        use(pattern->skills[index],pattern->id+"/"+pattern->skills[index].id);
+                        use(pattern->skills[index],skillScope+"/"+pattern->skills[index].id);
                     }
                     // No direction tap after the last set: it would only nudge the character.
                     if(stop||set+1==sets)break;

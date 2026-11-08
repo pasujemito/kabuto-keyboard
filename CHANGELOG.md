@@ -3,8 +3,21 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
-## 1.18.16
+## 1.19.0
 
+- 🧙 **Characters: keys, HP & Mana and skills set once**: under
+  **Recordings → Characters**, a character holds the movement keys, both
+  potions (with backup keys and amounts) and the skills. Each pattern has
+  **Use <character>'s keys / HP & Mana / skills** switches above those
+  sections: on, the pattern's own are hidden and the character's are used,
+  so changing a key in the character changes it in every pattern. Up to 4
+  characters; the ● one is active and every pattern follows it. Potion and
+  skill waits belong to the character, so switching patterns mid-hunt
+  doesn't drink or buff again. **Make one from "<your pattern>"** turns your
+  first pattern's keys, potions and skills into Character 1 and points every
+  pattern with the very same ones at it; patterns without a character (and
+  all saved before 1.19.0) keep their own settings. New patterns use the
+  active character
 - 🗺 **Home is a zone you fight in**: home ± the boundary is where the
   character fights. Inside it, nothing pulls it back: with nothing to fight
   it waits where it is (it used to walk back to home itself). If mobs lead it

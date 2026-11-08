@@ -12,7 +12,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Home Wi-Fi and PIN mocks; pinRequired acts like a page opened over the home network.
   const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true,uptimeS:11100,heapFree:150000,heapLargest:70000};
   const networkRequests=[];let pinRequired=false,loggedIn=false;
-  let liveState=null,patternState=null,noticeState=null;const statsRequests=[],noticeRequests=[];   // live bars, as the status poll reports them
+  let liveState=null,patternState=null,noticeState=null,pinnedState=null;const statsRequests=[],noticeRequests=[],homeRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
@@ -27,8 +27,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    if(url.pathname.startsWith('/api/')&&pinRequired&&!loggedIn)return route.fulfill({status:401,contentType:'application/json',body:'{"ok":false,"error":"PIN required"}'});
    if(url.pathname==='/api/network'&&route.request().method()==='POST'){networkRequests.push(route.request().postData());return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/stats/reset'){statsRequests.push(url.pathname);return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/home/set'){homeRequests.push(url.pathname);pinnedState={home:liveState.wx??liveState.x,onMap:liveState.wx!==undefined,map:liveState.map};return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/home/clear'){homeRequests.push(url.pathname);pinnedState=null;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/notices/clear'){noticeRequests.push(url.pathname);noticeState=null;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
-   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{}),...(patternState?{pattern:patternState}:{}),...(noticeState?{notices:noticeState}:{})})});
+   if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{}),...(patternState?{pattern:patternState}:{}),...(noticeState?{notices:noticeState}:{}),...(pinnedState?{pinnedHome:pinnedState}:{})})});
    if(url.pathname==='/api/network')return route.fulfill({contentType:'application/json',body:JSON.stringify(networkState)});
    if(url.pathname.startsWith('/api/update/')){
     updateRequests.push({path:url.pathname,version:url.searchParams.get('version'),body:route.request().postData()});
@@ -382,6 +384,19 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   patternState={...patternState,smart:false};
   await page.waitForFunction(()=>/Smart off/.test(document.querySelector('#liveStats').textContent));
   assert.doesNotMatch(await page.locator('#liveStats').textContent(),/Can't see mobs/);
+  // Set home here: pins home where you stand; with nothing playing it shows as a mark
+  // on its map, and Forget home clears it.
+  patternState=null;liveState={...liveState,x:420,wx:1420,map:'Henesys',mobs:8,ml:0,mr:0,dl:-1,dr:-1};
+  await page.waitForFunction(()=>/Idle|Playing/.test(document.querySelector('#liveStats').textContent));   // the pattern has stopped
+  assert.equal(await page.locator('#liveStats .track .home').count(),0);
+  assert.equal(await page.locator('#liveStats button',{hasText:'Forget home'}).count(),0);
+  await page.locator('#liveStats button',{hasText:'Set home here'}).click();
+  await page.waitForFunction(()=>document.querySelector('#liveStats .track .home'));
+  assert.deepEqual(homeRequests,['/api/home/set']);
+  assert.deepEqual(await page.locator('#liveStats .track .home').evaluate(e=>[e.style.left,e.style.width,e.title]),['41.2%','1.6%','Home (from Set home)']);
+  await page.locator('#liveStats button',{hasText:'Forget home'}).click();
+  await page.waitForFunction(()=>!document.querySelector('#liveStats .track .home'));
+  assert.deepEqual(homeRequests,['/api/home/set','/api/home/clear']);
   patternState=null;
   // Notifications: the game's test popup (still on screen: highlighted, with a
   // toast) above an older death; Clear empties them on the pad.
@@ -438,6 +453,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   if(await page.evaluate(()=>cfg.layers.length+1<=meta.maxLayers)){
     await page.locator('#newSetupLayer').click();   // again: the same recordings are reused
     assert.equal(await page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool').length),5);
+  }
+  // A Set home button: goes on the selected button when it's empty, its recording reused after.
+  const emptyKey=await page.evaluate(()=>{selLayer=0;const i=cfg.layers[0].keys.findIndex(k=>!k.steps.length);selKey=i;return i;});
+  if(emptyKey>=0){
+    await page.locator('#newSetHome').click();
+    assert.deepEqual(await page.evaluate(i=>{const k=cfg.layers[0].keys[i];return [k.name,cfg.workflows.find(w=>w.id===k.steps[0]?.workflow)?.steps];},emptyKey),['🏠 Set home',[{type:'tool',key:'home'}]]);
+    assert.match(await page.locator('#recordings').textContent(),/Set home · home where you stand; never stops what's playing/);
+    const homes=()=>page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool'&&w.steps[0].key==='home').length);
+    await page.locator('#newSetHome').click();assert.equal(await homes(),1);
   }
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();

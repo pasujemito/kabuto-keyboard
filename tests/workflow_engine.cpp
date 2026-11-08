@@ -513,12 +513,16 @@ int main() {
          bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);insideAt=millis()+2500;return;}
                   at(380,millis()>=insideAt?MOB_READ|MOB_LEFT:MOB_READ|MOB_RIGHT);});   // a mob on the inside after 2.5 s
          assert(hopsWhileHeld(L)==0&&hopsWhileHeld(R)==0&&attacks()==3&&firstAttack()>=insideAt&&held.empty());}
-        // Outside the zone (42%, 12% from home) with a mob in reach: walks back in first.
-        calls=0;walked=false;
-        bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_LEFT);return;}
-                 walked=walked||hopsWhileHeld(L)>=1;
-                 at(walked?360:420,MOB_READ|MOB_LEFT);});
-        assert(walked&&attacks()==3&&held.empty());
+        // Outside the zone (42%, 12% from home) with a mob in reach: no running back, it
+        // fights its way back: jump-attacks with the homeward arrow held, sliding home
+        // while the arrow is down, and stops holding it once just inside (39%).
+        {calls=0;int x=420;uint32_t insideAt=0;
+         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_LEFT);return;}
+                  bool l=std::find(held.begin(),held.end(),L)!=held.end();if(l&&x>350)--x;if(!insideAt&&x<=390)insideAt=millis();
+                  at(x,MOB_READ|MOB_LEFT);});
+         int whileReturning=0,afterwards=0;bool down=false;
+         for(auto e:hidEvents){if(e.key==L)down=e.down;else if(e.down&&e.key==0&&e.mods==5){if(down)++whileReturning;else if(insideAt&&e.at>=insideAt)++afterwards;}}
+         assert(whileReturning>=1&&attacks()==3&&held.empty()&&insideAt);}   // attacked on the way back
         // Fluid movement (glide). Is each attack made with `key` held?
         auto attacksHolding=[&](uint8_t key){int n=0;bool down=false;for(auto e:hidEvents){if(e.key==key)down=e.down;else if(down&&e.down&&e.key==0&&e.mods==5)++n;}return n;};
         auto playWith=[&](std::function<long(long)> draw,std::function<void()> each){uint32_t giveUp=millis()+60000;each();testRandomHook=draw;
@@ -688,6 +692,48 @@ int main() {
                   char form[48];homeReply(form,sizeof(form));if(v.haveHome&&v.homeOnMap)assert(std::string(form)=="home=1500&hm=1&hr=0");});
          assert(homeDot==420&&homeMap==1500);
          char form[48];homeReply(form,sizeof(form));assert(!form[0]);}   // nothing playing: no home to tell
+        // Set home: a home pinned where you stood is used over where the pattern starts (on
+        // its map), taken up at once when pinned again while playing, and ignored on another map.
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={4,4};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=0;aware.setPattern(g);
+         seen(MOB_READ|MOB_LEFT,1,0,40,-1,600,"Henesys");assert(homePin());
+         PinnedHome pin=homePinned();assert(pin.set&&pin.home==600&&pin.onMap&&std::string(pin.map)=="Henesys");
+         bool always=true;
+         playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");
+                  PatternView v=patternViewSnapshot();if(v.active&&(!v.haveHome||v.home!=600||!v.homePinned))always=false;});
+         assert(always&&attacks()==4);
+         homeUnpin();assert(!homePinned().set);
+         calls=0;int last=-1;bool pinnedLast=false;
+         playWith([](long){return 0L;},[&]{++calls;int x=calls<4?300:500;seen(MOB_READ|MOB_LEFT,1,0,40,-1,x,"Henesys");
+                  if(calls==4)assert(homePin());   // pressed mid-play, standing at 50%
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){last=v.home;pinnedLast=v.homePinned;}});
+         assert(last==500&&pinnedLast&&attacks()==4);
+         seen(MOB_READ|MOB_LEFT,1,0,40,-1,700,"Ellinia");assert(homePin());   // pinned on another map
+         last=-1;
+         playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){last=v.home;pinnedLast=v.homePinned;}});
+         assert(last==300&&!pinnedLast);
+         homeUnpin();}
+        // A Set home button (directly, or its one recording) pins home and never stops what's
+        // playing; the "home" step inside a recording pins too, and isn't sent to the PC script.
+        {Step tool;tool.type=StepType::TOOL;tool.value=TOOL_HOME;
+         Workflow w;w.id="sethome";w.steps={tool};engine.cfg_.workflows.push_back(w);
+         Step call;call.type=StepType::CALL;call.setText("sethome");
+         if(engine.cfg_.layers.empty())engine.cfg_.layers.emplace_back();
+         engine.layer_=0;
+         engine.cfg_.layers[0].keys[0].steps={call};engine.cfg_.layers[0].keys[0].trigger=TriggerMode::TOGGLE;
+         engine.cfg_.layers[0].keys[1].steps={tool};
+         assert(engine.isSetHome(engine.cfg_.layers[0].keys[0])&&engine.isSetHome(engine.cfg_.layers[0].keys[1]));
+         seen(MOB_READ,0,0,-1,-1,420,"Henesys");
+         uint32_t before=homePinned().version;
+         engine.running_=true;engine.runningKey_=2;engine.stopFlag_=false;   // something playing on button 3
+         engine.onKeyDown(0);assert(!engine.stopFlag_&&homePinned().version==before+1&&homePinned().home==420);
+         engine.onKeyDown(1);assert(!engine.stopFlag_&&homePinned().version==before+2);
+         engine.running_=false;engine.runningKey_=-1;
+         char keys[32];toolKeysTake(keys,sizeof(keys));
+         run(engine,{tool});assert(homePinned().version==before+3);
+         toolKeysTake(keys,sizeof(keys));assert(!keys[0]);
+         engine.cfg_.layers[0].keys[0].steps.clear();engine.cfg_.layers[0].keys[1].steps.clear();engine.cfg_.workflows.pop_back();
+         homeUnpin();}
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

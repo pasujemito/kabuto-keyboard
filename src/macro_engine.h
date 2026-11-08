@@ -203,6 +203,7 @@ private:
     void updateLogDuration(uint32_t id, uint32_t durationMs, bool complete);
 
     static void validateLoops(KeyBinding& kb);
+    bool isSetHome(const KeyBinding& kb) const;
 
     // History lasts for one key activation, including all toggle/hold passes.
     std::map<const Step*, std::vector<const KeyBinding*>> choiceHistory_;

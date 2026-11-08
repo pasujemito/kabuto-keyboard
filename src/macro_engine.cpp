@@ -422,6 +422,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 logStep(s, pc, stepStartedAt, 0, true);
                 break;
             case StepType::TOOL:   // for tools/screen_stats.py to collect; nothing is typed
+                if (s.value == TOOL_HOME) {   // Set home: kept here, nothing for the script
+                    logStep(s, pc, stepStartedAt, 0, true, homePin() ? "home set here" : "set home: no position from the PC yet");
+                    break;
+                }
                 toolKeyPush((uint8_t)s.value);
                 logStep(s, pc, stepStartedAt, 0, true, toolKeyName((uint8_t)s.value));
                 break;
@@ -526,7 +530,18 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 bool approachOff=false;uint32_t approachOffAt=0;
                 bool homeOff=false;uint32_t homeOffAt=0;   // couldn't get home: not tried again for HOME_RETRY_MS (home kept)
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
-                auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;};
+                bool homePinnedHere=false;   // home came from a Set home button
+                auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;homePinnedHere=false;};
+                // A Set home button's home: used over where the pattern started, on its map (one whose
+                // name wasn't read: until this pattern sees the map change), and taken up at once
+                // when the button is pressed again while playing.
+                uint32_t pinSeen=0;bool movedMap=false;
+                auto pinFits=[&](const PinnedHome& p){return p.set&&(p.map[0]?lastMap==p.map:!movedMap);};
+                auto usePin=[&](const PinnedHome& p,const char* label){
+                    haveHome=true;home=p.home;homeOnMap=p.onMap;homeOff=false;homePinnedHere=true;
+                    char text[64];std::snprintf(text,sizeof(text),"%s: %d.%d%%",label,p.home/10,(p.home<0?-p.home:p.home)%10);
+                    logStep(s,pc,millis(),0,true,text);
+                };
                 // Home is set as soon as there's a position (every pattern, so the dashboard and the
                 // game layer can show it; only Smart walks back to it). A home from the minimap dot
                 // can't be compared with a map position (or back): it's set again from the new one.
@@ -536,6 +551,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 int slide=0;bool haveSlide=false;
                 auto homeCheck=[&](const LiveStats& live,bool havePos,int pos){
                     if(live.fresh&&live.wx!=LIVE_NO_POS&&live.x>=0){slide=live.wx-live.x;haveSlide=true;}
+                    PinnedHome pin=homePinned();
+                    if(pin.version!=pinSeen){pinSeen=pin.version;if(pinFits(pin))usePin(pin,"home set by the Set home button");}
+                    else if(!haveHome&&pinFits(pin))usePin(pin,"home: the Set home button's");
                     if(!havePos)return;
                     bool onMap=live.wx!=LIVE_NO_POS;
                     if(haveHome&&homeOnMap==onMap)return;
@@ -555,12 +573,13 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(mapSeen!=live.map){mapSeen=live.map;mapSeenAt=millis();return;}
                     if(millis()-mapSeenAt<MAP_CHANGE_MS)return;
                     lastMap=live.map;mapSeen.clear();
+                    movedMap=true;
                     if(haveHome){haveHome=false;logStep(s,pc,millis(),0,true,"new map, new home");}
                 };
                 // What the dashboard shows.
                 auto publish=[&](uint8_t action){
                     PatternView v;v.active=true;v.smart=pattern->smart;v.action=action;v.facingLeft=facingLeft;
-                    v.haveHome=haveHome;v.home=home;v.homeOnMap=homeOnMap;v.homeRange=pattern->homeRangePermille;
+                    v.haveHome=haveHome;v.home=home;v.homeOnMap=homeOnMap;v.homePinned=homePinnedHere;v.homeRange=pattern->homeRangePermille;
                     v.peak=pattern->smart&&pattern->autoPausePermille?autoPause.peak:-1;patternViewSet(v);
                 };
                 auto smartInput=[&](const LiveStats& live,bool havePos,int pos){
@@ -608,6 +627,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // ground, which is what made the character step. Off (0): taps, as before.
                 const bool glide=pattern->glidePermille>0;
                 bool moving=false;      // this set keeps the arrow held
+                bool returning=false;   // past the home zone's line: attacks carry you homewards (arrow held)
                 bool turnInAir=false;   // a turn owed, made during the next jump
                 auto turn=[&]{
                     if(!glide){tap(facing(),pattern->directionHold,pattern->directionAfter);return;}
@@ -655,6 +675,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(stopReason(live))return true;
                     mapCheck(live);
                     int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);
+                    {bool zone=haveHome&&!homeOff&&mapSeen.empty()&&homeOnMap==(live.wx!=LIVE_NO_POS);
+                     bool was=returning;returning=zone&&homeReturning(returning,havePos,pos,true,home,pattern->homeRangePermille);
+                     if(returning&&!was)logStep(s,pc,millis(),0,true,"past the home zone: fighting the way back");}
                     // The home zone's edge first (face inwards), then map edges and mobs.
                     int want=homeFacing(true,havePos,pos,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille);
                     if(!want)want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
@@ -755,7 +778,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         // standing, a turn owed made in the air: the arrow pressed after take-off and
                         // let go with the attack.
                         bool airTurn=false;DynamicKey arrow=facing();
-                        if(glide){
+                        if(returning){   // fighting the way back: the arrow held homewards through the jump-attacks
+                            if(hold(arrow)){actions.push_back(delay(sample(GLIDE_RUN_UP)));}
+                            turnInAir=false;
+                        }else if(!glide)stopWalking();   // done returning: let go
+                        else if(glide){
                             if(moving){if(hold(arrow))actions.push_back(delay(sample(GLIDE_RUN_UP)));turnInAir=false;}
                             else{stopWalking();airTurn=turnInAir;turnInAir=false;}
                         }
@@ -803,7 +830,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(want)facingLeft=want<0;
                     else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
                     publish(SMART_ATTACK);
-                    if(!glide)tap(facing(),pattern->directionHold,pattern->directionAfter);
+                    if(returning){if(facingLeft!=wasLeft)hold(facing());}   // carrying on homewards: no tap
+                    else if(!glide)tap(facing(),pattern->directionHold,pattern->directionAfter);
                     else{
                         moving=(uint32_t)random(1000L)<pattern->glidePermille;   // the next set: on the move or standing
                         if(!moving)stopWalking();
@@ -1051,11 +1079,24 @@ void MacroEngine::stopAll() {
 }
 
 // --- trigger handling ------------------------------------------------------
+// A button that only sets home (a "home" tool step, directly or as its one
+// recording): pressed, it pins home where you stand and leaves whatever is
+// playing alone, so a pattern carries on with the new home.
+bool MacroEngine::isSetHome(const KeyBinding& kb) const {
+    if (kb.steps.size() != 1) return false;
+    const Step& s = kb.steps[0];
+    if (s.type == StepType::TOOL) return s.value == TOOL_HOME;
+    if (s.type != StepType::CALL) return false;
+    const KeyBinding* w = cfg_.findWorkflow(s.text());
+    return w && w->steps.size() == 1 && w->steps[0].type == StepType::TOOL && w->steps[0].value == TOOL_HOME;
+}
+
 void MacroEngine::onKeyDown(int keyIndex) {
     if (keyIndex < 0 || keyIndex >= KEY_COUNT) return;
     if (layer_ >= (int)cfg_.layers.size()) return;
     const KeyBinding& kb = cfg_.layers[layer_].keys[keyIndex];
     if (kb.empty()) return;
+    if (isSetHome(kb)) { homePin(); return; }
 
     if (kb.trigger == TriggerMode::TOGGLE) {
         // Press on the running key => stop it; otherwise start.

@@ -67,27 +67,32 @@ int main(){
     assert(liveFacing(true,500,120,true,0)==0&&liveFacing(true,50,120,true,MOB_LEFT|MOB_RIGHT|MOB_RIGHT_NEARER)==1);
     assert(liveFacing(true,500,120,false,MOB_LEFT)==0&&liveFacing(true,50,0,true,0)==0);   // features off
     assert(liveFacing(true,-1,120,true,0)==0&&liveFacing(false,50,120,true,MOB_LEFT)==0);   // no position / stale
-    // Smart mode: attack with mobs, wait without; walk home when drifted (range 100).
+    // Smart mode: attack with mobs, wait without. Home is a zone (home ± range 100):
+    // outside it, walk back in (to 3/4 of the range), mobs or not; inside, never pulled back.
     const uint8_t none=MOB_READ,left=MOB_READ|MOB_LEFT;
     assert(smartAction(true,left,true,500,true,500,100,false)==SMART_ATTACK&&smartAction(true,none,true,500,true,500,100,false)==SMART_WAIT);
     // Can't see mobs (no detector on this map / no fresh readings): stands still, never attacks blindly.
     assert(smartAction(true,0,true,500,true,500,100,false)==SMART_NO_DETECTOR&&smartAction(false,none,true,900,true,500,100,false)==SMART_NO_READINGS);
     assert(smartAction(false,left,true,500,true,500,100,false)==SMART_NO_READINGS);   // a stale "mob in reach" isn't trusted either
     assert(smartAction(true,none,true,650,true,500,100,false)==SMART_WALK_LEFT&&smartAction(true,none,true,-200,true,-50,100,false)==SMART_WALK_RIGHT);
-    assert(smartAction(true,left,true,650,true,500,100,false)==SMART_ATTACK&&smartAction(true,left,true,750,true,500,100,false)==SMART_WALK_LEFT);   // mobs keep you, unless far
-    // Nothing to fight: back home, to hunt around it. Walks when over HOME_SETTLE (6%) away, until within half that.
-    assert(smartAction(true,none,true,560,true,500,100,false)==SMART_WAIT&&smartAction(true,none,true,570,true,500,100,false)==SMART_WALK_LEFT);
+    assert(smartAction(true,left,true,650,true,500,100,false)==SMART_WALK_LEFT&&smartAction(true,left,true,590,true,500,100,false)==SMART_ATTACK);   // outside: back in, mobs or not
+    // Inside the zone with nothing to fight: waits where it is (no walking home).
+    assert(smartAction(true,none,true,570,true,500,100,false)==SMART_WAIT&&smartAction(true,none,true,600,true,500,100,false)==SMART_WAIT);
+    assert(smartAction(true,none,true,601,true,500,100,false)==SMART_WALK_LEFT);
     {   // Home on its own (Smart off): only walking back, never waiting
         SmartInput h;h.fresh=true;h.mobs=MOB_READ;h.havePos=true;h.haveHome=true;h.home=500;h.range=100;
         h.pos=560;assert(homeDecide(h)==SMART_ATTACK);                 // within range, nothing in reach: attacks (Smart would wait)
         h.pos=650;assert(homeDecide(h)==SMART_WALK_LEFT);h.pos=350;assert(homeDecide(h)==SMART_WALK_RIGHT);
-        h.pos=650;h.mobs=MOB_READ|MOB_LEFT;assert(homeDecide(h)==SMART_ATTACK);   // a mob in reach keeps you...
-        h.pos=750;assert(homeDecide(h)==SMART_WALK_LEFT);                          // ...unless twice the range away
-        h.pos=560;h.mobs=MOB_READ;h.homing=true;assert(homeDecide(h)==SMART_WALK_LEFT);   // walking: on to half the range
+        h.pos=650;h.mobs=MOB_READ|MOB_LEFT;assert(homeDecide(h)==SMART_WALK_LEFT);   // outside: back in, a mob in reach or not
+        h.mobs=MOB_READ;h.homing=true;h.pos=580;assert(homeDecide(h)==SMART_WALK_LEFT);   // walking: on until 3/4 of the range
+        h.pos=570;assert(homeDecide(h)==SMART_ATTACK);h.homing=false;
         h.range=0;h.pos=900;assert(homeDecide(h)==SMART_ATTACK);h.range=100;h.fresh=false;assert(homeDecide(h)==SMART_ATTACK);
     }
-    assert(smartAction(true,none,true,540,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,525,true,500,100,true)==SMART_WAIT);
-    assert(smartAction(true,none,true,420,true,500,100,false)==SMART_WALK_RIGHT);           // either side
+    assert(smartAction(true,none,true,580,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,570,true,500,100,true)==SMART_WAIT);
+    assert(smartAction(true,none,true,380,true,500,100,false)==SMART_WALK_RIGHT&&smartAction(true,none,true,420,true,500,100,false)==SMART_WAIT);   // either side
+    // At the zone's edge (past 3/4 of the range), face inwards; nearer home, no opinion.
+    assert(homeFacing(true,true,580,true,500,100)==-1&&homeFacing(true,true,420,true,500,100)==+1&&homeFacing(true,true,550,true,500,100)==0);
+    assert(homeFacing(true,true,900,true,500,0)==0&&homeFacing(false,true,900,true,500,100)==0&&homeFacing(true,true,900,false,500,100)==0);
     assert(smartAction(true,left,true,570,true,500,100,false)==SMART_ATTACK);               // mobs in reach: fight them first
     assert(smartAction(true,0,true,570,true,500,100,false)==SMART_NO_DETECTOR);             // no mob detector: can't tell, stand still
     assert(smartAction(true,none,true,900,true,500,0,false)==SMART_WAIT&&smartAction(true,none,false,0,true,500,100,false)==SMART_WAIT);   // no home / no position
@@ -99,12 +104,12 @@ int main(){
     assert(smartDecide(in)==SMART_WAIT);                                   // approach off: as before
     in.approach=true;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
     in.nearLeft=120;assert(smartDecide(in)==SMART_APPROACH_LEFT);          // the nearer side
-    in.pos=420;assert(smartDecide(in)==SMART_WALK_RIGHT);                  // 80 left of home (past 75): no further left, back home
+    in.pos=420;assert(smartDecide(in)==SMART_WAIT);                        // 80 left of home (past 75): no further left; inside, so waits
     in.pos=500;in.seenLeft=0;in.nearLeft=-1;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
     in.seenRight=0;in.nearRight=-1;assert(smartDecide(in)==SMART_WAIT);   // none in sight
     in.seenRight=2;in.nearRight=150;in.mobs=MOB_READ|MOB_RIGHT;assert(smartDecide(in)==SMART_ATTACK);   // in reach: attack
     in.paused=true;assert(smartDecide(in)==SMART_PAUSE);
-    in.mobs=none;in.pos=580;assert(smartDecide(in)==SMART_WALK_LEFT);     // auto-pause: waits at home, not where it was
+    in.mobs=none;in.pos=580;assert(smartDecide(in)==SMART_PAUSE);         // auto-pause: waits where it is, inside the zone
     in.pos=540;assert(smartDecide(in)==SMART_PAUSE);in.pos=500;in.mobs=MOB_READ|MOB_RIGHT;
     in.pos=700;in.mobs=none;assert(smartDecide(in)==SMART_WALK_LEFT);     // drifted: home before pausing
     in.pos=500;in.paused=false;in.seenLeft=in.seenRight=-1;assert(smartDecide(in)==SMART_WAIT);   // no counts: as before

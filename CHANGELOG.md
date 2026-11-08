@@ -3,6 +3,18 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.18.16
+
+- 🗺 **Home is a zone you fight in**: home ± the boundary is where the
+  character fights. Inside it, nothing pulls it back: with nothing to fight
+  it waits where it is (it used to walk back to home itself). If mobs lead it
+  outside the zone, it walks back in first, mobs in reach or not, then
+  carries on; at the zone's edge it turns to face inwards, as at a map edge
+- 🏠 **Home no longer moves on each replay**: a toggle (or hold) button
+  replays the pattern until you stop it, and each replay set home again where
+  the character stood, so home crept along. Now each replay keeps the home
+  that button press set; only a new press (or a new map) sets a new one
+
 ## 1.18.15
 
 - 🧪 **Support only: potions and skills, no attacking**: a new **Attack**

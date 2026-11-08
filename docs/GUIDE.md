@@ -662,13 +662,16 @@ are gone with Wi-Fi readings).
       shown on the dashboard and on the game layer's minimap (a green line,
       the range a band under it; the strip says "you 41% · home 37% ◀", amber
       when out of range). To hunt somewhere else, walk there and press it
-      again. Nothing else moves it;
-    - **It hunts around home**: it fights mobs in reach where they are and
-      walks to ones in sight (within ¾ of the range), but once there's
-      nothing to fight it walks back to home (when more than 6% of the
-      minimap away, until within 3%), and auto-pause waits there too. If it
-      can't get home in 10 s (a wall, another platform), home stays where it
-      is and walking back is tried again 20 s later;
+      again. A toggle or hold button replays the pattern: each replay keeps
+      the home its press set. Nothing else moves it;
+    - **Home is a zone** (since 1.18.16): home ± the range is where it
+      fights. Inside it, it fights mobs in reach where they are, walks to ones
+      in sight (not past ¾ of the range), and with nothing to fight it waits
+      where it is: nothing pulls it back home. If mobs lead it outside the
+      zone, it walks back in (to ¾ of the range), mobs in reach or not, then
+      carries on; at the zone's edge it turns to face inwards, as at a map
+      edge. If it can't get back in within 10 s (a wall, another platform),
+      home stays and walking back is tried again 20 s later;
     - **Walking: hop every** (600–1300 ms for new patterns): walking, home or
       to mobs, holds the arrow key down the whole way and hops (a quick jump)
       after each random time in that range, as you would. The arrow is let go

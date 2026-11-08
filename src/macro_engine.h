@@ -206,6 +206,10 @@ private:
     std::map<std::string, uint32_t> utilityLastRun_;
     struct DynamicSkillTimer { uint32_t lastRun; uint32_t wait; };
     std::map<std::string, DynamicSkillTimer> dynamicSkillTimers_;
+    // Home per pattern for one button press: a toggle/hold button replays the
+    // pattern, and each replay carries on with the home its press set.
+    struct KeptHome { int home = 0; bool onMap = false; std::string map; int slide = 0; bool haveSlide = false; };
+    std::map<std::string, KeptHome> keptHomes_;
     Config cfg_;
     int    layer_      = 0;
 

@@ -635,8 +635,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(!live.fresh)return false;
                     if(stopReason(live))return true;
                     mapCheck(live);
-                    {int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);}
-                    int want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
+                    int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);
+                    // The home zone's edge first (face inwards), then map edges and mobs.
+                    int want=homeFacing(true,havePos,pos,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille);
+                    if(!want)want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;turn();}
                     publish(SMART_ATTACK);
                     if(pattern->stuckAfterMs){
@@ -671,7 +673,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     break;
                 }
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
-                {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);homeCheck(live,havePos,pos);if(live.fresh&&strcmp(live.map,"-"))lastMap=live.map;}
+                {auto kept=keptHomes_.find(pattern->id);   // a replay of the same press: its home stands
+                 if(kept!=keptHomes_.end()){haveHome=true;home=kept->second.home;homeOnMap=kept->second.onMap;lastMap=kept->second.map;slide=kept->second.slide;haveSlide=kept->second.haveSlide;
+                     logStep(s,pc,stepStartedAt,0,true,"home kept from this button press");}}
+                {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);mapCheck(live);homeCheck(live,havePos,pos);if(live.fresh&&strcmp(live.map,"-")&&lastMap.empty())lastMap=live.map;}
                 publish(SMART_ATTACK);
                 // Establish the actual initial facing before the first attack (gliding: in the first jump).
                 turn();
@@ -750,7 +755,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(stop||set+1==sets)break;
                     // Live facing (map edge, mobs) wins; otherwise the turn chance.
                     LiveStats live=liveStatsSnapshot();
-                    int want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
+                    int livePlace=0;bool havePlace=livePos(live,livePlace);
+                    int want=homeFacing(live.fresh,havePlace,livePlace,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille);
+                    if(!want)want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;
                     else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
@@ -767,6 +774,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 for(size_t k=0;k<potionTaps.size()&&!stop;++k)
                     for(;potionTaps[k]&&!stop;--potionTaps[k])tap(dynamicKeycode(potionCode(k)),pattern->potions[k].hold,pattern->potions[k].after);
                 stopWalking();
+                if(haveHome){KeptHome& k=keptHomes_[pattern->id];k.home=home;k.onMap=homeOnMap;k.map=lastMap;k.slide=slide;k.haveSlide=haveSlide;}
                 patternViewSet(PatternView());
                 releaseTracked();
                 logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,stop?"dynamic: stopped":"dynamic: finished");
@@ -925,6 +933,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
 }
 
 void MacroEngine::runMacro(const KeyBinding& kb) {
+    keptHomes_.clear();   // a new press: a new home (replays of this one keep theirs)
     choiceHistory_.clear();
     callStack_.clear();
     movementBalanceMs_ = 0;

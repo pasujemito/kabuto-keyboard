@@ -21,7 +21,7 @@ frames, your name tag, maps to teach again. To redo setup:
     # In MapleStory you mark just your name tag (hover, F8; Esc skips): the
     # bars, the minimap (its size found on every map) and the map's name are
     # found, your feet are just above the tag, and the hitbox is standard
-    # (your height + 40 px above and below, 300 px each way). Other games
+    # (your height + 40 px above and 120 below, 300 px each way). Other games
     # (--game other): each bar's ends, the minimap's corners and your dot, the
     # map's name, then your name tag. --tag redoes just the tag.
 With numpy, mobs are found by shape: every animation frame of the map's mobs
@@ -971,6 +971,7 @@ def read_bars(sct, bars):
 # the stand, move and hit frames). Without numpy, colours as before.
 
 FEET_SLACK = 28       # px a mob's feet may be above or below yours and still count as on your platform
+REACH_BELOW = 80      # px more below your feet that still counts ("below" in mobs): mid-jump, or the platform read a bit high
 FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
 FRAMES_PER_SPOT = 3   # a mob's frames looked at closely per spot: the ones the fast pass liked best there
 EFFECT_BRIGHT = 230   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
@@ -1122,9 +1123,11 @@ class ShapeSearch:
     or take `slack`); flying ones (in `flyers`) when they're at your height
     (`body` px above your feet); with view "screen", anything on screen. A
     fixed band size keeps each frame's FFT computed once."""
-    def __init__(self, np, frames, sight, width=None, slack=FEET_SLACK, body=0, flyers=(), view="level", height=None):
-        """`frames`: {mob: [rgba array, ...]}; `width`, `height`: the screen's."""
+    def __init__(self, np, frames, sight, width=None, slack=FEET_SLACK, body=0, flyers=(), view="level", height=None, below=0):
+        """`frames`: {mob: [rgba array, ...]}; `width`, `height`: the screen's. `below`:
+        px more under your feet still looked at (a mob's feet that far lower counts)."""
         self.np, self.sight, self.slack, self.frames, self.cache, self.cached = np, sight, slack, [], {}, 0
+        self.below = max(0, int(below))
         self.last, self.searched_at, self.traces = [], None, {}   # the mobs last found or followed (with their frame), and when searched
         self.body, self.flyers, self.view = body, set(flyers), ("screen" if view == "screen" and height else "level")
         self.rfft, self.irfft = ffts(np)
@@ -1149,7 +1152,7 @@ class ShapeSearch:
                                         [part_edges(np, m) for _, m in parts]))
         self.h = max([f[2] for f in self.frames] or [1])
         self.w = max([f[3] for f in self.frames] or [1])
-        self.bh = height if self.view == "screen" else self.h + (body if self.flyers else 0) + 2 * slack
+        self.bh = height if self.view == "screen" else self.h + (body if self.flyers else 0) + 2 * slack + self.below
         self.bw = min(2 * sight, width or 2 * sight) + self.w
         self.fft = (fast_len(self.bh), fast_len(self.bw))   # wrap-around only reaches the edge rows/columns thrown away
 
@@ -1162,7 +1165,7 @@ class ShapeSearch:
         self.traces = {}
         np = self.np
         H, W = screen.shape[:2]
-        top = 0 if self.view == "screen" else feet + self.slack - self.bh
+        top = 0 if self.view == "screen" else feet + self.slack + self.below - self.bh
         left = max(-self.w, min(x - self.bw // 2, W + self.w - self.bw))   # centred on you, kept on the screen
         band = np.zeros((self.bh, self.bw, 3), np.float32)   # off screen: matches nothing
         y0, y1, x0, x1 = max(0, top), min(H, top + self.bh), max(0, left), min(W, left + self.bw)
@@ -1198,7 +1201,7 @@ class ShapeSearch:
             first = self.irfft(F, self.fft)[h - 1:self.bh, w - 1:self.bw]
             first /= big_total
             if self.view != "screen":   # at your level: feet level with yours, or (flying) at your height
-                lowest = self.bh - h - 2 * self.slack - (self.body if mob in self.flyers else 0)
+                lowest = self.bh - h - 2 * self.slack - self.below - (self.body if mob in self.flyers else 0)   # feet from slack above yours to slack + below under
                 first[:max(0, lowest)] = 0
             for k in look:   # a mob seen before: the best spot near where it was, checked closely
                 if k[1] != mob:
@@ -1677,7 +1680,8 @@ class Screen:
             flyers = {mob for mob, names in files.items() if any(".fly" in n for n in names)}
             body = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
             self.searches[name] = ShapeSearch(self.np, frames, sight, m["width"], body=body, flyers=flyers,
-                                              view=mb.get("view", "level"), height=m["height"]) if frames else None
+                                              view=mb.get("view", "level"), height=m["height"],
+                                              below=mb.get("below", REACH_BELOW)) if frames else None
         return self.searches[name]
 
     def mobs(self, name):
@@ -1897,11 +1901,12 @@ def mob_area(mb, screen, sight=1.0):
     """The hitbox either side of your character, clipped to the screen: as
     tall as your character (head to feet, when marked; else `band` px above
     and below), `reach` px to each side (`sight` times that, to see mobs out of
-    reach). Returns (left, top, width, height)."""
+    reach), and REACH_BELOW ("below") px more under your feet. Returns (left,
+    top, width, height)."""
     reach = int(mb.get("reach", REACH) * sight)
     pad = mb.get("pad", HITBOX_PAD) if "top" in mb else 0   # above your head and below your feet
     top = mb["top"] - pad if "top" in mb else mb["y"] - mb.get("band", 80)
-    bottom = mb["bottom"] + pad if "bottom" in mb else mb["y"] + mb.get("band", 80)
+    bottom = (mb["bottom"] + pad if "bottom" in mb else mb["y"] + mb.get("band", 80)) + mb.get("below", REACH_BELOW)
     left, top = max(screen["left"], mb["x"] - reach), max(screen["top"], top)
     right = min(screen["left"] + screen["width"], mb["x"] + reach)
     bottom = min(screen["top"] + screen["height"], bottom)
@@ -3854,10 +3859,10 @@ def selftest():
     # Hitbox: head and feet set its height, the reach point how far it goes each side.
     hb = hitbox((402, 300), (398, 420), (800, 410))
     assert hb == {"x": 400, "y": 360, "top": 300, "bottom": 420, "reach": 400, "gap": 40}, hb
-    assert mob_area(hb, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 260, 800, 200)   # 40 px above and below: 800 x 200
-    assert mob_area(hb, {"left": 0, "top": 0, "width": 700, "height": 1080}) == (0, 260, 700, 200)    # clipped to the screen
-    assert mob_area(dict(hb, pad=0), {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 300, 800, 120)   # "pad": 0
-    assert mob_area({"x": 400, "y": 360}, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (100, 280, 600, 160)   # older setups: reach 300
+    assert mob_area(hb, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 260, 800, 280)   # 40 px above, 40 + 80 below: 800 x 280
+    assert mob_area(hb, {"left": 0, "top": 0, "width": 700, "height": 1080}) == (0, 260, 700, 280)    # clipped to the screen
+    assert mob_area(dict(hb, pad=0, below=0), {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (0, 300, 800, 120)   # "pad": 0, "below": 0
+    assert mob_area({"x": 400, "y": 360}, {"left": 0, "top": 0, "width": 1920, "height": 1080}) == (100, 280, 600, 240)   # older setups: reach 300
     # Character near the screen edge: the area is clipped, so "you" aren't in its middle.
     clipped = canvas(450, 160, grey); paint(clipped, 450, 80, 40, 120, 120, green); paint(clipped, 450, 300, 50, 340, 110, green)
     assert mob_sides(clipped, 450, 160, [green], mid=100) == "R"
@@ -4266,6 +4271,12 @@ def selftest():
         assert all(f[0] > 0.9 for f in found) and len(search.frames) == 1   # the blob is symmetric: its mirror is the same frame
         assert search.search(world, 200, 72) == []                          # feet half way up: neither level is yours
         assert [(f[2], f[3]) for f in search.search(world, 200, 39)] == [(130, 20)]   # up on the ledge: that one is
+        # 80 px more below your feet (REACH_BELOW): mid-jump, or the platform read a bit high,
+        # mobs on the ground under you still count; much lower ones don't.
+        low = ShapeSearch(np, {"blob": [rgba]}, sight=200, width=400, below=REACH_BELOW)
+        assert sorted((f[2], f[3]) for f in low.search(world, 200, 72)) == [(60, 90), (300, 90)]   # 37 px above the grass (the ledge is above you)
+        assert sorted((f[2], f[3]) for f in low.search(world, 200, 39)) == [(60, 90), (130, 20), (300, 90)]   # 70 px above it
+        assert [(f[2], f[3]) for f in low.search(world, 200, -25)] == [(130, 20)]                           # 135 px above: too far
         bat = rgba[..., [2, 0, 1, 3]].copy()                                  # another colour: a flying mob
         world[55:75, 240:260][bat[..., 3] > 0] = bat[..., :3][bat[..., 3] > 0]   # 35 px above your feet
         frames = {"blob": [rgba], "bat": [bat]}
@@ -4538,7 +4549,7 @@ def selftest():
                           [(450, 310, 470, 330, "Blue_Snail", 2), (100, 310, 120, 330, "Blue_Snail", 1, 0.83), (200, 310, 220, 330, "Blue_Snail", 0, 0.31)],
                           {"x": 50.0, "y": 50.0})
     labels = {label: (x0, y0, x1, y1) for x0, y0, x1, y1, _, label in shapes}
-    assert labels["sight"] == (150, 260, 650, 380) and labels["reach"] == (300, 260, 500, 380) and labels["Blue Snail x2"] == (450, 310, 470, 330)   # 40 px above and below
+    assert labels["sight"] == (150, 260, 650, 460) and labels["reach"] == (300, 260, 500, 460) and labels["Blue Snail x2"] == (450, 310, 470, 330)   # 40 px above, 40 + 80 below
     assert labels["Blue Snail 83%"] == (100, 310, 120, 330) and labels["not a mob 31%"] == (200, 310, 220, 330)
     assert labels["minimap"] == (598, 8, 762, 92) and labels["you"] == (676, 46, 684, 54) and labels["map name"] == (598, 90, 661, 107), labels
     assert [c for *_, c, label in shapes if label == "you"] != ["#ffdd44"]   # never the dot's colour: the reader would see it

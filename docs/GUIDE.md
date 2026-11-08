@@ -306,7 +306,8 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    MapleStory. The tag is drawn centred just under your feet and every
    character is the same size, so your feet (7 px above the tag's middle) and
    head (73 px above them) needn't be marked, and the hitbox is standard: your
-   character's height plus 40 px above and below (`"pad"` in `mobs`), 300 px
+   character's height plus 40 px above and 40 + 80 px below (`"pad"` and
+   `"below"` in `mobs`), 300 px
    each way (`"reach"`). Mobs are looked for in that box either side of you,
    skipping your own character in the middle. Without mob sprites (below), then up to 3 mobs of different
    kinds (it learns their colours); **Esc** when done.
@@ -370,8 +371,10 @@ must sit where it should, a small flickering part (flames, sparkles) can't
 veto a match, and scenery that only shares colours can't pass.
 
 Only mobs in **your field of view** count: as far as your sight either side,
-and at your level. Walking mobs count when their feet are within 28 px of
-yours (on your platform, not the ledge above or below); flying ones (mobs
+and at your level. Walking mobs count when their feet are from 28 px above
+yours to 28 + 80 px below (`"below"` in `mobs`, 80 by default since 1.19.0:
+mid-jump, or with the platform read a little high, mobs on the ground under
+you still count; the ledge above, or one well below, doesn't); flying ones (mobs
 with `fly` frames) when they're anywhere at your height, from your feet up to
 your head. To count everything on screen instead, put `"view": "screen"` in
 your setup's `mobs`. **Jumping** doesn't lift your field of view: it follows

@@ -18,6 +18,11 @@ and show up in the pad's **Updates** panel.
   pattern with the very same ones at it; patterns without a character (and
   all saved before 1.19.0) keep their own settings. New patterns use the
   active character
+- 🦘 **Reach 80 px further below you**: mobs whose feet are up to 80 px
+  lower than yours (plus the usual 28) now count as on your level, so
+  mid-jump, or with the platform read a little high, mobs on the ground under
+  you are still in reach. `"below"` in `mobs` changes it (0 = as before).
+  **Update the PC script**
 - 🗺 **Home is a zone you fight in**: home ± the boundary is where the
   character fights. Inside it, nothing pulls it back: with nothing to fight
   it waits where it is (it used to walk back to home itself). If mobs lead it

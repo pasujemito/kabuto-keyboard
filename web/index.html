@@ -252,6 +252,15 @@
   .setting.titled>.dynamic-field>.field-label,.setting.titled>.dynamic-range>legend{display:none}
   .setting-points{margin:0;padding-left:18px;font-size:12px;line-height:1.5;color:var(--muted)}
   .setting-points b{color:var(--ink);font-weight:600}
+  .setting-points li.pick{cursor:pointer;border-radius:6px;padding:2px 6px;margin-left:-6px;list-style:none;position:relative}
+  .setting-points li.pick::before{content:'○';position:absolute;left:-12px;color:var(--muted)}
+  .setting-points li.pick:hover{background:var(--edge)}
+  .setting-points li.pick.on{background:var(--amber-dim)}
+  .setting-points li.pick.on::before{content:'●';color:var(--amber)}
+  .dynamic-field .slider{width:100%;accent-color:var(--amber);padding:0;margin:4px 0 0}
+  /* Phones zoom into any field with text under 16 px: these never go below it. */
+  .dynamic-field input,.dynamic-field select,#dynamicName,.update-form input,input.name{font-size:16px}
+  @media (pointer:coarse){input,select,textarea{font-size:16px}}
   .unused-note{display:none;margin:0;font-size:12px;color:var(--amber)}
   .setting.unused>:not(.unused-note):not(.setting-title){opacity:.5}
   .setting.unused .unused-note{display:block}
@@ -1011,7 +1020,34 @@ let dynamicTarget=null,dynamicDraft=null,dynamicDirty=false,generatedPreview=nul
 function dynamicNumber(label,value,min,max,step,change,displayLabel=label){
   const wrapper=el('label','dynamic-field'),text=el('span','field-label');text.textContent=displayLabel;wrapper.appendChild(text);
   const input=el('input');input.type='number';input.min=min;input.max=max;input.step=step;input.value=value;input.setAttribute('aria-label',label);
-  input.oninput=()=>{change(input.value===''?NaN:Number(input.value));dynamicDirty=true;$('#dynamicError').textContent='';refreshUnused();};wrapper.appendChild(input);return wrapper;
+  // Percentages also get a slider: drag instead of typing (the box still takes exact numbers).
+  const slider=/%/.test(label)&&max<=100?el('input','slider'):null;
+  if(slider){slider.type='range';slider.min=min;slider.max=max;slider.step=1;slider.value=value;slider.tabIndex=-1;slider.setAttribute('aria-hidden','true');
+    slider.oninput=()=>{input.value=slider.value;input.oninput();};}
+  input.oninput=()=>{change(input.value===''?NaN:Number(input.value));if(slider&&input.value!=='')slider.value=input.value;dynamicDirty=true;$('#dynamicError').textContent='';refreshUnused();refreshPicks(wrapper);};
+  wrapper.appendChild(input);if(slider)wrapper.appendChild(slider);return wrapper;
+}
+// A help bullet's value ("20%", "10 s", "1–3", "on") as what the setting's fields take, or null.
+function pickValue(text){
+  if(text==='on'||text==='off')return {check:text==='on'};
+  const m=/^(-?\d+(?:\.\d+)?)(?:–(\d+(?:\.\d+)?))?\s*(%|s|ms)?$/.exec(text);
+  return m?{a:Number(m[1]),b:Number(m[2]??m[1])}:null;
+}
+// Sets a setting's fields from a bullet's value (as if typed), for tapping instead of typing.
+function applyPick(box,v){
+  const check=box.querySelector('input[type=checkbox]'),nums=[...box.querySelectorAll('input[type=number]')];
+  if('check' in v){if(check&&check.checked!==v.check){check.checked=v.check;check.onchange();}}
+  else if(nums.length){nums.forEach((n,i)=>{n.value=i?v.b:v.a;n.oninput();});}
+  refreshPicks(box);
+}
+// Marks the bullet matching the current value.
+function refreshPicks(node){
+  const box=node.closest?node.closest('.setting'):null;if(!box)return;
+  const check=box.querySelector('input[type=checkbox]'),nums=[...box.querySelectorAll('input[type=number]')].map(n=>Number(n.value));
+  for(const li of box.querySelectorAll('.setting-points li.pick')){
+    const v=pickValue(li.dataset.value);
+    li.classList.toggle('on','check' in v?!!check&&check.checked===v.check:nums.length>0&&nums[0]===v.a&&(nums.length<2||nums[1]===v.b));
+  }
 }
 // scale shows stored milliseconds in larger units, e.g. 1000 for seconds.
 function dynamicRange(label,range,min,max,scale=1){
@@ -1124,8 +1160,13 @@ function helped(node,key,label,defText,onReset){
   if(h.title){box.classList.add('titled');const t=el('div','setting-title');t.textContent=h.title;box.appendChild(t);}
   box.appendChild(node);
   if(h.what){const what=el('p','setting-help');what.textContent=h.what;box.appendChild(what);}
-  if(h.points){const ul=el('ul','setting-points');for(const [value,meaning] of h.points){const li=el('li'),b=el('b');b.textContent=value;li.append(b,': '+meaning);ul.appendChild(li);}box.appendChild(ul);}
+  if(h.points){const ul=el('ul','setting-points');for(const [value,meaning] of h.points){const li=el('li'),b=el('b');b.textContent=value;li.append(b,': '+meaning);
+      // A bullet with a value is a choice: tap it to set the setting to it.
+      const v=pickValue(value);if(v&&node.querySelector('input')){li.classList.add('pick');li.dataset.value=value;li.tabIndex=0;li.setAttribute('role','button');
+        li.title='Set to '+value;li.onclick=()=>applyPick(box,v);li.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();applyPick(box,v);}};}
+      ul.appendChild(li);}box.appendChild(ul);}
   box.appendChild(el('p','unused-note'));
+  setTimeout(()=>refreshPicks(node),0);
   if(defText!==undefined){
     const row=el('div','setting-default'),text=el('span');text.textContent='Default: '+defText;row.appendChild(text);
     if(onReset){const b=el('button','btn sm');b.type='button';b.textContent='↺ Default';b.setAttribute('aria-label','Default for '+label);
@@ -1137,7 +1178,7 @@ function helped(node,key,label,defText,onReset){
 const copy=v=>JSON.parse(JSON.stringify(v));
 function dynamicCheck(label,text,value,change){
   const field=el('label','dynamic-field check'),check=el('input');check.type='checkbox';check.checked=value;check.setAttribute('aria-label',label);
-  check.onchange=()=>{change(check.checked);dynamicDirty=true;refreshUnused();};field.append(check,' '+text);return field;
+  check.onchange=()=>{change(check.checked);dynamicDirty=true;refreshUnused();refreshPicks(field);};field.append(check,' '+text);return field;
 }
 function renderDynamicKeys(){
   const box=$('#dynamicKeys'),keys=dynamicDraft.keys;box.replaceChildren();

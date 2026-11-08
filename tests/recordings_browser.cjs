@@ -154,6 +154,24 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Every setting explains itself in plain words, shows its default and goes back to it.
   assert.match(await page.locator('#dynamicHome').textContent(),/Distance boundary from home \(% of map width\).*Smart on or off\..*0%: disabled.*20%: narrow \(use on platforms\).*50%: wide \(use on flat ground\).*Default: 50%/s);
   assert.equal(await page.locator('#dynamicHome .setting-points li').count(),3);
+  // Tap a value instead of typing: the bullet sets it, and is marked as the current one.
+  await page.locator('#dynamicHome .setting-points li',{hasText:'20%: narrow'}).click();
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'20');
+  assert(await page.locator('#dynamicHome .setting-points li',{hasText:'20%: narrow'}).evaluate(e=>e.classList.contains('on')));
+  assert.equal(await page.locator('#dynamicHome .setting-points li.on').count(),1);
+  assert.equal(await page.locator('#dynamicHome input.slider').inputValue(),'20');   // the slider follows
+  await page.locator('#dynamicHome input.slider').fill('35');
+  assert.equal(await page.getByLabel('Home range (%)',{exact:true}).inputValue(),'35');
+  assert.equal(await page.locator('#dynamicHome .setting-points li.on').count(),0);
+  await page.locator('.setting[data-key="attacks_per_set"] .setting-points li',{hasText:'4–7'}).click();   // a range: both ends
+  assert.equal(await page.getByLabel('Attacks per set minimum',{exact:true}).inputValue(),'4');assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'7');
+  await page.locator('.setting[data-key="smart"] .setting-points li',{hasText:'off: attacks all the time'}).click();
+  assert(!(await page.getByLabel('Smart mode',{exact:true}).isChecked()));
+  await page.locator('.setting[data-key="smart"] .setting-points li',{hasText:'on: attacks only'}).click();
+  assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
+  // Fields are 16 px or more, so phones don't zoom in on them.
+  assert(await page.locator('#dynamicDialog').evaluate(d=>[...d.querySelectorAll('input:not([type=checkbox]):not([type=range]),select')].every(e=>parseFloat(getComputedStyle(e).fontSize)>=16)));
+  await page.getByLabel('Home range (%)',{exact:true}).fill('10');
   // Not driven right now (no screen reader readings here): greyed out, saying why.
   assert(await page.locator('#dynamicHome .setting[data-key="home_range"]').evaluate(e=>e.classList.contains('unused')));
   assert.match(await page.locator('#dynamicHome .unused-note').textContent(),/no readings from the PC screen reader/);

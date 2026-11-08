@@ -14,6 +14,12 @@ and show up in the pad's **Updates** panel.
   replays the pattern until you stop it, and each replay set home again where
   the character stood, so home crept along. Now each replay keeps the home
   that button press set; only a new press (or a new map) sets a new one
+- 👆 **Tap instead of type**: the value bullets under each setting are now
+  choices: tap "20%: narrow" and it's set (● marks the current one, ranges
+  like "4–7" set both ends, on/off flips the switch). Percentage settings
+  also have a slider. The box still takes any exact number
+- 📱 **No more zooming on phones**: fields use 16 px text, below which phones
+  zoom in on every tap
 
 ## 1.18.15
 

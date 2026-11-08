@@ -288,7 +288,14 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
             uint32_t elapsed = millis() - state.combatStart;
             ms = elapsed >= state.combatBudget ? 0 : std::min(ms, state.combatBudget - elapsed);
         }
-        sleepMs(ms, stop);
+        if (!moveGuard_) { sleepMs(ms, stop); return; }
+        // A dynamic pattern moving: look at where you are every MOVE_GUARD_MS meanwhile.
+        for (uint32_t started = millis(); !stop;) {
+            uint32_t elapsed = millis() - started;
+            if (elapsed >= ms) break;
+            sleepMs(std::min<uint32_t>(MOVE_GUARD_MS, ms - elapsed), stop);
+            if (moveGuard_) moveGuard_();
+        }
     };
     auto hasHeldInput = [&]() {
         for (bool held : state.heldKey) if (held) return true;
@@ -684,6 +691,28 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,"support only: stopped");
                     break;
                 }
+                // The home zone's hard edge: holding an arrow outwards (moving while attacking,
+                // walking to mobs) is let go of as soon as you're past 3/4 of the range, checked
+                // every MOVE_GUARD_MS, not only between attacks; the next jump faces inwards.
+                // The same for the map's edges ("turn at map edges", on your minimap dot).
+                moveGuard_=[&]{
+                    if(walking.empty())return;
+                    bool right=walking==pattern->right,left=walking==pattern->left;
+                    if(!right&&!left)return;
+                    LiveStats live=liveStatsSnapshot();
+                    if(!live.fresh)return;
+                    const char* why=nullptr;
+                    int margin=pattern->edgeMarginPermille;
+                    if(margin&&live.x>=0&&((left&&live.x<margin)||(right&&live.x>1000-margin)))why="map edge: stopped moving towards it";
+                    int pos=0;
+                    if(!why&&pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&livePos(live,pos)&&homeOnMap==(live.wx!=LIVE_NO_POS)){
+                        int off=pos-home,limit=homeInside(pattern->homeRangePermille);
+                        if((right&&off>limit)||(left&&-off>limit))why="home zone edge: stopped moving outwards";
+                    }
+                    if(!why)return;
+                    stopWalking();moving=false;
+                    logStep(s,pc,millis(),0,true,why);
+                };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 {auto kept=keptHomes_.find(pattern->id);   // a replay of the same press: its home stands
                  if(kept!=keptHomes_.end()){haveHome=true;home=kept->second.home;homeOnMap=kept->second.onMap;lastMap=kept->second.map;slide=kept->second.slide;haveSlide=kept->second.haveSlide;
@@ -785,6 +814,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // Taps still owed when the attacking ends (a refill of several): drunk now.
                 for(size_t k=0;k<potionTaps.size()&&!stop;++k)
                     for(;potionTaps[k]&&!stop;--potionTaps[k])tap(dynamicKeycode(potionCode(k)),pattern->potions[k].hold,pattern->potions[k].after);
+                moveGuard_=nullptr;
                 stopWalking();
                 if(haveHome){KeptHome& k=keptHomes_[pattern->id];k.home=home;k.onMap=homeOnMap;k.map=lastMap;k.slide=slide;k.haveSlide=haveSlide;}
                 patternViewSet(PatternView());
@@ -946,6 +976,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
 
 void MacroEngine::runMacro(const KeyBinding& kb) {
     keptHomes_.clear();   // a new press: a new home (replays of this one keep theirs)
+    moveGuard_ = nullptr;
     choiceHistory_.clear();
     callStack_.clear();
     movementBalanceMs_ = 0;

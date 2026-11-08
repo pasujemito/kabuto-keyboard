@@ -973,6 +973,7 @@ def read_bars(sct, bars):
 
 FEET_SLACK = 28       # px a mob's feet may be above or below yours and still count as on your platform
 REACH_BELOW = 80      # px more below your feet that still counts ("below" in mobs): mid-jump, or the platform read a bit high
+AIR_PX = 12           # px between your tag's feet and the platform's that means you're in the air (the reach below applies)
 FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
 FRAMES_PER_SPOT = 3   # a mob's frames looked at closely per spot: the ones the fast pass liked best there
 EFFECT_BRIGHT = 230   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
@@ -1657,13 +1658,21 @@ class Screen:
         self.you = self.ground.update(self.seen, dot_y, self.clock())
         return self.you
 
-    def shape_search(self, name):
+    def shape_search(self, name, air=False):
         """The map's ShapeSearch: numpy, a taught map and its mob frames (from
-        map.json); None otherwise."""
+        map.json); None otherwise. `air`: the one reaching REACH_BELOW ("below")
+        px further under your feet, for readings where your name tag and the
+        platform you stood on disagree (mid-jump, or the platform read a bit
+        high): a taller band is about twice as slow, so not for every reading."""
         if not self.np or not name or not self.sprites_dir or name not in self.map_mobs:
             return None
-        if name not in self.searches:
-            self.searches = {}   # only this map's: each holds its frames' spectra, too much to keep for every map
+        below = (self.config.get("mobs") or {}).get("below", REACH_BELOW) if air else 0
+        if air and not below:
+            air = False
+        key = (name, air)
+        if key not in self.searches:
+            if not any(k[0] == name for k in self.searches):
+                self.searches = {}   # only this map's: each holds its frames' spectra, too much to keep for every map
             mb = self.config["mobs"]
             try:
                 from PIL import Image
@@ -1680,10 +1689,9 @@ class Screen:
             files = frame_files(self.sprites_dir, self.map_mobs[name] or [])
             flyers = {mob for mob, names in files.items() if any(".fly" in n for n in names)}
             body = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
-            self.searches[name] = ShapeSearch(self.np, frames, sight, m["width"], body=body, flyers=flyers,
-                                              view=mb.get("view", "level"), height=m["height"],
-                                              below=mb.get("below", REACH_BELOW)) if frames else None
-        return self.searches[name]
+            self.searches[key] = ShapeSearch(self.np, frames, sight, m["width"], body=body, flyers=flyers,
+                                             view=mb.get("view", "level"), height=m["height"], below=below) if frames else None
+        return self.searches[key]
 
     def mobs(self, name):
         """Mob fields for the reading (see mob_fields): by shape with numpy and
@@ -1694,7 +1702,10 @@ class Screen:
         if mb and "x" in mb and self.you:   # follow you: the box moves with your name tag
             height = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
             mb = dict(mb, x=self.you[0], y=self.you[1] - height // 2, top=self.you[1] - height, bottom=self.you[1])
-        search = self.shape_search(name) if mb else None
+        # Mid-jump or the platform read a little off (your tag's feet and the platform's apart):
+        # reach REACH_BELOW further down for this reading; otherwise the quicker search.
+        air = bool(self.seen and self.you and abs(self.seen[1] - self.you[1]) > AIR_PX)
+        search = self.shape_search(name, air) if mb else None
         if search:
             pixels, ox, oy = self.screen()
             x, feet = (self.you or (mb["x"], mb.get("bottom", mb["y"])))
@@ -2910,7 +2921,8 @@ def worth_sending(last, r, sent_at, now, heartbeat=HEARTBEAT_S):
     """Whether this reading changes anything the pad fights with, compared
     with the last one sent: the game's state, the map, mobs (sides, counts,
     the nearest's name, one coming into or out of reach, or 10% of your reach
-    nearer or further), your place (1% of the minimap), HP or MP (1%). XP
+    nearer or further), your place (0.5% of the minimap: the home zone's edge
+    is judged from it), HP or MP (1%). XP
     alone waits for the heartbeat."""
     if last is None or now - sent_at >= heartbeat or now < sent_at:
         return True
@@ -2919,7 +2931,7 @@ def worth_sending(last, r, sent_at, now, heartbeat=HEARTBEAT_S):
     def moved(key, step):
         a, b = last.get(key), r.get(key)
         return (a is None) != (b is None) or (a is not None and abs(b - a) >= step)
-    if any(moved(k, step) for k, step in (("x", 1.0), ("y", 2.0), ("wx", 10), ("wy", 20), ("hp", 1.0), ("mana", 1.0))):
+    if any(moved(k, step) for k, step in (("x", 0.5), ("y", 2.0), ("wx", 5), ("wy", 20), ("hp", 1.0), ("mana", 1.0))):
         return True
     for k in ("dl", "dr"):
         a, b = last.get(k), r.get(k)
@@ -4607,8 +4619,8 @@ def selftest():
     base = {"hp": 80.0, "mana": 50.0, "xp": 10.0, "x": 40.0, "y": 60.0, "wx": 400, "wy": 600, "state": "ok", "mobs": "R",
             "ml": 0, "mr": 2, "dl": None, "dr": 150, "mn": "snail", "map": "Henesys"}
     assert worth_sending(None, base, 0, 0) and worth_sending(base, dict(base), 0, HEARTBEAT_S)
-    assert not worth_sending(base, dict(base, xp=10.3, hp=80.4, x=40.5, dr=145), 0, 1.0)   # small drift: wait
-    for change in ({"state": "dead"}, {"mobs": "RL"}, {"mr": 1}, {"mn": "pig"}, {"map": "-"}, {"x": 41.0}, {"wx": 410},
+    assert not worth_sending(base, dict(base, xp=10.3, hp=80.4, x=40.4, dr=145), 0, 1.0)   # small drift: wait
+    for change in ({"state": "dead"}, {"mobs": "RL"}, {"mr": 1}, {"mn": "pig"}, {"map": "-"}, {"x": 40.5}, {"wx": 405},
                    {"hp": 79.0}, {"mana": None}, {"dr": 99}, {"dr": 160}, {"dl": 120}):
         assert worth_sending(base, dict(base, **change), 0, 0.5), change
     assert worth_sending(dict(base, dr=101), dict(base, dr=100), 0, 0.5)   # coming into reach, however little

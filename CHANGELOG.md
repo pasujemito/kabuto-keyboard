@@ -3,6 +3,27 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.3
+
+- 🧱 **The home boundary is a hard edge**: home at 25% with a 10% boundary
+  now keeps the character between 15% and 35% of the map. Position was only
+  looked at between jump-attacks (every second or so), while moving while
+  attacking (or walking to mobs) kept the arrow held, so it slid well past
+  the line before turning (a test run: 48% with a 40% line). Now, while an
+  arrow is held, where you are is checked every 40 ms; past 3/4 of the
+  boundary, moving outwards, the arrow is let go of at once and the next jump
+  faces inwards (the same run: 38%). The PC script also reports a move of
+  0.5% of the minimap (was 1%). **Update the PC script too**
+- 🧱 **Map edges too**: "turn back before the map edge" at 5% let the
+  character slide to 1% for the same reason; the same 40 ms check lets go of
+  an arrow heading for the edge as soon as you're inside your margin
+- ⚡ **Mobs noticed sooner again**: 1.19.0's 80 px of reach below your feet
+  made every mob search look through a taller band, about twice as slow
+  (51 ms → 120 ms a search on a Perion screenshot), so new mobs were noticed
+  later. Now the extra 80 px is only searched when you're in the air or the
+  platform you stood on reads off (your name tag's feet and the platform's
+  more than 12 px apart); on the ground the search is as quick as before
+
 ## 1.19.2
 
 - 🧍 **Much less walking home**: 1.19.1 walked back into the zone whenever

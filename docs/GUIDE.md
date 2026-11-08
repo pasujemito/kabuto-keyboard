@@ -372,9 +372,11 @@ veto a match, and scenery that only shares colours can't pass.
 
 Only mobs in **your field of view** count: as far as your sight either side,
 and at your level. Walking mobs count when their feet are from 28 px above
-yours to 28 + 80 px below (`"below"` in `mobs`, 80 by default since 1.19.0:
-mid-jump, or with the platform read a little high, mobs on the ground under
-you still count; the ledge above, or one well below, doesn't); flying ones (mobs
+yours to 28 px below, and while you're in the air (your name tag's feet more
+than 12 px from the platform you stood on) to 28 + 80 px below (`"below"` in
+`mobs`, 80 by default): mobs on the ground under you still count mid-jump.
+Only then, because the taller band takes about twice as long to search; the
+ledge above, or one well below, never counts); flying ones (mobs
 with `fly` frames) when they're anywhere at your height, from your feet up to
 your head. To count everything on screen instead, put `"view": "screen"` in
 your setup's `mobs`. **Jumping** doesn't lift your field of view: it follows

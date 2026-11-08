@@ -973,6 +973,7 @@ def read_bars(sct, bars):
 
 FEET_SLACK = 28       # px a mob's feet may be above or below yours and still count as on your platform
 REACH_BELOW = 80      # px more below your feet that still counts ("below" in mobs): mid-jump, or the platform read a bit high
+AIR_PX = 12           # px between your tag's feet and the platform's that means you're in the air (the reach below applies)
 FIRST_PASS = 0.45     # share of a frame's pixels matching its colours for a closer look
 FRAMES_PER_SPOT = 3   # a mob's frames looked at closely per spot: the ones the fast pass liked best there
 EFFECT_BRIGHT = 230   # a pixel this bright (any channel, 0-255) not matching the mob may be a hit effect over it
@@ -1657,13 +1658,21 @@ class Screen:
         self.you = self.ground.update(self.seen, dot_y, self.clock())
         return self.you
 
-    def shape_search(self, name):
+    def shape_search(self, name, air=False):
         """The map's ShapeSearch: numpy, a taught map and its mob frames (from
-        map.json); None otherwise."""
+        map.json); None otherwise. `air`: the one reaching REACH_BELOW ("below")
+        px further under your feet, for readings where your name tag and the
+        platform you stood on disagree (mid-jump, or the platform read a bit
+        high): a taller band is about twice as slow, so not for every reading."""
         if not self.np or not name or not self.sprites_dir or name not in self.map_mobs:
             return None
-        if name not in self.searches:
-            self.searches = {}   # only this map's: each holds its frames' spectra, too much to keep for every map
+        below = (self.config.get("mobs") or {}).get("below", REACH_BELOW) if air else 0
+        if air and not below:
+            air = False
+        key = (name, air)
+        if key not in self.searches:
+            if not any(k[0] == name for k in self.searches):
+                self.searches = {}   # only this map's: each holds its frames' spectra, too much to keep for every map
             mb = self.config["mobs"]
             try:
                 from PIL import Image
@@ -1680,10 +1689,9 @@ class Screen:
             files = frame_files(self.sprites_dir, self.map_mobs[name] or [])
             flyers = {mob for mob, names in files.items() if any(".fly" in n for n in names)}
             body = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
-            self.searches[name] = ShapeSearch(self.np, frames, sight, m["width"], body=body, flyers=flyers,
-                                              view=mb.get("view", "level"), height=m["height"],
-                                              below=mb.get("below", REACH_BELOW)) if frames else None
-        return self.searches[name]
+            self.searches[key] = ShapeSearch(self.np, frames, sight, m["width"], body=body, flyers=flyers,
+                                             view=mb.get("view", "level"), height=m["height"], below=below) if frames else None
+        return self.searches[key]
 
     def mobs(self, name):
         """Mob fields for the reading (see mob_fields): by shape with numpy and
@@ -1694,7 +1702,10 @@ class Screen:
         if mb and "x" in mb and self.you:   # follow you: the box moves with your name tag
             height = mb.get("bottom", mb["y"]) - mb.get("top", mb["y"])
             mb = dict(mb, x=self.you[0], y=self.you[1] - height // 2, top=self.you[1] - height, bottom=self.you[1])
-        search = self.shape_search(name) if mb else None
+        # Mid-jump or the platform read a little off (your tag's feet and the platform's apart):
+        # reach REACH_BELOW further down for this reading; otherwise the quicker search.
+        air = bool(self.seen and self.you and abs(self.seen[1] - self.you[1]) > AIR_PX)
+        search = self.shape_search(name, air) if mb else None
         if search:
             pixels, ox, oy = self.screen()
             x, feet = (self.you or (mb["x"], mb.get("bottom", mb["y"])))

@@ -694,16 +694,24 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // The home zone's hard edge: holding an arrow outwards (moving while attacking,
                 // walking to mobs) is let go of as soon as you're past 3/4 of the range, checked
                 // every MOVE_GUARD_MS, not only between attacks; the next jump faces inwards.
+                // The same for the map's edges ("turn at map edges", on your minimap dot).
                 moveGuard_=[&]{
-                    if(walking.empty()||!pattern->homeRangePermille||!haveHome||homeOff||!mapSeen.empty())return;
+                    if(walking.empty())return;
                     bool right=walking==pattern->right,left=walking==pattern->left;
                     if(!right&&!left)return;
-                    LiveStats live=liveStatsSnapshot();int pos=0;
-                    if(!livePos(live,pos)||homeOnMap!=(live.wx!=LIVE_NO_POS))return;
-                    int off=pos-home,limit=homeInside(pattern->homeRangePermille);
-                    if(!(right&&off>limit)&&!(left&&-off>limit))return;
+                    LiveStats live=liveStatsSnapshot();
+                    if(!live.fresh)return;
+                    const char* why=nullptr;
+                    int margin=pattern->edgeMarginPermille;
+                    if(margin&&live.x>=0&&((left&&live.x<margin)||(right&&live.x>1000-margin)))why="map edge: stopped moving towards it";
+                    int pos=0;
+                    if(!why&&pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&livePos(live,pos)&&homeOnMap==(live.wx!=LIVE_NO_POS)){
+                        int off=pos-home,limit=homeInside(pattern->homeRangePermille);
+                        if((right&&off>limit)||(left&&-off>limit))why="home zone edge: stopped moving outwards";
+                    }
+                    if(!why)return;
                     stopWalking();moving=false;
-                    logStep(s,pc,millis(),0,true,"home zone edge: stopped moving outwards");
+                    logStep(s,pc,millis(),0,true,why);
                 };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
                 {auto kept=keptHomes_.find(pattern->id);   // a replay of the same press: its home stands

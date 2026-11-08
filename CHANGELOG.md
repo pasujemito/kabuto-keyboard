@@ -14,6 +14,15 @@ and show up in the pad's **Updates** panel.
   boundary, moving outwards, the arrow is let go of at once and the next jump
   faces inwards (the same run: 38%). The PC script also reports a move of
   0.5% of the minimap (was 1%). **Update the PC script too**
+- 🧱 **Map edges too**: "turn back before the map edge" at 5% let the
+  character slide to 1% for the same reason; the same 40 ms check lets go of
+  an arrow heading for the edge as soon as you're inside your margin
+- ⚡ **Mobs noticed sooner again**: 1.19.0's 80 px of reach below your feet
+  made every mob search look through a taller band, about twice as slow
+  (51 ms → 120 ms a search on a Perion screenshot), so new mobs were noticed
+  later. Now the extra 80 px is only searched when you're in the air or the
+  platform you stood on reads off (your name tag's feet and the platform's
+  more than 12 px apart); on the ground the search is as quick as before
 
 ## 1.19.2
 

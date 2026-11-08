@@ -669,6 +669,15 @@ int main() {
              if(++calls>1){x+=r?1:0;x-=l?1:0;}maxX=std::max(maxX,x);minX=std::min(minX,x);
              liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_RIGHT);});
          assert(maxX<400&&minX>200&&attacks()==16&&held.empty());}
+        // The map's edge the same way: "turn at map edges" 5%, moving while attacking towards
+        // mobs on the left from 20%, sliding while an arrow is held: it stops near 5%, not 1%.
+        {DynamicPattern g=p;g.sets={2,2};g.attacksPerSet={8,8};g.skills.clear();g.potions.clear();g.glidePermille=1000;g.smart=false;g.edgeMarginPermille=50;
+         aware.setPattern(g);int x=200,minX=200;calls=0;
+         playWith([](long){return 0L;},[&]{
+             bool r=std::find(held.begin(),held.end(),R)!=held.end(),l=std::find(held.begin(),held.end(),L)!=held.end();
+             if(++calls>1){x+=r?1:0;x-=l?1:0;}minX=std::min(minX,x);
+             liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_LEFT);});
+         assert(minX>=40&&attacks()==16&&held.empty());}
         // Home is set at the start of every pattern (not only Smart), for the
         // dashboard and the game layer; a home from the dot is set again once map
         // positions come, rather than compared with them.

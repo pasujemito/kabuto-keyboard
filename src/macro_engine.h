@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <functional>
 #include "config.h"
 #include "dynamic_pattern.h"
 
@@ -216,6 +217,9 @@ private:
     // pattern, and each replay carries on with the home its press set.
     struct KeptHome { int home = 0; bool onMap = false; std::string map; int slide = 0; bool haveSlide = false; };
     std::map<std::string, KeptHome> keptHomes_;
+    // Called every few ms while a delay runs, during a dynamic pattern: lets go of
+    // an arrow carrying you out of the home zone at once, not at the next attack.
+    std::function<void()> moveGuard_;
     Config cfg_;
     int    layer_      = 0;
 

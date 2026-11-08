@@ -2910,7 +2910,8 @@ def worth_sending(last, r, sent_at, now, heartbeat=HEARTBEAT_S):
     """Whether this reading changes anything the pad fights with, compared
     with the last one sent: the game's state, the map, mobs (sides, counts,
     the nearest's name, one coming into or out of reach, or 10% of your reach
-    nearer or further), your place (1% of the minimap), HP or MP (1%). XP
+    nearer or further), your place (0.5% of the minimap: the home zone's edge
+    is judged from it), HP or MP (1%). XP
     alone waits for the heartbeat."""
     if last is None or now - sent_at >= heartbeat or now < sent_at:
         return True
@@ -2919,7 +2920,7 @@ def worth_sending(last, r, sent_at, now, heartbeat=HEARTBEAT_S):
     def moved(key, step):
         a, b = last.get(key), r.get(key)
         return (a is None) != (b is None) or (a is not None and abs(b - a) >= step)
-    if any(moved(k, step) for k, step in (("x", 1.0), ("y", 2.0), ("wx", 10), ("wy", 20), ("hp", 1.0), ("mana", 1.0))):
+    if any(moved(k, step) for k, step in (("x", 0.5), ("y", 2.0), ("wx", 5), ("wy", 20), ("hp", 1.0), ("mana", 1.0))):
         return True
     for k in ("dl", "dr"):
         a, b = last.get(k), r.get(k)
@@ -4607,8 +4608,8 @@ def selftest():
     base = {"hp": 80.0, "mana": 50.0, "xp": 10.0, "x": 40.0, "y": 60.0, "wx": 400, "wy": 600, "state": "ok", "mobs": "R",
             "ml": 0, "mr": 2, "dl": None, "dr": 150, "mn": "snail", "map": "Henesys"}
     assert worth_sending(None, base, 0, 0) and worth_sending(base, dict(base), 0, HEARTBEAT_S)
-    assert not worth_sending(base, dict(base, xp=10.3, hp=80.4, x=40.5, dr=145), 0, 1.0)   # small drift: wait
-    for change in ({"state": "dead"}, {"mobs": "RL"}, {"mr": 1}, {"mn": "pig"}, {"map": "-"}, {"x": 41.0}, {"wx": 410},
+    assert not worth_sending(base, dict(base, xp=10.3, hp=80.4, x=40.4, dr=145), 0, 1.0)   # small drift: wait
+    for change in ({"state": "dead"}, {"mobs": "RL"}, {"mr": 1}, {"mn": "pig"}, {"map": "-"}, {"x": 40.5}, {"wx": 405},
                    {"hp": 79.0}, {"mana": None}, {"dr": 99}, {"dr": 160}, {"dl": 120}):
         assert worth_sending(base, dict(base, **change), 0, 0.5), change
     assert worth_sending(dict(base, dr=101), dict(base, dr=100), 0, 0.5)   # coming into reach, however little

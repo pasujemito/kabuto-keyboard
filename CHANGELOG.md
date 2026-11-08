@@ -3,6 +3,18 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.3
+
+- 🧱 **The home boundary is a hard edge**: home at 25% with a 10% boundary
+  now keeps the character between 15% and 35% of the map. Position was only
+  looked at between jump-attacks (every second or so), while moving while
+  attacking (or walking to mobs) kept the arrow held, so it slid well past
+  the line before turning (a test run: 48% with a 40% line). Now, while an
+  arrow is held, where you are is checked every 40 ms; past 3/4 of the
+  boundary, moving outwards, the arrow is let go of at once and the next jump
+  faces inwards (the same run: 38%). The PC script also reports a move of
+  0.5% of the minimap (was 1%). **Update the PC script too**
+
 ## 1.19.2
 
 - 🧍 **Much less walking home**: 1.19.1 walked back into the zone whenever

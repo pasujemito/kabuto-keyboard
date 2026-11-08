@@ -659,6 +659,16 @@ int main() {
          play2s(own);assert(presses(7)==1);    // own potions: its own wait
          engine.config().characters.clear();engine.config().activeCharacter.clear();
          play2s(b);assert(presses(7)==0);}     // no character: the pattern's own (none here)
+        // The zone's hard edge: moving while attacking towards mobs on the right, the
+        // character slides 1 tenth of a % every few ms while an arrow is held. Home 30%,
+        // boundary 10%: the arrow is let go of past 37.5%, so it never leaves 20-40%.
+        {DynamicPattern g=p;g.sets={2,2};g.attacksPerSet={8,8};g.skills.clear();g.potions.clear();g.glidePermille=1000;g.smart=false;g.homeRangePermille=100;
+         aware.setPattern(g);int x=300,maxX=300,minX=300;calls=0;
+         playWith([](long){return 0L;},[&]{
+             bool r=std::find(held.begin(),held.end(),R)!=held.end(),l=std::find(held.begin(),held.end(),L)!=held.end();
+             if(++calls>1){x+=r?1:0;x-=l?1:0;}maxX=std::max(maxX,x);minX=std::min(minX,x);
+             liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_RIGHT);});
+         assert(maxX<400&&minX>200&&attacks()==16&&held.empty());}
         // Home is set at the start of every pattern (not only Smart), for the
         // dashboard and the game layer; a home from the dot is set again once map
         // positions come, rather than compared with them.

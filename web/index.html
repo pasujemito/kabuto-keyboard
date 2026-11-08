@@ -1127,7 +1127,7 @@ const HELP={
     points:[['on','walks to them, then attacks (staying inside the home zone)'],['off','stays put and waits for them to come close']]},
   walk_hold:{title:'Walking: time between hops (ms)',what:'When it walks (back home, or to mobs), it holds the arrow and hops now and then.',
     points:[['lower','hops more often'],['higher','longer runs between hops']]},
-  home_range:{title:'Distance boundary from home (% of map width)',what:'A zone this far either side of home (where you pressed the button) where the character fights. Inside it nothing pulls it back. Near the edge it faces inwards and only fights mobs on the inside (mobs past the edge: it stands and waits). Only if it ends up past the line does it step back in, just inside. Smart on or off.',
+  home_range:{title:'Distance boundary from home (% of map width)',what:'A zone this far either side of home (where you pressed the button) where the character fights. Inside it nothing pulls it back. Moving outwards, it stops as soon as it's past 3/4 of this (checked every 40 ms) and turns back in, so it stays inside: home at 25% with 10% keeps it between 15% and 35% of the map. Near the edge it only fights mobs on the inside. Pushed past the line anyway (a hit), it steps back in. Smart on or off.',
     points:[['0%','disabled: no home, wanders freely'],['20%','narrow (use on platforms)'],['50%','wide (use on flat ground)']]},
   'potion.enabled':{title:'Use this potion',what:'',points:[['on','drinks it'],['off','never drinks it']]},
   'potion.key':{title:'Potion key',what:'The key your game drinks this potion with.'},

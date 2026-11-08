@@ -649,7 +649,11 @@ are gone with Wi-Fi readings).
   reach (the red box with F10), 7 seen in all. Smart attacks only when the
   first number is above 0; at the home zone's edge only mobs on the inside
   count (with mobs in reach only outside, it stands and waits; it steps
-  back in, just inside the line, only once it's past it).
+  back in, just inside the line, only once it's past it). Since 1.19.3 the
+  boundary is a hard edge: while an arrow is held, the position is checked
+  every 40 ms, and moving outwards past 3/4 of the boundary lets go of it at
+  once, so home 25% with 10% keeps you within 15-35% of the map (knockback
+  aside, which is stepped back from).
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.

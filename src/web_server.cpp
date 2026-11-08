@@ -113,7 +113,7 @@ static void handleStatus(AsyncWebServerRequest* req) {
         l["hp"] = live.hp; l["mana"] = live.mana; l["xp"] = live.xp;
         l["x"] = live.x; l["y"] = live.y; l["mobs"] = live.mobs;
         if (live.wx != LIVE_NO_POS) l["wx"] = live.wx;
-        l["ml"] = live.ml; l["mr"] = live.mr; l["dl"] = live.dl; l["dr"] = live.dr;
+        l["ml"] = live.ml; l["mr"] = live.mr; l["dl"] = live.dl; l["dr"] = live.dr; l["ir"] = live.ir;
         if (live.mob[0]) l["mob"] = live.mob;
         if (live.map[0]) l["map"] = live.map;
         if (const char* reason = liveStopReason(live.state)) { l["stopped"] = reason; l["state"] = liveStateName(live.state); }

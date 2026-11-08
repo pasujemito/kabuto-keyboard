@@ -14,6 +14,7 @@ struct LiveStats {
     int wx = LIVE_NO_POS, wy = LIVE_NO_POS;   // your place on the whole map (stats_logic.h)
     uint8_t mobs = 0;            // in reach: MOB_LEFT | MOB_RIGHT | MOB_RIGHT_NEARER | MOB_READ
     int ml = -1, mr = -1;        // mobs seen each side (-1: not read)
+    int ir = -1;                 // mobs inside your reach (-1: not read)
     int dl = -1, dr = -1;        // nearest each side, % of your reach (-1: none)
     char mob[LIVE_NAME_LEN] = {};   // the nearest mob's name ("" unknown)
     char map[LIVE_NAME_LEN] = {};   // the map's name ("-" not taught, "" no map library)

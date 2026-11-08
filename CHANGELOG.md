@@ -3,6 +3,19 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.1
+
+- 🎯 **No more attacking the air at the home zone's edge**: past 3/4 of the
+  boundary the character turns to face inwards, but a mob in reach only on
+  the outside still made Smart attack, swinging at nothing. At the edge only
+  mobs on the inside count now; with mobs in reach only outside, it steps
+  back into the zone first. Fighting stays inside the home boundary
+- 🔢 **Mobs in reach, all seen in brackets, at all times**: the game layer's
+  strip says **in reach 2 (7)** (red when any are in reach), the console
+  "in reach 2 (7)", and the phone dashboard a **⚔ In reach 2 (7)** chip and
+  "In reach 2 of 7". Smart attacks only when the first number is above 0.
+  The PC script counts them and sends `ir`. **Update the PC script too**
+
 ## 1.19.0
 
 - 🧙 **Characters: keys, HP & Mana and skills set once**: under

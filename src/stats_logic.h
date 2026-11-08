@@ -178,6 +178,14 @@ inline uint8_t smartDecide(const SmartInput& in) {
     int off = homed ? in.pos - in.home : 0;
     uint8_t back = homeDecide(in);
     if (back != SMART_ATTACK) return back;   // outside the zone: back in first
+    // At the zone's edge (past 3/4 of the range) you face inwards: only mobs on the
+    // inside count. With mobs in reach only on the outside, step back in rather than
+    // swing at the air (they're the zone's edge or past it).
+    if (homed && (off > homeInside(in.range) || -off > homeInside(in.range))) {
+        uint8_t inward = off > 0 ? MOB_LEFT : MOB_RIGHT;
+        if (any && !(in.mobs & inward)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
+        any = in.mobs & inward;
+    }
     if (in.paused) return SMART_PAUSE;
     if (any) return SMART_ATTACK;
     bool left = in.seenLeft > 0, right = in.seenRight > 0;
@@ -404,6 +412,7 @@ struct StatsReading {
     int hp = -1, mana = -1, xp = -1, x = -1, y = -1, wx = LIVE_NO_POS, wy = LIVE_NO_POS;
     uint8_t state = LIVE_OK, mobs = 0;   // no "mobs" field: 0, no detector
     int ml = -1, mr = -1, dl = -1, dr = -1;
+    int ir = -1;   // mobs inside your reach, both sides (-1: not read)
     char map[LIVE_NAME_LEN] = {}, mob[LIVE_NAME_LEN] = {};   // "": not sent
 };
 
@@ -419,6 +428,7 @@ inline void statsField(StatsReading& r, const char* key, const char* value) {
     else if (!strcmp(key, "state")) r.state = statsState(value);
     else if (!strcmp(key, "mobs")) r.mobs = statsMobs(value);
     else if (!strcmp(key, "ml")) r.ml = statsCount(value);
+    else if (!strcmp(key, "ir")) r.ir = statsCount(value);
     else if (!strcmp(key, "mr")) r.mr = statsCount(value);
     else if (!strcmp(key, "dl")) r.dl = statsCount(value);
     else if (!strcmp(key, "dr")) r.dr = statsCount(value);

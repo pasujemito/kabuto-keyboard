@@ -90,6 +90,16 @@ int main(){
     }
     assert(smartAction(true,none,true,580,true,500,100,true)==SMART_WALK_LEFT&&smartAction(true,none,true,570,true,500,100,true)==SMART_WAIT);
     assert(smartAction(true,none,true,380,true,500,100,false)==SMART_WALK_RIGHT&&smartAction(true,none,true,420,true,500,100,false)==SMART_WAIT);   // either side
+    // At the zone's edge (past 3/4 of the range) only mobs on the inside count: a mob in reach
+    // only on the outside means step back in, not attack the air facing inwards.
+    {const uint8_t right=MOB_READ|MOB_RIGHT,both=MOB_READ|MOB_LEFT|MOB_RIGHT;
+     assert(smartAction(true,right,true,580,true,500,100,false)==SMART_WALK_LEFT);   // 8% right of home, mob further right
+     assert(smartAction(true,left,true,580,true,500,100,false)==SMART_ATTACK);       // mob on the inside: fight
+     assert(smartAction(true,both,true,580,true,500,100,false)==SMART_ATTACK);
+     assert(smartAction(true,left,true,420,true,500,100,false)==SMART_WALK_RIGHT);   // the left edge, mob further left
+     assert(smartAction(true,right,true,560,true,500,100,false)==SMART_ATTACK);      // nearer home: any side
+     assert(smartAction(true,right,true,580,true,500,0,false)==SMART_ATTACK);}       // no home: any side
+    {StatsReading r=parseStatsForm("ml=3&mr=4&ir=2");assert(r.ir==2&&r.ml==3);StatsReading none=parseStatsForm("ml=1");assert(none.ir==-1);}
     // At the zone's edge (past 3/4 of the range), face inwards; nearer home, no opinion.
     assert(homeFacing(true,true,580,true,500,100)==-1&&homeFacing(true,true,420,true,500,100)==+1&&homeFacing(true,true,550,true,500,100)==0);
     assert(homeFacing(true,true,900,true,500,0)==0&&homeFacing(false,true,900,true,500,100)==0&&homeFacing(true,true,900,false,500,100)==0);

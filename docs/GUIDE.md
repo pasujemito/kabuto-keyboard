@@ -624,7 +624,9 @@ are gone with Wi-Fi readings).
   (your second and third potions of that kind). After a drink the pad looks
   at the bar 2 s later; two drinks in a row that don't raise it mean that
   key ran out, so it uses the next one, and goes back to the main key after
-  the last. Needs the screen reader's bar readings.
+  the last. Needs the screen reader's bar readings. Each backup can have its
+  own **restored per tap** (empty: the same as the main key), so with Bar
+  total set it taps just enough for whichever potion is in use.
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.

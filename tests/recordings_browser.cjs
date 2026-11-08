@@ -224,6 +224,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
   assert.equal(await page.locator('#dynamicError').textContent(),'HP backup keys: each must be a different key.');
   await page.getByLabel('HP backup key 2',{exact:true}).selectOption('');
+  await page.getByLabel('HP backup key 1 restored per tap',{exact:true}).fill('300');   // a weaker potion than the main one
   const dynamicBounds=await page.locator('#dynamicDialog').boundingBox();assert(dynamicBounds.x>=0&&dynamicBounds.x+dynamicBounds.width<=390);
   assert(await page.locator('#dynamicDialog').evaluate(d=>d.scrollWidth<=d.clientWidth));
   await page.screenshot({path:'/tmp/kabuto-dynamic-mobile.png'});
@@ -241,7 +242,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
   assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');
   assert.equal(await page.getByLabel('HP backup key 1',{exact:true}).inputValue(),'D');assert.equal(await page.getByLabel('HP backup key 2',{exact:true}).inputValue(),'');
-  assert.deepEqual(await page.evaluate(()=>cfg.workflows.find(w=>w.steps[0]?.type==='dynamic').steps[0].pattern.potions.map(x=>x.backup_keys)),[['D'],[]]);
+  assert.deepEqual(await page.evaluate(()=>cfg.workflows.find(w=>w.steps[0]?.type==='dynamic').steps[0].pattern.potions.map(x=>x.backup_keys)),[[{key:'D',per_tap:300}],[]]);
+  assert.equal(await page.getByLabel('HP backup key 1 restored per tap',{exact:true}).inputValue(),'300');
   assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'15');assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   await page.locator('#dynamicClose').click();
   // Updates: a newer release is announced; installing needs a confirmation.

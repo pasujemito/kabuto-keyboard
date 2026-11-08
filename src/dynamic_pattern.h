@@ -29,6 +29,7 @@ struct DynamicSkill {
     uint8_t belowPercent = 0;   // potions: with live bars, drink below this % (0 = timer only)
     uint32_t barMax = 0, perTap = 0;   // potions: the bar's real total and what one tap restores (0 = taps range)
     std::vector<uint8_t> backupKeys;   // potions: more keys of the same kind, used in turn when one runs out (up to 3)
+    std::vector<uint32_t> backupPerTap;   // what each backup restores per tap (0: the same as perTap)
 };
 struct DynamicPattern {
     std::string id;

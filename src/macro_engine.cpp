@@ -474,6 +474,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 std::vector<PotionKeys> potionKeys(pattern->potions.size());
                 for(size_t k=0;k<potionKeys.size();++k)potionKeys[k].count=(uint8_t)(1+pattern->potions[k].backupKeys.size());
                 auto potionCode=[&](size_t k){const DynamicSkill& p=pattern->potions[k];uint8_t a=potionKeys[k].active;return a?p.backupKeys[a-1]:p.keycode;};
+                // What a tap of the key in use restores (a backup's own amount, else the main key's).
+                auto potionPerTap=[&](size_t k){const DynamicSkill& p=pattern->potions[k];uint8_t a=potionKeys[k].active;
+                    return a&&a<=p.backupPerTap.size()&&p.backupPerTap[a-1]?p.backupPerTap[a-1]:p.perTap;};
                 auto potionBar=[&](size_t k,int& value){LiveStats live=liveStatsSnapshot();value=pattern->potions[k].id=="hp"?live.hp:live.mana;return live.fresh;};
                 auto potionDrank=[&](size_t k){int value;bool fresh=potionBar(k,value);potionKeys[k].drank(fresh,value,millis());};
                 auto potionCheck=[&]{
@@ -489,7 +492,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // With real amounts set, a live drink taps just enough to refill without waste.
                 auto drink=[&](const DynamicSkill& potion){
                     size_t k=&potion-&pattern->potions[0];
-                    int value;uint32_t taps=potionLive(potion,value)?livePotionTaps(value,potion.barMax,potion.perTap):0;
+                    int value;uint32_t taps=potionLive(potion,value)?livePotionTaps(value,potion.barMax,potionPerTap(k)):0;
                     use(potion,potionKey(potion),taps,potionCode(k));potionDrank(k);
                 };
                 // Between attacks: stop on a death or login screen,
@@ -682,7 +685,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     for(size_t k=0;k<pattern->potions.size()&&!stop;++k){
                         const DynamicSkill& potion=pattern->potions[k];
                         if(potionTaps[k]||!potionDue(potion))continue;
-                        int value;uint32_t taps=potionLive(potion,value)?livePotionTaps(value,potion.barMax,potion.perTap):0;
+                        int value;uint32_t taps=potionLive(potion,value)?livePotionTaps(value,potion.barMax,potionPerTap(k)):0;
                         potionTaps[k]=taps?taps:sample(potion.repeats);potionDrank(k);
                         dynamicSkillTimers_[potionKey(potion)]={millis(),sample(potion.cooldown)};
                         Step entry=s;entry.keycode=potionCode(k);

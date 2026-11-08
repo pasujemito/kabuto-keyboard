@@ -593,6 +593,12 @@ int main() {
          playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();liveStatsUpdate(300,800,-1,LIVE_OK,500,500,MOB_READ);   // HP stuck at 30%
                   if(millis()-t0>9500)engine.stopFlag_=true;});
          assert(presses(6)==2&&presses(5)==2&&held.empty());engine.stopFlag_=false;
+         // Each key its own amount: HP 30% of 1000 (700 to refill); the main key restores 350 (2 taps),
+         // the backup 100 (7 taps), so the backup is tapped more for the same gap.
+         g.potions[0].barMax=1000;g.potions[0].perTap=350;g.potions[0].backupPerTap={100};aware.setPattern(g);engine.dynamicSkillTimers_.clear();calls=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();liveStatsUpdate(300,800,-1,LIVE_OK,500,500,MOB_READ);
+                  if(millis()-t0>9500)engine.stopFlag_=true;});
+         assert(presses(6)==2*2&&presses(5)>=7&&presses(5)%7==0&&held.empty());engine.stopFlag_=false;   // 2 drinks of 2 taps, then 7 taps a drink
          // Death stops it.
          uint32_t dieAt=millis()+1500;calls=0;
          playWith([](long){return 0L;},[&]{liveStatsUpdate(800,800,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});

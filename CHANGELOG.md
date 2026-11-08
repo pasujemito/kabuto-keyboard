@@ -17,7 +17,9 @@ and show up in the pad's **Updates** panel.
   potions of the same kind). The pad watches the bar: two drinks in a row
   that don't refill it mean that key ran out, so it moves to the next one
   (and back to the main key after the last); the log says so. Needs the
-  screen reader's bar readings; without them only the main key is used
+  screen reader's bar readings; without them only the main key is used.
+  Each backup key can have its own **restored per tap** (a weaker or
+  stronger potion), so "tap just enough" counts right whichever key is in use
 
 - 🏠 **Home stays where you pressed the button**: it could move by itself.
   Three causes, all fixed: the map's name misread for a moment (something

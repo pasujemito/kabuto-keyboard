@@ -75,7 +75,11 @@ int main(){
     assert(smartAction(true,0,true,500,true,500,100,false)==SMART_NO_DETECTOR&&smartAction(false,none,true,900,true,500,100,false)==SMART_NO_READINGS);
     assert(smartAction(false,left,true,500,true,500,100,false)==SMART_NO_READINGS);   // a stale "mob in reach" isn't trusted either
     assert(smartAction(true,none,true,650,true,500,100,false)==SMART_WALK_LEFT&&smartAction(true,none,true,-200,true,-50,100,false)==SMART_WALK_RIGHT);
-    assert(smartAction(true,left,true,650,true,500,100,false)==SMART_WALK_LEFT&&smartAction(true,left,true,590,true,500,100,false)==SMART_ATTACK);   // outside: back in, mobs or not
+    assert(smartAction(true,left,true,650,true,500,100,false)==SMART_ATTACK&&smartAction(true,left,true,590,true,500,100,false)==SMART_ATTACK);   // outside with mobs: fights its way back
+    assert(smartAction(true,MOB_READ|MOB_RIGHT,true,650,true,500,100,false)==SMART_ATTACK);   // mobs only further out: still fights back (facing home)
+    // Fighting the way back carries on until just inside (90%), as the walk does.
+    assert(homeReturning(false,true,650,true,500,100)&&!homeReturning(false,true,595,true,500,100)&&homeReturning(true,true,595,true,500,100));
+    assert(!homeReturning(true,true,590,true,500,100)&&!homeReturning(true,true,650,true,500,0)&&!homeReturning(true,false,650,true,500,100)&&!homeReturning(true,true,650,false,500,100));
     // Inside the zone with nothing to fight: waits where it is (no walking home).
     assert(smartAction(true,none,true,570,true,500,100,false)==SMART_WAIT&&smartAction(true,none,true,600,true,500,100,false)==SMART_WAIT);
     assert(smartAction(true,none,true,601,true,500,100,false)==SMART_WALK_LEFT);
@@ -83,7 +87,7 @@ int main(){
         SmartInput h;h.fresh=true;h.mobs=MOB_READ;h.havePos=true;h.haveHome=true;h.home=500;h.range=100;
         h.pos=560;assert(homeDecide(h)==SMART_ATTACK);                 // within range, nothing in reach: attacks (Smart would wait)
         h.pos=650;assert(homeDecide(h)==SMART_WALK_LEFT);h.pos=350;assert(homeDecide(h)==SMART_WALK_RIGHT);
-        h.pos=650;h.mobs=MOB_READ|MOB_LEFT;assert(homeDecide(h)==SMART_WALK_LEFT);   // outside: back in, a mob in reach or not
+        h.pos=650;h.mobs=MOB_READ|MOB_LEFT;assert(homeDecide(h)==SMART_ATTACK);   // outside with a mob in reach: fights its way back, no walking
         h.mobs=MOB_READ;h.homing=true;h.pos=595;assert(homeDecide(h)==SMART_WALK_LEFT);   // walking: on until just inside (90%)
         h.pos=570;assert(homeDecide(h)==SMART_ATTACK);h.homing=false;
         h.range=0;h.pos=900;assert(homeDecide(h)==SMART_ATTACK);h.range=100;h.fresh=false;assert(homeDecide(h)==SMART_ATTACK);

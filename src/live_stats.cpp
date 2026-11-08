@@ -8,6 +8,7 @@ int ml_ = -1, mr_ = -1, dl_ = -1, dr_ = -1, ir_ = -1;
 char mob_[LIVE_NAME_LEN] = {}, map_[LIVE_NAME_LEN] = {};
 PatternView view_;
 ToolKeys toolKeys_;
+PinnedHome pinned_;
 uint32_t at_ = 0;
 bool any_ = false;
 XpTracker xpTracker_;
@@ -76,6 +77,32 @@ void patternViewSet(const PatternView& v) {
     portENTER_CRITICAL(&mux_);
     view_ = v;
     portEXIT_CRITICAL(&mux_);
+}
+
+bool homePin() {
+    LiveStats live = liveStatsSnapshot();
+    bool onMap = live.wx != LIVE_NO_POS;
+    if (!live.fresh || (!onMap && live.x < 0)) return false;
+    portENTER_CRITICAL(&mux_);
+    pinned_.set = true; pinned_.home = onMap ? live.wx : live.x; pinned_.onMap = onMap;
+    memset(pinned_.map, 0, LIVE_NAME_LEN);
+    if (strcmp(live.map, "-")) memcpy(pinned_.map, live.map, LIVE_NAME_LEN);   // "-": a name it couldn't read
+    ++pinned_.version;
+    portEXIT_CRITICAL(&mux_);
+    return true;
+}
+
+void homeUnpin() {
+    portENTER_CRITICAL(&mux_);
+    if (pinned_.set) { pinned_.set = false; ++pinned_.version; }
+    portEXIT_CRITICAL(&mux_);
+}
+
+PinnedHome homePinned() {
+    portENTER_CRITICAL(&mux_);
+    PinnedHome p = pinned_;
+    portEXIT_CRITICAL(&mux_);
+    return p;
 }
 
 void toolKeyPush(uint8_t key) {

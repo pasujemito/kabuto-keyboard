@@ -161,11 +161,21 @@ inline int homeInside(uint16_t range) { return range * 3 / 4; }
 // Walking back in stops just inside the line (a tenth of the range in), so a
 // small slip past it is a short step back, not a walk home.
 inline int homeBack(uint16_t range) { return range - range / 10; }
+// Outside it with mobs in reach, it fights its way back instead: jump-attacks
+// with the arrow held homewards (see homeReturning), a gradual return.
 inline uint8_t homeDecide(const SmartInput& in) {
     if (!in.fresh || !in.havePos || !in.haveHome || !in.range) return SMART_ATTACK;
     int off = in.pos - in.home, dist = off < 0 ? -off : off;
-    if (dist > (in.homing ? homeBack(in.range) : in.range)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
+    bool mobs = in.mobs & (MOB_LEFT | MOB_RIGHT);
+    if (dist > (in.homing ? homeBack(in.range) : in.range) && !mobs) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
     return SMART_ATTACK;
+}
+// Whether attacking should carry you homewards: past the range, on until just
+// inside (homeBack), as the walk back does. `was`: whether it already was.
+inline bool homeReturning(bool was, bool havePos, int pos, bool haveHome, int home, uint16_t range) {
+    if (!havePos || !haveHome || !range) return false;
+    int off = pos - home, dist = off < 0 ? -off : off;
+    return dist > (was ? homeBack(range) : range);
 }
 // At the zone's edge (past where walking back stops), face inwards, as at a
 // map edge: -1 left, +1 right, 0 no opinion.
@@ -181,7 +191,8 @@ inline uint8_t smartDecide(const SmartInput& in) {
     bool any = in.mobs & (MOB_LEFT | MOB_RIGHT), homed = in.havePos && in.haveHome && in.range;
     int off = homed ? in.pos - in.home : 0;
     uint8_t back = homeDecide(in);
-    if (back != SMART_ATTACK) return back;   // outside the zone: back in first
+    if (back != SMART_ATTACK) return back;   // outside the zone, nothing to fight: walk back in
+    if (homed && (off > in.range || -off > in.range)) return SMART_ATTACK;   // outside with mobs about: fight your way back
     // At the zone's edge (past 3/4 of the range) you face inwards: only mobs on the
     // inside count. Mobs in reach only on the outside: stand and wait (no attacking
     // the air, no walking), for mobs on the inside.

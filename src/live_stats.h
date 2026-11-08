@@ -47,12 +47,27 @@ struct PatternView {
     bool haveHome = false;
     int home = 0;                // same units as the position it came from
     bool homeOnMap = false;      // home is a map position (wx), not the minimap dot
+    bool homePinned = false;     // home came from a Set home button
     uint16_t homeRange = 0;      // permille of the minimap; 0 = no home
     int peak = -1;               // auto-pause: most mobs seen lately (-1: off)
 };
 void patternViewSet(const PatternView& v);
 PatternView patternViewSnapshot();
 void homeReply(char* out, size_t size);   // homeReplyForm of the playing pattern
+
+// Home pinned by a Set home button (pad key or dashboard): where you stood when
+// it was pressed, on that map. Dynamic patterns use it over where they were
+// started, and a playing one switches to it at once (each press: a new version).
+struct PinnedHome {
+    bool set = false;
+    int home = 0;                // map position (wx) if onMap, else the minimap dot
+    bool onMap = false;
+    char map[LIVE_NAME_LEN] = {};   // "" when the map's name wasn't read: any map
+    uint32_t version = 0;        // counts every pin and clear
+};
+bool homePin();                  // from the latest reading; false (nothing changed) without a position
+void homeUnpin();
+PinnedHome homePinned();
 
 // The screen reader's keys pressed on the pad (ToolKeys, stats_logic.h).
 void toolKeyPush(uint8_t key);

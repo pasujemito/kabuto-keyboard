@@ -3,6 +3,20 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.4
+
+- ⚔ **Fights its way back home**: outside the home zone with mobs about, it
+  no longer stops attacking to run back. It keeps jump-attacking with the
+  arrow held homewards, so it drifts back into the zone as it fights, like
+  any other attack. With no mobs about it walks back, as before
+- 🏠 **A Set home button**: home no longer moves every time a toggle button
+  starts the pattern again. **Recordings → 🏠 Set home button** puts one on
+  the selected (empty) button; the dashboard has **🏠 Set home here** too.
+  Pressed, home becomes where you stand on this map, without stopping what's
+  playing: a playing pattern switches to it at once, and every pattern
+  started afterwards uses it (on that map). **Forget home** goes back to home
+  where you start. Old "Set home (unused)" buttons from 1.18.6 work again
+
 ## 1.19.3
 
 - 🧱 **The home boundary is a hard edge**: home at 25% with a 10% boundary

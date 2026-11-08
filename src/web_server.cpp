@@ -132,6 +132,13 @@ static void handleStatus(AsyncWebServerRequest* req) {
             n["text"] = liveStopReason(notices.kind[i]); n["agoMs"] = now - notices.at[i];
         }
     }
+    // The Set home button's home.
+    PinnedHome pin = homePinned();
+    if (pin.set) {
+        JsonObject h = d["pinnedHome"].to<JsonObject>();
+        h["home"] = pin.home; h["onMap"] = pin.onMap;
+        if (pin.map[0]) h["map"] = pin.map;
+    }
     // What a playing dynamic pattern is doing (the dashboard).
     PatternView view = patternViewSnapshot();
     if (view.active) {
@@ -139,7 +146,7 @@ static void handleStatus(AsyncWebServerRequest* req) {
         static const char* const actions[] = {"attack", "wait", "home", "home", "pause", "approach", "approach", "noreadings", "nodetector", "support"};
         p["smart"] = view.smart; p["action"] = view.action < 10 ? actions[view.action] : "attack";
         p["facing"] = view.facingLeft ? "left" : "right";
-        if (view.haveHome) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; }
+        if (view.haveHome) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; p["homePinned"] = view.homePinned; }
         if (view.peak >= 0) p["peak"] = view.peak;
     }
     String out; serializeJson(d, out);
@@ -313,6 +320,15 @@ void webServerBegin() {
     // Bluetooth keys and this page.
     api("/api/stats/reset", HTTP_POST, [](AsyncWebServerRequest* req) {
         liveStatsReset();
+        sendJson(req, 200, "{\"ok\":true}");
+    });
+    // Set home here (the dashboard's button, the same as a Set home key on the pad).
+    api("/api/home/set", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (homePin()) sendJson(req, 200, "{\"ok\":true}");
+        else sendJson(req, 409, "{\"ok\":false,\"error\":\"No position from the PC screen reader yet\"}");
+    });
+    api("/api/home/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
+        homeUnpin();
         sendJson(req, 200, "{\"ok\":true}");
     });
     api("/api/notices/clear", HTTP_POST, [](AsyncWebServerRequest* req) {

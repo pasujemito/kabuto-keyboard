@@ -431,6 +431,7 @@
     <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
     <details class="storage-box" id="charactersBox" open><summary id="charactersSummary">Characters</summary><div class="storage" id="characters" aria-label="Characters"></div></details>
     <button class="btn sm" id="newDynamic">Dynamic pattern</button>
+    <button class="btn sm" id="newSetHome" title="A button that makes home where you stand, without stopping what's playing">🏠 Set home button</button>
     <button class="btn sm" id="newSetupLayer" title="A layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">🍁 Setup layer</button>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
@@ -1127,7 +1128,7 @@ const HELP={
     points:[['on','walks to them, then attacks (staying inside the home zone)'],['off','stays put and waits for them to come close']]},
   walk_hold:{title:'Walking: time between hops (ms)',what:'When it walks (back home, or to mobs), it holds the arrow and hops now and then.',
     points:[['lower','hops more often'],['higher','longer runs between hops']]},
-  home_range:{title:'Distance boundary from home (% of map width)',what:'A zone this far either side of home (where you pressed the button) where the character fights. Inside it nothing pulls it back. Moving outwards, it stops as soon as it\'s past 3/4 of this (checked every 40 ms) and turns back in, so it stays inside: home at 25% with 10% keeps it between 15% and 35% of the map. Near the edge it only fights mobs on the inside. Pushed past the line anyway (a hit), it steps back in. Smart on or off.',
+  home_range:{title:'Distance boundary from home (% of map width)',what:'A zone this far either side of home where the character fights. Home is where you last pressed Set home (a pad button or the dashboard\'s 🏠 Set home here), else where you started the pattern. Inside it nothing pulls it back. Moving outwards, it stops as soon as it\'s past 3/4 of this (checked every 40 ms) and turns back in, so it stays inside: home at 25% with 10% keeps it between 15% and 35% of the map. Near the edge it only fights mobs on the inside. Pushed past the line anyway (a hit, or Set home somewhere else), it fights its way back: jump-attacks with the arrow held homewards when mobs are about, walks back when there are none. Smart on or off.',
     points:[['0%','disabled: no home, wanders freely'],['20%','narrow (use on platforms)'],['50%','wide (use on flat ground)']]},
   'potion.enabled':{title:'Use this potion',what:'',points:[['on','drinks it'],['off','never drinks it']]},
   'potion.key':{title:'Potion key',what:'The key your game drinks this potion with.'},
@@ -1489,9 +1490,10 @@ function recordingSteps(recording,seen=new Set()){
   });
 }
 // Buttons for tools/screen_stats.py ("tool" steps): its keys, pressed on the pad.
-const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11'],looser:['Looser','F6'],stricter:['Stricter','F7'],home:['Set home (unused)','—'],area:['Map area','F12']};   // home: 1.18.6's, kept so saved buttons show
+const TOOL_KEYS={mark:['Mark','F8'],skip:['Skip','Esc'],map:['Which map','F9'],outlines:['Outlines','F10'],hide:['Hide layer','F11'],looser:['Looser','F6'],stricter:['Stricter','F7'],home:['Set home','pad'],area:['Map area','F12']};   // home: kept on the pad (not a screen reader key)
 function isToolRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='tool';}
 function recordingSummary(recording){
+  if(isToolRecording(recording)&&recording.steps[0].key==='home')return 'Set home · home where you stand; never stops what\'s playing';
   if(isToolRecording(recording)){const k=TOOL_KEYS[recording.steps[0].key];return `Screen reader key · ${k?k[0]+' ('+k[1]+')':recording.steps[0].key}`;}
   if(isDynamicRecording(recording)){const p=recording.steps[0].pattern;return `Dynamic · ${p.attacks_per_set.join('–')} attacks × ${p.sets.join('–')} sets`;}
   const steps=recordingSteps(recording),ms=steps.reduce((n,s)=>n+stepMs(s),0);
@@ -1594,6 +1596,18 @@ function preserveDirectMacro(key){
   const recording={id:freshId(),name:key.name||'Previous button recording',kind:'nano',recording:true,steps:JSON.parse(JSON.stringify(key.steps))};
   cfg.workflows.push(recording);setAssignment(key,'single',[recording.id]);
   return assignmentFor(key);
+}
+// A Set home button: one "home" tool step. The pad keeps that home (it's not a
+// screen reader key) and never stops what's playing for it. Goes on the selected
+// button when it's empty; otherwise it's made for you to add where you like.
+function addSetHomeButton(){
+  const steps=[{type:'tool',key:'home'}];
+  let w=cfg.workflows.find(w=>w.steps.length===1&&JSON.stringify(w.steps)===JSON.stringify(steps));
+  if(!w){if(cfg.workflows.length>=64)throw new Error('Recording storage is full.');w={id:freshId(),name:'Set home',kind:'nano',recording:true,steps};cfg.workflows.push(w);}
+  const key=cfg.layers[selLayer].keys[selKey];
+  if(!key.steps.length){key.name='🏠 Set home';setAssignment(key,'single',[w.id]);}
+  cfg.version=2;renderGrid();renderEditor();renderRecordings();updateDirty();
+  toast(!key.steps.length||key.steps[0].workflow!==w.id?'Made the Set home recording: add it to a button':'Button '+(selKey+1)+' sets home now. Save to use it.');
 }
 function addRecordingToButton(id){
   const key=cfg.layers[selLayer].keys[selKey];
@@ -2333,10 +2347,13 @@ function renderLiveStats(live,pattern=status.pattern){
     const row=el('div','live-row'),name=el('span'),track=el('div','track'),dot=el('i'),value=el('b');
     name.textContent='Map';dot.style.left=live.x/10+'%';
     // Home and how far you may drift from it, on the minimap's scale.
-    if(pattern&&pattern.home!==undefined){
-      const at=pattern.homeOnMap?(live.wx!==undefined?live.x+pattern.home-live.wx:null):pattern.home,range=pattern.homeRange||8;   // no range: just a mark
+    // Not playing: the Set home button's home, as a mark (on its own map).
+    const pin=status.pinnedHome,shown=pattern&&pattern.home!==undefined?{home:pattern.home,onMap:pattern.homeOnMap,range:pattern.homeRange}:
+      !pattern&&pin&&(!pin.map||pin.map===live.map)?{home:pin.home,onMap:pin.onMap,range:0}:null;
+    if(shown){
+      const at=shown.onMap?(live.wx!==undefined?live.x+shown.home-live.wx:null):shown.home,range=shown.range||8;   // no range: just a mark
       if(at!==null){const band=el('span','home'),lo=Math.max(0,at-range),hi=Math.min(1000,at+range);
-        if(hi>lo){band.style.left=lo/10+'%';band.style.width=(hi-lo)/10+'%';band.title=pattern.homeRange?'Home range':'Home (set when the pattern started)';if(at>=0&&at<=1000){const mark=el('b');mark.style.left=(at-lo)/(hi-lo)*100+'%';band.appendChild(mark);}track.appendChild(band);}}
+        if(hi>lo){band.style.left=lo/10+'%';band.style.width=(hi-lo)/10+'%';band.title=(pattern?pattern.homeRange?'Home range':'Home':'Home')+(pattern&&!pattern.homePinned?' (where the pattern started)':' (from Set home)');if(at>=0&&at<=1000){const mark=el('b');mark.style.left=(at-lo)/(hi-lo)*100+'%';band.appendChild(mark);}track.appendChild(band);}}
     }
     track.appendChild(dot);
     value.textContent=(live.mobs&1?'◀ ':'')+pct(live.x)+(live.mobs&2?' ▶':'');value.title='Your position on the minimap; arrows show mobs in reach on that side';
@@ -2379,8 +2396,21 @@ function renderLiveStats(live,pattern=status.pattern){
     live.xpPerHour<0?(live.xp>=0?(live.levels?`Level up! (${live.levels}) XP rate starts again a minute into the new level…`:'XP rate after a minute of reading…'):'Live from your PC.'):
     `+${(live.xpPerHour/10).toFixed(1)}%/h · ${(live.xpPerHour/600).toFixed(2)}%/min`+(live.minutesToLevel>=0?` · level in ${hours(live.minutesToLevel)}`:'')+(live.levels?` · ${live.levels} level${live.levels>1?'s':''} up`:'');
   foot.appendChild(info);
+  // Set home: pins home where you stand now (as a Set home button on the pad does),
+  // without stopping what's playing; patterns use it over where they were started.
+  if(live.fresh&&(live.x>=0||live.wx!==undefined)){const set=el('button','btn sm');set.type='button';set.textContent='🏠 Set home here';set.title='Home becomes where you stand now, on this map. A playing pattern switches to it straight away.';set.onclick=()=>setHomeHere();foot.appendChild(set);}
+  if(status.pinnedHome){const forget=el('button','btn sm');forget.type='button';forget.textContent='Forget home';forget.title='Patterns go back to making home where they start';forget.onclick=()=>forgetHome();foot.appendChild(forget);}
   if(live.xp>=0){const reset=el('button','btn sm');reset.type='button';reset.textContent='Reset XP rate';reset.onclick=()=>api('/api/stats/reset',{method:'POST'}).catch(()=>{});foot.appendChild(reset);}
   box.appendChild(foot);
+}
+async function setHomeHere(){
+  try{const r=await api('/api/home/set',{method:'POST'}),j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Could not set home');
+    toast('Home set here'+(status.pattern?': the pattern uses it now':': patterns will use it'));pollStatus();}
+  catch(e){toast(e.message,true);}
+}
+async function forgetHome(){
+  try{await api('/api/home/clear',{method:'POST'});toast('Home forgotten: patterns make home where they start');pollStatus();}catch(e){toast('Could not reach the pad',true);}
 }
 // Notifications from the pad: each time the game turned to a stop state (its
 // test popup, a death, a disconnect), oldest first. A new one buzzes the phone.
@@ -2457,6 +2487,7 @@ async function pollStatus(){
 
 $("#pinDialog").addEventListener("cancel",event=>event.preventDefault());
 $("#newDynamic").onclick=()=>openDynamicEditor();
+$("#newSetHome").onclick=()=>{try{addSetHomeButton();}catch(e){toast(e.message,true);}};
 $("#newSetupLayer").onclick=()=>{try{addSetupLayer();}catch(e){toast(e.message,true);}};
 for(const [name,preset] of Object.entries(DYNAMIC_PRESETS)){const b=el('button','btn sm');b.type='button';b.textContent=preset.label;b.onclick=()=>applyDynamicPreset(name);$('#dynamicPresets').appendChild(b);}
 $("#dynamicName").oninput=()=>dynamicDirty=true;

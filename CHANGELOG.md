@@ -3,6 +3,42 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.0
+
+- 🧙 **Characters: keys, HP & Mana and skills set once**: under
+  **Recordings → Characters**, a character holds the movement keys, both
+  potions (with backup keys and amounts) and the skills. Each pattern has
+  **Use <character>'s keys / HP & Mana / skills** switches above those
+  sections: on, the pattern's own are hidden and the character's are used,
+  so changing a key in the character changes it in every pattern. Up to 4
+  characters; the ● one is active and every pattern follows it. Potion and
+  skill waits belong to the character, so switching patterns mid-hunt
+  doesn't drink or buff again. **Make one from "<your pattern>"** turns your
+  first pattern's keys, potions and skills into Character 1 and points every
+  pattern with the very same ones at it; patterns without a character (and
+  all saved before 1.19.0) keep their own settings. New patterns use the
+  active character
+- 🦘 **Reach 80 px further below you**: mobs whose feet are up to 80 px
+  lower than yours (plus the usual 28) now count as on your level, so
+  mid-jump, or with the platform read a little high, mobs on the ground under
+  you are still in reach. `"below"` in `mobs` changes it (0 = as before).
+  **Update the PC script**
+- 🗺 **Home is a zone you fight in**: home ± the boundary is where the
+  character fights. Inside it, nothing pulls it back: with nothing to fight
+  it waits where it is (it used to walk back to home itself). If mobs lead it
+  outside the zone, it walks back in first, mobs in reach or not, then
+  carries on; at the zone's edge it turns to face inwards, as at a map edge
+- 🏠 **Home no longer moves on each replay**: a toggle (or hold) button
+  replays the pattern until you stop it, and each replay set home again where
+  the character stood, so home crept along. Now each replay keeps the home
+  that button press set; only a new press (or a new map) sets a new one
+- 👆 **Tap instead of type**: the value bullets under each setting are now
+  choices: tap "20%: narrow" and it's set (● marks the current one, ranges
+  like "4–7" set both ends, on/off flips the switch). Percentage settings
+  also have a slider. The box still takes any exact number
+- 📱 **No more zooming on phones**: fields use 16 px text, below which phones
+  zoom in on every tap
+
 ## 1.18.15
 
 - 🧪 **Support only: potions and skills, no attacking**: a new **Attack**

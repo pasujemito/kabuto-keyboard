@@ -180,5 +180,32 @@ int main(){
       String raw(std::string("{\"layers\":[{\"keys\":[{\"steps\":[{\"type\":\"dynamic\",\"pattern\":")+bad+"}]}]}]}");
       assert(!saveRawJson(raw,err));assert(readRawJson()==good);assert(!LittleFS.exists(MACRO_TMP_FILE));
     }
+    // Characters: keys, potions and skills set once; patterns take them with char_* flags.
+    {String withCharacters(R"({"active_character":"mage","characters":[)"
+        R"({"id":"war","name":"Warrior","keys":{"jump":"SPACE","attack":"X","left":"LEFT","right":"RIGHT"},"potions":[{"id":"hp","key":"C","below":40,"backup_keys":[{"key":"B","per_tap":0}]}],"skills":[{"id":"rage","key":"Q","chance":1,"cooldown_ms":[120000,120000]}],"shuffle_skills":false},)"
+        R"({"id":"mage","name":"Mage","potions":[{"id":"mana","key":"V","below":30}],"skills":[]}],)"
+        R"("layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"pp","char_keys":true,"char_potions":true,"skills":[]}}]}]}]})");
+     assert(saveRawJson(withCharacters,err));Config c;assert(loadConfig(c));
+     assert(c.characters.size()==2&&c.activeCharacter=="mage"&&c.character()->name=="Mage");
+     const Character& war=c.characters[0];
+     assert(war.name=="Warrior"&&war.jump.keycode==0x2C&&war.potions.size()==1&&war.potions[0].belowPercent==40&&war.potions[0].backupKeys.size()==1);
+     assert(war.skills.size()==1&&war.skills[0].keycode==0x14&&!war.shuffleSkills);
+     const DynamicPattern* pp=c.layers[0].keys[0].steps[0].pattern();assert(pp->charKeys&&pp->charPotions&&!pp->charSkills);
+     DynamicPattern merged=withCharacter(*pp,&war);assert(merged.jump.keycode==0x2C&&merged.potions.size()==1&&merged.skills.empty());
+     assert(saveConfig(c));Config again;assert(loadConfig(again));
+     assert(again.characters.size()==2&&again.activeCharacter=="mage"&&again.characters[0].potions[0].backupKeys.size()==1&&again.characters[0].skills[0].cooldown.min==120000);
+     assert(again.layers[0].keys[0].steps[0].pattern()->charPotions);
+     c.activeCharacter="gone";assert(c.character()==&c.characters[0]);   // an unknown one: the first
+     Config none;assert(none.character()==nullptr);
+     auto kept=readRawJson();
+     const char* badCharacters[]={
+        R"({"characters":[{"id":"a","potions":[],"skills":[]}],"layers":[]})",                                      // no name
+        R"({"characters":[{"id":"a","name":"A","skills":[]},{"id":"a","name":"B","skills":[]}],"layers":[]})",      // same id
+        R"({"characters":[{"id":"a","name":"A","keys":{"jump":"ALT","attack":"ALT"},"skills":[]}],"layers":[]})",   // keys clash
+        R"({"characters":[{"id":"a","name":"A","skills":[]},{"id":"b","name":"B","skills":[]},{"id":"c","name":"C","skills":[]},{"id":"d","name":"D","skills":[]},{"id":"e","name":"E","skills":[]}],"layers":[]})",
+        R"({"characters":{"id":"a"},"layers":[]})",
+        R"({"active_character":5,"layers":[]})",
+        R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"pp","char_keys":"yes","skills":[]}}]}]}]})"};
+     for(auto raw:badCharacters){assert(!saveRawJson(String(raw),err));assert(readRawJson()==kept);}}
     std::cout<<"workflow storage tests passed\n";
 }

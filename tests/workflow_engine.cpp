@@ -491,20 +491,27 @@ int main() {
         bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
                  walked=walked||heldFor(L,250)>=1;seen(walked?MOB_READ|MOB_LEFT:MOB_READ,walked,0,walked?40:-1,-1,walked?320:900,"Henesys");});
         assert(walked&&attacks()==3);
-        // Hunting around home (where the button started it): a mob nearby is fought
-        // where it is; with none left it walks back home, arrow held, and fights there.
+        // Home is a zone (home ± range, here 30% ± 10%): a mob inside it is fought where
+        // it is, and with none left it waits there (no walking home); outside the zone
+        // it walks back in first, a mob in reach or not.
         auto at=[&](int x,uint8_t mobs){
             StatsReading r;r.hp=r.mana=500;r.x=x;r.y=500;r.mobs=mobs;r.ml=(mobs&MOB_LEFT)?1:0;r.mr=(mobs&MOB_RIGHT)?1:0;
             r.dl=(mobs&MOB_LEFT)?40:-1;r.dr=(mobs&MOB_RIGHT)?40:-1;liveStatsUpdate(r);};
         q.walkHold={280,650};aware.setPattern(q);calls=0;
-        bool back=false;uint32_t homeAgainAt=0,homeShownAt=0;
+        uint32_t homeShownAt=0,noneFrom=0,mobsBack=0;
         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);return;}      // pressed here: home is 30%
                  PatternView v=patternViewSnapshot();if(v.haveHome&&v.home==300&&!v.homeOnMap)homeShownAt=millis();
                  if(attacks()<1){at(380,MOB_READ|MOB_RIGHT);return;}          // a mob 8% from home: fought where it is
-                 if(!back&&hopsWhileHeld(L)>=1){back=true;homeAgainAt=millis();}
-                 at(back?300:380,back?MOB_READ|MOB_LEFT:MOB_READ);});         // then none: walks home, and the rest are fought there
-        {uint32_t later=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5&&e.at>=homeAgainAt)++later;
-         assert(back&&attacks()==3&&later==2&&homeShownAt&&held.empty());}
+                 if(!noneFrom){noneFrom=millis();mobsBack=noneFrom+2500;}
+                 at(380,millis()>=mobsBack?MOB_READ|MOB_RIGHT:MOB_READ);});   // none for 2.5 s, then back
+        assert(attacks()==3&&hopsWhileHeld(L)==0&&hopsWhileHeld(R)==0&&homeShownAt&&held.empty());   // waited where it was
+        {uint32_t during=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5&&e.at>=noneFrom+300&&e.at<mobsBack)++during;assert(during==0);}
+        // Outside the zone (42%, 12% from home) with a mob in reach: walks back in first.
+        calls=0;walked=false;
+        bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_LEFT);return;}
+                 walked=walked||hopsWhileHeld(L)>=1;
+                 at(walked?360:420,MOB_READ|MOB_LEFT);});
+        assert(walked&&attacks()==3&&held.empty());
         // Fluid movement (glide). Is each attack made with `key` held?
         auto attacksHolding=[&](uint8_t key){int n=0;bool down=false;for(auto e:hidEvents){if(e.key==key)down=e.down;else if(down&&e.down&&e.key==0&&e.mods==5)++n;}return n;};
         auto playWith=[&](std::function<long(long)> draw,std::function<void()> each){uint32_t giveUp=millis()+60000;each();testRandomHook=draw;
@@ -604,6 +611,47 @@ int main() {
          playWith([](long){return 0L;},[&]{liveStatsUpdate(800,800,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});
          assert(engine.stopFlag_&&held.empty());engine.stopFlag_=false;
          liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;}
+        // One button press playing the pattern again (a toggle button replays it): the
+        // replay keeps the home that press set, though you've moved since; a new press
+        // sets a new one where you are.
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={2,2};g.skills.clear();g.potions.clear();g.homeRangePermille=100;
+         Step once=dynamic;once.setPattern(g);
+         int secondHome=-1;bool second=false;calls=0;
+         auto replay=[&](std::vector<Step> steps,int x0,int x1){calls=0;testRandomHook=[](long){return 0L;};
+             testDelayHook=[&,x0,x1]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,calls<3?x0:x1,500,MOB_READ|MOB_LEFT);
+                 PatternView v=patternViewSnapshot();if(second&&v.active&&v.haveHome)secondHome=v.home;};
+             liveStatsUpdate(500,500,-1,LIVE_OK,x0,500,MOB_READ|MOB_LEFT);hidEvents.clear();
+             KeyBinding key;key.steps=steps;engine.oneShot_=true;engine.stopFlag_=false;
+             engine.keptHomes_.clear();engine.runMacro(key);testDelayHook={};testRandomHook={};};
+         // Two plays in one press: the second starts at 36% but keeps home 30%.
+         Step second1=once;std::vector<Step> twice{once,second1};
+         testDelayHook={};second=false;
+         {calls=0;testRandomHook=[](long){return 0L;};
+          testDelayHook=[&]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,calls<3?300:360,500,MOB_READ|MOB_LEFT);
+              PatternView v=patternViewSnapshot();if(engine.keptHomes_.count(g.id))second=true;if(second&&v.active&&v.haveHome)secondHome=v.home;};
+          liveStatsUpdate(500,500,-1,LIVE_OK,300,500,MOB_READ|MOB_LEFT);hidEvents.clear();
+          KeyBinding key;key.steps=twice;engine.oneShot_=true;engine.stopFlag_=false;engine.runMacro(key);testDelayHook={};testRandomHook={};}
+         assert(second&&secondHome==300);
+         // A new press: home is where you are now.
+         secondHome=-1;second=true;replay({once},360,360);assert(secondHome==360);}
+        // Characters: a pattern using the active character's potions drinks with its key, and
+        // two such patterns share the wait (switching patterns doesn't drink again); a pattern
+        // with its own potions keeps its own.
+        {Character war;war.id="war";war.name="Warrior";
+         DynamicSkill hp;hp.id="hp";hp.keycode=7;hp.chancePermille=1000;hp.repeats={1,1};hp.cooldown={60000,60000};hp.hold={50,50};hp.after={100,100};war.potions.push_back(hp);
+         engine.config().characters={war};engine.config().activeCharacter="war";
+         DynamicPattern a=p;a.id="pa";a.attacking=false;a.potions.clear();a.skills.clear();a.charPotions=true;
+         DynamicPattern b=a;b.id="pb";
+         DynamicPattern own=a;own.id="po";own.charPotions=false;own.potions={hp};
+         auto presses=[&](uint8_t key){int n=0;for(auto e:hidEvents)if(e.down&&e.key==key)++n;return n;};
+         auto play2s=[&](const DynamicPattern& g){aware.setPattern(g);uint32_t t0=millis();
+             playWith([](long){return 0L;},[&,t0]{liveStatsUpdate(800,800,-1,LIVE_OK,500,500,MOB_READ);if(millis()-t0>2000)engine.stopFlag_=true;});engine.stopFlag_=false;};
+         engine.dynamicSkillTimers_.clear();
+         play2s(a);assert(presses(7)==1);      // the character's key
+         play2s(b);assert(presses(7)==0);      // another pattern, same character: its wait still runs
+         play2s(own);assert(presses(7)==1);    // own potions: its own wait
+         engine.config().characters.clear();engine.config().activeCharacter.clear();
+         play2s(b);assert(presses(7)==0);}     // no character: the pattern's own (none here)
         // Home is set at the start of every pattern (not only Smart), for the
         // dashboard and the game layer; a home from the dot is set again once map
         // positions come, rather than compared with them.

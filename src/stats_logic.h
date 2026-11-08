@@ -130,20 +130,14 @@ const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4, MOB_READ = 8;
 // sides have some. x is the minimap position in
 // tenths of a percent (-1: not read).
 // Smart mode, before each attack: attack, wait, or walk (home or to mobs).
-// Home is your position when the pattern started (or you reached a new map);
-// you may drift `range` either way (same units as the position: tenths of a
-// minimap width; 0 = no home). Out of range with no mobs in reach, or twice
-// out of range whatever's around, it walks back, and once walking keeps on
-// until within half the range. Then: auto-pause (`paused`, see AutoPause)
-// waits; mobs in reach are attacked; with `approach`, mobs you can see but
-// not reach are walked to (the nearer side), but not past 3/4 of the home
-// range. Then, with a home and the mob detector, nothing to fight nearby
-// means back home: walk until within HOME_SETTLE / 2 of it whenever farther
-// than HOME_SETTLE, so you hunt around home rather than wherever the last
-// mob led you (auto-pause waits there too). No fresh reading, or no mob
-// detector on this map: Smart can't tell where mobs are, so it stands still
+// Home is where the button was pressed (or you reached a new map); with a
+// `range` (tenths of a minimap width; 0 = no home) it's a zone, home ± range.
+// Outside it, walk back in first (homeDecide). Then: auto-pause (`paused`, see
+// AutoPause) waits; mobs in reach are attacked; with `approach`, mobs you can
+// see but not reach are walked to (the nearer side), not past 3/4 of the
+// range; else wait where you are. No fresh reading, or no mob detector on
+// this map: Smart can't tell where mobs are, so it stands still
 // (SMART_NO_READINGS / SMART_NO_DETECTOR) rather than attack blindly.
-const int HOME_SETTLE = 60;   // tenths of a minimap width: "at home" within this (3% once walking)
 const uint32_t MAP_CHANGE_MS = 3000;   // another map's name must hold this long before home moves there
 const uint32_t HOME_RETRY_MS = 20000;  // couldn't walk home in 10 s: home is kept, walking back tried again after this
 enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT,
@@ -158,33 +152,41 @@ struct SmartInput {
     int pos = 0, home = 0;
     uint16_t range = 0;
 };
-// Home on its own (any pattern with a home range, Smart or not): drifted past
-// the range with no mobs in reach, or twice the range whatever's around, walk
-// back until within half of it; otherwise attack.
+// Home is a zone: home ± range, where fighting happens (any pattern with a
+// home range, Smart or not). Inside it nothing pulls you back. Outside it
+// (mobs led you there), walk back, mobs or not, until HOME_INSIDE of the way
+// in (3/4 of the range from home), so you don't hover on the line.
+inline int homeInside(uint16_t range) { return range * 3 / 4; }
 inline uint8_t homeDecide(const SmartInput& in) {
     if (!in.fresh || !in.havePos || !in.haveHome || !in.range) return SMART_ATTACK;
-    bool any = in.mobs & (MOB_LEFT | MOB_RIGHT);
     int off = in.pos - in.home, dist = off < 0 ? -off : off;
-    if (dist > (in.homing ? in.range / 2 : in.range) && (!any || dist > 2 * in.range)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
+    if (dist > (in.homing ? homeInside(in.range) : in.range)) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
     return SMART_ATTACK;
+}
+// At the zone's edge (past where walking back stops), face inwards, as at a
+// map edge: -1 left, +1 right, 0 no opinion.
+inline int homeFacing(bool fresh, bool havePos, int pos, bool haveHome, int home, uint16_t range) {
+    if (!fresh || !havePos || !haveHome || !range) return 0;
+    int off = pos - home;
+    if (off > homeInside(range)) return -1;
+    if (-off > homeInside(range)) return +1;
+    return 0;
 }
 inline uint8_t smartDecide(const SmartInput& in) {
     if (!in.fresh) return SMART_NO_READINGS;
     bool any = in.mobs & (MOB_LEFT | MOB_RIGHT), homed = in.havePos && in.haveHome && in.range;
     int off = homed ? in.pos - in.home : 0;
     uint8_t back = homeDecide(in);
-    if (back != SMART_ATTACK) return back;
-    bool away = homed && (in.mobs & MOB_READ) && (off < 0 ? -off : off) > (in.homing ? HOME_SETTLE / 2 : HOME_SETTLE);
-    if (in.paused) return away ? (off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT) : SMART_PAUSE;
+    if (back != SMART_ATTACK) return back;   // outside the zone: back in first
+    if (in.paused) return SMART_PAUSE;
     if (any) return SMART_ATTACK;
     bool left = in.seenLeft > 0, right = in.seenRight > 0;
     if (in.approach && (left || right)) {
         bool goLeft = left && (!right || (in.nearLeft >= 0 && (in.nearRight < 0 || in.nearLeft <= in.nearRight)));
-        int limit = in.range * 3 / 4;
+        int limit = homeInside(in.range);   // not towards the zone's edge
         if (!homed || (goLeft ? off > -limit : off < limit)) return goLeft ? SMART_APPROACH_LEFT : SMART_APPROACH_RIGHT;
     }
-    if (away) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;   // nothing to fight here: back home
-    return (in.mobs & MOB_READ) ? SMART_WAIT : SMART_NO_DETECTOR;
+    return (in.mobs & MOB_READ) ? SMART_WAIT : SMART_NO_DETECTOR;   // inside the zone, nothing to fight: wait where you are
 }
 // The decision with mobs in reach only (no counts, approach or auto-pause).
 inline uint8_t smartAction(bool fresh, uint8_t mobs, bool havePos, int pos, bool haveHome, int home, uint16_t range, bool homing) {

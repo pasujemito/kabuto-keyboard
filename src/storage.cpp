@@ -93,6 +93,10 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     if (!chance(o["auto_pause"],p.autoPausePermille) || p.autoPausePermille>900) return false;
     if (!o["approach"].isNull() && !o["approach"].is<bool>()) return false;
     p.approach = o["approach"] | false;
+    // "char_keys" / "char_potions" / "char_skills": take these from the active character.
+    for (const char* k : {"char_keys", "char_potions", "char_skills"})
+        if (!o[k].isNull() && !o[k].is<bool>()) return false;
+    p.charKeys = o["char_keys"] | false; p.charPotions = o["char_potions"] | false; p.charSkills = o["char_skills"] | false;
     // "attack": false = support only (potions and skills, no attacking). Missing: on.
     if (!o["attack"].isNull() && !o["attack"].is<bool>()) return false;
     p.attacking = o["attack"] | true;
@@ -175,6 +179,19 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         p.skills.push_back(std::move(skill));
     }
     return dynamicKeyProblem(p).empty();
+}
+
+// A character has a pattern's keys, potions and skills (and skill order), so it
+// is read as one: the rest of a pattern's fields take their defaults.
+static bool parseCharacter(JsonObjectConst o, Character& c) {
+    DynamicPattern p;
+    if (!parseDynamic(o, p)) return false;
+    String name = o["name"] | "";
+    if (!name.length() || name.length() > 32) return false;
+    c.id = p.id; c.name = name.c_str();
+    c.jump = p.jump; c.attack = p.attack; c.left = p.left; c.right = p.right;
+    c.potions = p.potions; c.skills = p.skills; c.shuffleSkills = p.shuffleSkills;
+    return true;
 }
 
 static bool parseStep(JsonObjectConst o, Step& step) {
@@ -285,6 +302,18 @@ static bool parseStep(JsonObjectConst o, Step& step) {
 // Validate new references before replacing the saved file. Existing v1 configs
 // with only layer/key random steps remain supported.
 static bool validateWorkflows(JsonDocument& doc, String& err) {
+    {   // characters: up to MAX_CHARACTERS, each valid, ids unique
+        JsonVariantConst list = doc["characters"];
+        if (!list.isNull() && !list.is<JsonArrayConst>()) { err = "characters must be an array"; return false; }
+        if (list.size() > MAX_CHARACTERS) { err = "at most " + String(MAX_CHARACTERS) + " characters"; return false; }
+        std::set<std::string> seen;
+        for (JsonObjectConst c : list.as<JsonArrayConst>()) {
+            Character character;
+            if (!parseCharacter(c, character)) { err = String("character '") + (const char*)(c["name"] | "?") + "' is invalid"; return false; }
+            if (!seen.insert(character.id).second) { err = "two characters share an id"; return false; }
+        }
+        if (!doc["active_character"].isNull() && !doc["active_character"].is<const char*>()) { err = "active_character must be a string"; return false; }
+    }
     std::set<std::string> ids;
     JsonVariantConst library = doc["workflows"];
     if (!library.isNull() && !library.is<JsonArrayConst>()) {
@@ -385,6 +414,12 @@ bool loadConfig(Config& cfg) {
         cfg.workflows.push_back(workflow);
     }
     cfg.randomizedDelay = doc["randomizedDelay"] | true;
+    cfg.characters.clear();
+    for (JsonObjectConst co : doc["characters"].as<JsonArrayConst>()) {
+        Character c;
+        if (parseCharacter(co, c)) cfg.characters.push_back(c);
+    }
+    cfg.activeCharacter = (const char*)(doc["active_character"] | "");
     JsonArrayConst layers = doc["layers"].as<JsonArrayConst>();
     for (JsonObjectConst lo : layers) {
         Layer layer;
@@ -422,6 +457,21 @@ static void modsToJson(uint8_t mods, JsonArray out) {
     if (mods & KM_RGUI)   out.add("rgui");
 }
 
+// Movement keys, potions and skills, as a pattern or a character saves them.
+static void kitToJson(JsonObject d, DynamicKey jump, DynamicKey attack, DynamicKey left, DynamicKey right,
+                      const std::vector<DynamicSkill>& potionList, const std::vector<DynamicSkill>& skillList) {
+    auto range=[&](JsonObject object,const char* name,DynamicRange value){JsonArray a=object[name].to<JsonArray>();a.add(value.min);a.add(value.max);};
+    auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
+    JsonObject keys=d["keys"].to<JsonObject>();
+    keys["jump"]=keyName(jump);keys["attack"]=keyName(attack);keys["left"]=keyName(left);keys["right"]=keyName(right);
+    JsonArray potions=d["potions"].to<JsonArray>();
+    for(const auto& potion:potionList){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;
+        if(!potion.backupKeys.empty()){JsonArray b=k["backup_keys"].to<JsonArray>();
+            for(size_t i=0;i<potion.backupKeys.size();++i){JsonObject e=b.add<JsonObject>();e["key"]=keyNameFromCode(potion.backupKeys[i]);e["per_tap"]=i<potion.backupPerTap.size()?potion.backupPerTap[i]:0;}}range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
+    JsonArray skills=d["skills"].to<JsonArray>();
+    for(const auto& skill:skillList){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
+}
+
 static void stepToJson(const Step& s, JsonObject o) {
     switch (s.type) {
         case StepType::DYNAMIC: {
@@ -436,15 +486,10 @@ static void stepToJson(const Step& s, JsonObject o) {
             d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
             d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;d["attack"]=p->attacking;
             range(d,"walk_hold",p->walkHold);d["glide"]=p->glidePermille/1000.0;
-            auto keyName=[](DynamicKey key){return key.mods?modifierNameFromMask(key.mods):keyNameFromCode(key.keycode);};
-            JsonObject keys=d["keys"].to<JsonObject>();
-            keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);
-            JsonArray potions=d["potions"].to<JsonArray>();
-            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;
-                if(!potion.backupKeys.empty()){JsonArray b=k["backup_keys"].to<JsonArray>();
-                    for(size_t i=0;i<potion.backupKeys.size();++i){JsonObject e=b.add<JsonObject>();e["key"]=keyNameFromCode(potion.backupKeys[i]);e["per_tap"]=i<potion.backupPerTap.size()?potion.backupPerTap[i]:0;}}range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
-            JsonArray skills=d["skills"].to<JsonArray>();
-            for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
+            if(p->charKeys){d["char_keys"]=true;}
+            if(p->charPotions){d["char_potions"]=true;}
+            if(p->charSkills){d["char_skills"]=true;}
+            kitToJson(d,p->jump,p->attack,p->left,p->right,p->potions,p->skills);
             break;
         }
         case StepType::KEY:
@@ -531,6 +576,15 @@ static const char* triggerName(TriggerMode t) {
 static void buildDoc(const Config& cfg, JsonDocument& doc) {
     doc["version"] = cfg.workflows.empty() ? 1 : 2;
     doc["randomizedDelay"] = cfg.randomizedDelay;
+    if (!cfg.characters.empty()) {
+        JsonArray characters = doc["characters"].to<JsonArray>();
+        for (const auto& c : cfg.characters) {
+            JsonObject co = characters.add<JsonObject>();
+            co["id"] = c.id; co["name"] = c.name; co["shuffle_skills"] = c.shuffleSkills;
+            kitToJson(co, c.jump, c.attack, c.left, c.right, c.potions, c.skills);
+        }
+        if (!cfg.activeCharacter.empty()) doc["active_character"] = cfg.activeCharacter;
+    }
     JsonArray workflows = doc["workflows"].to<JsonArray>();
     for (const auto& workflow : cfg.workflows) {
         JsonObject wo = workflows.add<JsonObject>();

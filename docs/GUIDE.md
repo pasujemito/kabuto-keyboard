@@ -306,7 +306,8 @@ Setup marks things by hovering and pressing **F8** (**Esc** skips):
    MapleStory. The tag is drawn centred just under your feet and every
    character is the same size, so your feet (7 px above the tag's middle) and
    head (73 px above them) needn't be marked, and the hitbox is standard: your
-   character's height plus 40 px above and below (`"pad"` in `mobs`), 300 px
+   character's height plus 40 px above and 40 + 80 px below (`"pad"` and
+   `"below"` in `mobs`), 300 px
    each way (`"reach"`). Mobs are looked for in that box either side of you,
    skipping your own character in the middle. Without mob sprites (below), then up to 3 mobs of different
    kinds (it learns their colours); **Esc** when done.
@@ -370,8 +371,10 @@ must sit where it should, a small flickering part (flames, sparkles) can't
 veto a match, and scenery that only shares colours can't pass.
 
 Only mobs in **your field of view** count: as far as your sight either side,
-and at your level. Walking mobs count when their feet are within 28 px of
-yours (on your platform, not the ledge above or below); flying ones (mobs
+and at your level. Walking mobs count when their feet are from 28 px above
+yours to 28 + 80 px below (`"below"` in `mobs`, 80 by default since 1.19.0:
+mid-jump, or with the platform read a little high, mobs on the ground under
+you still count; the ledge above, or one well below, doesn't); flying ones (mobs
 with `fly` frames) when they're anywhere at your height, from your feet up to
 your head. To count everything on screen instead, put `"view": "screen"` in
 your setup's `mobs`. **Jumping** doesn't lift your field of view: it follows
@@ -614,6 +617,20 @@ are gone with Wi-Fi readings).
 - **Mobs in reach are always faced** when the screen reader sees them (the
   old Face mobs switch is gone); the flip-direction % decides only when
   there's no mob to face.
+- **Characters** (Recordings → Characters, since 1.19.0): a character holds
+  the movement keys, HP & Mana (with backup keys and amounts) and skills,
+  set once. A pattern's **Use <character>'s keys / HP & Mana / skills**
+  switches (above those sections) take them from the active character
+  instead of its own, each on its own: a pattern can use the character's
+  potions but its own buff list. Up to 4 characters; the ● one is active and
+  every pattern follows it (Save to send the change to the pad). Potion and
+  skill waits are the character's, shared by its patterns. **Make one from
+  "<pattern>"** builds Character 1 from your first pattern and points every
+  pattern with the very same keys, potions or skills at it. Deleting the last
+  character leaves patterns with their own settings. In the saved config:
+  `"characters": [{"id", "name", "keys", "potions", "skills",
+  "shuffle_skills"}]`, `"active_character"`, and per pattern `"char_keys"`,
+  `"char_potions"`, `"char_skills"`.
 - **Attack** (on by default): off makes the pattern **support only**. It
   never jumps, attacks or presses an arrow; it drinks potions (by your bars,
   else their timers) and uses skills and buffs once their wait is over,
@@ -662,13 +679,16 @@ are gone with Wi-Fi readings).
       shown on the dashboard and on the game layer's minimap (a green line,
       the range a band under it; the strip says "you 41% · home 37% ◀", amber
       when out of range). To hunt somewhere else, walk there and press it
-      again. Nothing else moves it;
-    - **It hunts around home**: it fights mobs in reach where they are and
-      walks to ones in sight (within ¾ of the range), but once there's
-      nothing to fight it walks back to home (when more than 6% of the
-      minimap away, until within 3%), and auto-pause waits there too. If it
-      can't get home in 10 s (a wall, another platform), home stays where it
-      is and walking back is tried again 20 s later;
+      again. A toggle or hold button replays the pattern: each replay keeps
+      the home its press set. Nothing else moves it;
+    - **Home is a zone** (since 1.18.16): home ± the range is where it
+      fights. Inside it, it fights mobs in reach where they are, walks to ones
+      in sight (not past ¾ of the range), and with nothing to fight it waits
+      where it is: nothing pulls it back home. If mobs lead it outside the
+      zone, it walks back in (to ¾ of the range), mobs in reach or not, then
+      carries on; at the zone's edge it turns to face inwards, as at a map
+      edge. If it can't get back in within 10 s (a wall, another platform),
+      home stays and walking back is tried again 20 s later;
     - **Walking: hop every** (600–1300 ms for new patterns): walking, home or
       to mobs, holds the arrow key down the whole way and hops (a quick jump)
       after each random time in that range, as you would. The arrow is let go

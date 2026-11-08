@@ -2316,6 +2316,9 @@ function renderLiveStats(live,pattern=status.pattern){
     else if(pattern.action!=='noreadings'&&pattern.action!=='nodetector'&&live&&live.fresh&&!(live.mobs&8))chip('⚠ Can\'t see mobs','attack','No mob readings on this map: Smart stands still until the map is taught (F9)');}
   else chip(status.running?'▶ Playing':'■ Idle','dim');
   if(status.running&&status.runningKey>=0)chip('Button '+(status.runningKey+1)+' · '+runningLabel(),'dim');
+  // Mobs in your reach first, everything seen in brackets: what Smart attacks is the first number.
+  if(fresh&&live.ml>=0&&live.mr>=0){const seen=live.ml+live.mr,inReach=live.ir>=0?live.ir:((live.mobs&1?1:0)+(live.mobs&2?1:0));
+    chip(`⚔ In reach ${inReach} (${seen})`,inReach?'attack':'dim','Mobs inside your reach now, and (in brackets) all the mobs you can see');}
   if(fresh&&live.map)chip(live.map==='-'?'🗺 Map not taught':'🗺 '+mobName(live.map),live.map==='-'?'dim':'','The map the screen reader recognised by its name');
   box.appendChild(head);
   if(!live)return;
@@ -2352,12 +2355,13 @@ function renderLiveStats(live,pattern=status.pattern){
       const tag=el('span','side');tag.textContent=side==='left'?'◀ '+count:count+' ▶';tag.style[side]='4px';radar.appendChild(tag);
     }
     radar.setAttribute('aria-label',`Mobs: ${live.ml} left, ${live.mr} right`);
-    value.textContent=live.ml+live.mr;value.title='Mobs you can see';
+    value.textContent=(live.ir>=0?live.ir:'?')+' ('+(live.ml+live.mr)+')';value.title='Mobs in your reach (all you can see)';
     row.append(name,radar,value);box.appendChild(row);
     const info=el('div','live-mobs'),add=(label,text)=>{const span=el('span');span.append(label+' ');const b=el('b');b.textContent=text;span.appendChild(b);info.appendChild(span);};
     const near=[['left',live.dl],['right',live.dr]].filter(([,d])=>d>=0).sort((a,b)=>a[1]-b[1])[0];
     if(near)add(near[1]<=100?'Target':'Nearest',`${live.mob?mobName(live.mob)+' · ':''}${near[0]} · ${near[1]}% of reach${near[1]<=100?' (in reach)':''}`);
     else add('Nearest','none in sight');
+    if(live.ir>=0)add('In reach',`${live.ir} of ${live.ml+live.mr}`);
     add('Seen',`${live.ml+live.mr} (${live.ml} ◀ · ▶ ${live.mr})`);
     if(pattern&&pattern.peak>=0)add('Most lately',String(pattern.peak));
     box.appendChild(info);

@@ -591,10 +591,11 @@ def mob_fields(view, reach):
     """What the pad gets from a mob_view: "mobs" (sides with a mob in your
     reach, nearest first, as mob_sides gives), "ml"/"mr" (how many you can see
     each side), "dl"/"dr" (the nearest each side in % of your reach: 100 is
-    its edge; left out with none) and "mn" (the nearest mob's name)."""
+    its edge; left out with none), "ir" (how many are inside your reach, both
+    sides) and "mn" (the nearest mob's name)."""
     near = {side: mobs[0] for side, mobs in view.items() if mobs}
     out = {"mobs": "".join(side for side in sorted(near, key=lambda s: (near[s][0], s)) if near[side][0] <= reach),
-           "ml": len(view["L"]), "mr": len(view["R"])}
+           "ml": len(view["L"]), "mr": len(view["R"]), "ir": sum(1 for mobs in view.values() for d, _ in mobs if d <= reach)}
     for side, (d, _) in near.items():
         out["d" + side.lower()] = int(round(d * 100.0 / max(reach, 1)))
     nearest = min(near.values(), key=lambda m: m[0]) if near else None
@@ -2749,6 +2750,7 @@ def describe(r, xp=""):
         parts.append("mobs: not looking" + (" (map not taught: F9)" if r.get("map") == "-" else ""))
     if r.get("ml") is not None:
         near = lambda side: "%d%%" % r["d" + side] if r.get("d" + side) is not None else "-"
+        parts.append("in reach %s (%d)" % (r["ir"] if r.get("ir") is not None else "?", r["ml"] + r["mr"]))
         parts.append("seen L%d (%s) R%d (%s)" % (r["ml"], near("l"), r["mr"], near("r")) + (" " + r["mn"] if r.get("mn") else ""))
     if r.get("map") is not None:
         parts.append("map " + (r["map"] if r["map"] != "-" else "not taught"))
@@ -2912,7 +2914,7 @@ def worth_sending(last, r, sent_at, now, heartbeat=HEARTBEAT_S):
     alone waits for the heartbeat."""
     if last is None or now - sent_at >= heartbeat or now < sent_at:
         return True
-    if any(last.get(k) != r.get(k) for k in ("state", "map", "mobs", "ml", "mr", "mn")):
+    if any(last.get(k) != r.get(k) for k in ("state", "map", "mobs", "ml", "mr", "ir", "mn")):
         return True
     def moved(key, step):
         a, b = last.get(key), r.get(key)
@@ -3174,7 +3176,9 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp="", home=N
         out.append(place)
     if r.get("ml") is not None:
         near = [(r["d" + side], side) for side in "lr" if r.get("d" + side) is not None]
-        out.append(Cell("\u25c0%d \u00b7 %d\u25b6" % (r["ml"], r["mr"]), INK, 60, "mob", "%d\u25c0 \u25b6%d" % (r["ml"], r["mr"])))
+        seen = r["ml"] + r["mr"]   # in reach first, everything seen in brackets
+        inside = r.get("ir") if r.get("ir") is not None else len(r.get("mobs") or "")
+        out.append(Cell("in reach %d (%d)" % (inside, seen), RED if inside else INK, 104, "mob", "%d (%d)" % (inside, seen)))
         if near:
             d, side = min(near)
             who = (r.get("mn") or ("left" if side == "l" else "right")).replace("_", " ")
@@ -3924,9 +3928,9 @@ def selftest():
     seen = mob_view(sight, 1000, 30, [[200, 40, 160]], gap=40, step=2, min_hits=3, cell=10, names=["blob"], mob_w=20)
     assert [d for d, _ in seen["R"]] == [104, 304, 324] and [d for d, _ in seen["L"]] == [384], seen
     assert {n for side in seen.values() for _, n in side} == {"blob"}
-    assert mob_fields(seen, 200) == {"mobs": "R", "ml": 1, "mr": 3, "dr": 52, "dl": 192, "mn": "blob"}
-    assert mob_fields(seen, 400) == {"mobs": "RL", "ml": 1, "mr": 3, "dr": 26, "dl": 96, "mn": "blob"}
-    assert mob_fields({"L": [], "R": []}, 200) == {"mobs": "", "ml": 0, "mr": 0, "mn": None}   # none: no distances
+    assert mob_fields(seen, 200) == {"mobs": "R", "ml": 1, "mr": 3, "ir": 1, "dr": 52, "dl": 192, "mn": "blob"}   # 1 in reach of 4
+    assert mob_fields(seen, 400) == {"mobs": "RL", "ml": 1, "mr": 3, "ir": 4, "dr": 26, "dl": 96, "mn": "blob"}
+    assert mob_fields({"L": [], "R": []}, 200) == {"mobs": "", "ml": 0, "mr": 0, "ir": 0, "mn": None}   # none: no distances
     assert mob_view(canvas(1000, 30, grey), 1000, 30, [[200, 40, 160]], step=2, cell=10) == {"L": [], "R": []}
     assert [n for _, n in mob_view(sight, 1000, 30, [[200, 40, 160]], step=2, cell=10)["R"]] == [None, None]   # no names; no mob_w: 1 per clump
     # Map names as pictures: the same name matches even a pixel off; another doesn't.
@@ -4508,11 +4512,14 @@ def selftest():
     assert search_words("Perion: Rocky-Mountain II") == ["perion", "rocky", "mountain", "ii"]
 
     # The game layer's strip and outlines.
-    strip = layer_status({"hp": 72.4, "mana": 40.0, "xp": 63.2, "map": "Henesys_Field", "mobs": "R", "ml": 1, "mr": 3, "dl": 192,
+    strip = layer_status({"hp": 72.4, "mana": 40.0, "xp": 63.2, "map": "Henesys_Field", "mobs": "R", "ml": 1, "mr": 3, "ir": 1, "dl": 192,
                           "dr": 52, "mn": "Blue_Snail", "state": "ok"}, "USB COM9", "maplestory", ["Henesys Field"])
     texts = [t for t, _ in strip]
     assert texts[:5] == ["Kabuto \u00b7 MS", "USB COM9", "HP 72%", "MP 40%", "XP 63%"] and "Henesys Field" in texts, texts
-    assert "\u25c01 \u00b7 3\u25b6" in texts and ("target Blue_Snail 52%", RED) in strip, strip
+    assert ("in reach 1 (4)", RED) in strip and ("target Blue_Snail 52%", RED) in strip, strip   # in reach first, all seen in brackets
+    assert ("in reach 0 (3)", INK) in layer_status({"mobs": "", "ml": 1, "mr": 2, "ir": 0}, "USB")
+    assert ("in reach 2 (3)", RED) in layer_status({"mobs": "RL", "ml": 1, "mr": 2}, "USB")   # older pads' readings: the sides in reach
+    assert "in reach 1 (4)" in describe({"mobs": "R", "ml": 1, "mr": 3, "ir": 1})
     strip = layer_status({"hp": 0.0, "state": "dead", "map": "-", "ml": 0, "mr": 0}, "can't reach Kabuto", None, ["A"])
     assert ("DEAD", RED) in strip and ("new map, mobs not seen: F9", RED) in strip and strip[1][1] == RED and not any(t.startswith("target") for t, _ in strip)
     assert ("map not taught", RED) in layer_status({"map": "-"}, "USB", None, [])

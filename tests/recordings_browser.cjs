@@ -354,10 +354,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#liveStats .track i').evaluate(e=>e.style.left),'42%');
   // The dashboard while a smart pattern plays: what it's doing and facing, the
   // map, the mobs it sees (the nearest right one in reach, named) and home.
-  liveState={hp:723,mana:400,xp:632,x:420,y:700,wx:1420,mobs:10,ml:1,mr:3,dl:192,dr:52,mob:'Blue_Snail',map:'Henesys',ageMs:300,fresh:true,xpPerHour:-1,minutesToLevel:-1,levels:0};
+  liveState={hp:723,mana:400,xp:632,x:420,y:700,wx:1420,mobs:10,ml:1,mr:3,ir:1,dl:192,dr:52,mob:'Blue_Snail',map:'Henesys',ageMs:300,fresh:true,xpPerHour:-1,minutesToLevel:-1,levels:0};
   patternState={smart:true,action:'attack',facing:'right',home:1300,homeOnMap:true,homeRange:100,peak:6};
   await page.waitForFunction(()=>document.querySelector('#liveStats .radar'));
   const dashText=await page.locator('#liveStats').textContent();
+  assert.match(dashText,/⚔ In reach 1 \(4\)/);assert.match(dashText,/In reach 1 of 4/);   // in reach first, all seen in brackets
   assert.match(dashText,/⚔ Attacking/);assert.match(dashText,/Facing right ▶/);assert.match(dashText,/🗺 Henesys/);
   assert.match(dashText,/Target Blue Snail · right · 52% of reach \(in reach\)/);assert.match(dashText,/Seen 4 \(1 ◀ · ▶ 3\)/);assert.match(dashText,/Most lately 6/);
   assert.deepEqual(await page.locator('#liveStats .radar .mob').evaluateAll(ms=>ms.map(m=>[m.textContent,m.classList.contains('in')])),[['1',false],['3',true]]);

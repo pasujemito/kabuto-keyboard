@@ -501,11 +501,19 @@ int main() {
         uint32_t homeShownAt=0,noneFrom=0,mobsBack=0;
         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);return;}      // pressed here: home is 30%
                  PatternView v=patternViewSnapshot();if(v.haveHome&&v.home==300&&!v.homeOnMap)homeShownAt=millis();
-                 if(attacks()<1){at(380,MOB_READ|MOB_RIGHT);return;}          // a mob 8% from home: fought where it is
+                 if(attacks()<1){at(360,MOB_READ|MOB_RIGHT);return;}          // a mob 6% from home: fought where it is
                  if(!noneFrom){noneFrom=millis();mobsBack=noneFrom+2500;}
-                 at(380,millis()>=mobsBack?MOB_READ|MOB_RIGHT:MOB_READ);});   // none for 2.5 s, then back
+                 at(360,millis()>=mobsBack?MOB_READ|MOB_RIGHT:MOB_READ);});   // none for 2.5 s, then back
         assert(attacks()==3&&hopsWhileHeld(L)==0&&hopsWhileHeld(R)==0&&homeShownAt&&held.empty());   // waited where it was
         {uint32_t during=0;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5&&e.at>=noneFrom+300&&e.at<mobsBack)++during;assert(during==0);}
+        // At the zone's edge (8% right of home, past 3/4 of 10%) with a mob in reach only
+        // further out: it steps back in rather than attack facing inwards at nothing.
+        calls=0;walked=false;
+        bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);return;}
+                 walked=walked||hopsWhileHeld(L)>=1;
+                 at(walked?360:380,walked?MOB_READ|MOB_LEFT:MOB_READ|MOB_RIGHT);});   // back in: a mob on the inside then
+        {bool down=false;uint32_t hopAt=0;for(auto e:hidEvents){if(e.key==L)down=e.down;else if(!hopAt&&down&&e.down&&e.key==0&&e.mods==4)hopAt=e.at;}
+         assert(walked&&attacks()==3&&held.empty()&&hopAt&&firstAttack()>hopAt);}   // no attack at the edge before walking in
         // Outside the zone (42%, 12% from home) with a mob in reach: walks back in first.
         calls=0;walked=false;
         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_LEFT);return;}

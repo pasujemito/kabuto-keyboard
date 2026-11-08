@@ -644,6 +644,11 @@ are gone with Wi-Fi readings).
   the last. Needs the screen reader's bar readings. Each backup can have its
   own **restored per tap** (empty: the same as the main key), so with Bar
   total set it taps just enough for whichever potion is in use.
+- **Mobs in reach, all seen in brackets**: the game layer's strip, the
+  console and the dashboard always show "in reach 2 (7)": 2 mobs inside your
+  reach (the red box with F10), 7 seen in all. Smart attacks only when the
+  first number is above 0; at the home zone's edge only mobs on the inside
+  count (with mobs in reach only outside, it steps back in first).
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.

@@ -13,6 +13,11 @@ and show up in the pad's **Updates** panel.
   again, or you die, disconnect or get the test popup. Play by hand
   meanwhile. Everything about fighting greys out in the editor while it's
   off; the dashboard shows **🧪 Support only**. Saved patterns keep attacking
+- 🧴 **Backup potion keys**: HP and Mana each take up to 3 more keys (more
+  potions of the same kind). The pad watches the bar: two drinks in a row
+  that don't refill it mean that key ran out, so it moves to the next one
+  (and back to the main key after the last); the log says so. Needs the
+  screen reader's bar readings; without them only the main key is used
 
 - 🏠 **Home stays where you pressed the button**: it could move by itself.
   Three causes, all fixed: the map's name misread for a moment (something

@@ -255,6 +255,34 @@ struct StuckWatch {
     }
 };
 
+// ---- backup potion keys ---------------------------------------------------------
+// A potion with backup keys (more of the same kind) watches its bar: a drink is
+// checked POTION_CHECK_MS later, and POTION_MISSES drinks in a row that didn't
+// raise the bar by POTION_RISE (tenths of a %) mean that key ran out: the next
+// key is used, round to the first again after the last. Without fresh readings
+// nothing is judged.
+const uint32_t POTION_CHECK_MS = 2000;
+const int POTION_RISE = 5;
+const uint8_t POTION_MISSES = 2;
+struct PotionKeys {
+    uint8_t active = 0, count = 1, misses = 0;   // the key in use (0 = the main one) of `count`
+    bool armed = false; int before = 0; uint32_t at = 0;
+    void drank(bool fresh, int value, uint32_t now) {
+        if (count < 2 || !fresh || value < 0) return;
+        armed = true; before = value; at = now + POTION_CHECK_MS;
+    }
+    // True when it moved on to the next key.
+    bool check(bool fresh, int value, uint32_t now) {
+        if (!armed || (int32_t)(now - at) < 0) return false;
+        armed = false;
+        if (!fresh || value < 0) return false;
+        if (value >= before + POTION_RISE) { misses = 0; return false; }
+        if (++misses < POTION_MISSES) return false;
+        misses = 0; active = (uint8_t)((active + 1) % count);
+        return true;
+    }
+};
+
 // ---- home, told back to the screen reader ------------------------------------
 // The answer to each reading carries the playing pattern's home, so the PC's
 // game layer can mark it on the minimap: "home=1415&hm=1&hr=500" (home in the

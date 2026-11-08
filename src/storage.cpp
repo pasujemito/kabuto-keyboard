@@ -135,6 +135,17 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
                 if (!s[k].isNull() && (!s[k].is<uint32_t>() || s[k].as<uint32_t>() > 10000000U)) return false;
             skill.barMax = s["bar_max"] | 0U; skill.perTap = s["per_tap"] | 0U;
             if (!skill.barMax != !skill.perTap || skill.perTap > skill.barMax) return false;
+            // "backup_keys": up to 3 more keys of the same potion, each different.
+            JsonVariantConst backups = s["backup_keys"];
+            if (!backups.isNull()) {
+                if (!backups.is<JsonArrayConst>() || backups.size() > 3) return false;
+                for (JsonVariantConst b : backups.as<JsonArrayConst>()) {
+                    uint8_t code = b.is<const char*>() ? keycodeFromName(String(b.as<const char*>())) : 0;
+                    if (!code || code == skill.keycode) return false;
+                    for (uint8_t other : skill.backupKeys) if (other == code) return false;
+                    skill.backupKeys.push_back(code);
+                }
+            }
         }
         JsonVariantConst wait = s[potion ? "every_ms" : "cooldown_ms"];
         // A single number is the older fixed interval; a [min,max] range is drawn after each use.
@@ -422,7 +433,8 @@ static void stepToJson(const Step& s, JsonObject o) {
             JsonObject keys=d["keys"].to<JsonObject>();
             keys["jump"]=keyName(p->jump);keys["attack"]=keyName(p->attack);keys["left"]=keyName(p->left);keys["right"]=keyName(p->right);
             JsonArray potions=d["potions"].to<JsonArray>();
-            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
+            for(const auto& potion:p->potions){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;
+                if(!potion.backupKeys.empty()){JsonArray b=k["backup_keys"].to<JsonArray>();for(uint8_t code:potion.backupKeys)b.add(keyNameFromCode(code));}range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
             JsonArray skills=d["skills"].to<JsonArray>();
             for(const auto& skill:p->skills){JsonObject k=skills.add<JsonObject>();k["id"]=skill.id;k["key"]=keyNameFromCode(skill.keycode);k["enabled"]=skill.enabled;k["chance"]=skill.chancePermille/1000.0;range(k,"cooldown_ms",skill.cooldown);range(k,"repeats",skill.repeats);range(k,"hold",skill.hold);range(k,"after",skill.after);}
             break;

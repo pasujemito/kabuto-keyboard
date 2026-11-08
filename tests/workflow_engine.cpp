@@ -588,6 +588,11 @@ int main() {
          assert(presses(6)>=3&&presses(6)<=4);    // HP every 3 s while low
          assert(presses(20)>=2&&presses(20)<=3);  // the buff every 4 s (plus its own time)
          assert(held.empty()&&!heldMods);engine.stopFlag_=false;
+         // Backup keys: the bar never rises after two drinks with the main key: the backup is used.
+         g.potions[0].backupKeys={5};g.skills.clear();aware.setPattern(g);engine.dynamicSkillTimers_.clear();calls=0;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();liveStatsUpdate(300,800,-1,LIVE_OK,500,500,MOB_READ);   // HP stuck at 30%
+                  if(millis()-t0>9500)engine.stopFlag_=true;});
+         assert(presses(6)==2&&presses(5)==2&&held.empty());engine.stopFlag_=false;
          // Death stops it.
          uint32_t dieAt=millis()+1500;calls=0;
          playWith([](long){return 0L;},[&]{liveStatsUpdate(800,800,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});

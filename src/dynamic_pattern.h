@@ -28,6 +28,7 @@ struct DynamicSkill {
     DynamicRange cooldown{0,0}; // wait after each use; a fresh draw every time
     uint8_t belowPercent = 0;   // potions: with live bars, drink below this % (0 = timer only)
     uint32_t barMax = 0, perTap = 0;   // potions: the bar's real total and what one tap restores (0 = taps range)
+    std::vector<uint8_t> backupKeys;   // potions: more keys of the same kind, used in turn when one runs out (up to 3)
 };
 struct DynamicPattern {
     std::string id;
@@ -75,6 +76,10 @@ inline std::string dynamicKeyProblem(const DynamicPattern& p) {
         for (const auto& s : *list) {
             DynamicKey k = dynamicKeycode(s.keycode);
             if (k == p.jump || k == p.attack || k == p.left || k == p.right) return "skills and potions can't use a movement key";
+            for (uint8_t b : s.backupKeys) {
+                DynamicKey bk = dynamicKeycode(b);
+                if (bk == p.jump || bk == p.attack || bk == p.left || bk == p.right) return "skills and potions can't use a movement key";
+            }
         }
     return "";
 }

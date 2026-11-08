@@ -217,6 +217,13 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('20');
   await page.getByRole('button',{name:'Add skill',exact:true}).click();
   await page.getByLabel('Skill 2 key',{exact:true}).selectOption('H');
+  // Backup potion keys: none by default; the same key twice is refused; one is kept.
+  await page.locator('#dynamicPotions').evaluate(e=>e.closest('details').open=true);
+  assert.equal(await page.getByLabel('HP backup key 1',{exact:true}).inputValue(),'');
+  await page.getByLabel('HP backup key 1',{exact:true}).selectOption('D');await page.getByLabel('HP backup key 2',{exact:true}).selectOption('D');
+  await page.getByRole('button',{name:'Apply pattern',exact:true}).click();
+  assert.equal(await page.locator('#dynamicError').textContent(),'HP backup keys: each must be a different key.');
+  await page.getByLabel('HP backup key 2',{exact:true}).selectOption('');
   const dynamicBounds=await page.locator('#dynamicDialog').boundingBox();assert(dynamicBounds.x>=0&&dynamicBounds.x+dynamicBounds.width<=390);
   assert(await page.locator('#dynamicDialog').evaluate(d=>d.scrollWidth<=d.clientWidth));
   await page.screenshot({path:'/tmp/kabuto-dynamic-mobile.png'});
@@ -233,6 +240,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('Turn around after a set (%)',{exact:true}).inputValue(),'75');
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'20');
   assert.equal(await page.getByLabel('Jump key',{exact:true}).inputValue(),'SPACE');
+  assert.equal(await page.getByLabel('HP backup key 1',{exact:true}).inputValue(),'D');assert.equal(await page.getByLabel('HP backup key 2',{exact:true}).inputValue(),'');
+  assert.deepEqual(await page.evaluate(()=>cfg.workflows.find(w=>w.steps[0]?.type==='dynamic').steps[0].pattern.potions.map(x=>x.backup_keys)),[['D'],[]]);
   assert.equal(await page.getByLabel('Turn at map edges (%)',{exact:true}).inputValue(),'15');assert.equal(await page.getByLabel('Stuck after (seconds)',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('Mana key',{exact:true}).inputValue(),'V');
   await page.locator('#dynamicClose').click();
   // Updates: a newer release is announced; installing needs a confirmation.

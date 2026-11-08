@@ -620,6 +620,11 @@ are gone with Wi-Fi readings).
   checked about every second, until you press the button again (or you die,
   disconnect or get the test popup). Play by hand meanwhile; keep one
   pattern for full auto and one support-only pattern on another button.
+- **Backup potion keys**: each of HP and Mana can have up to 3 more keys
+  (your second and third potions of that kind). After a drink the pad looks
+  at the bar 2 s later; two drinks in a row that don't raise it mean that
+  key ran out, so it uses the next one, and goes back to the main key after
+  the last. Needs the screen reader's bar readings.
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
   range below). With Smart on it also hunts around home.

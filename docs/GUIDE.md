@@ -676,9 +676,10 @@ are gone with Wi-Fi readings).
       (another platform) are left for 10 s;
     - **Auto-pause** (30% for new patterns, 0 = off): once most of the mobs
       you could see are killed (fewer than 30% of the most seen lately), it
-      stops attacking, even a straggler in reach, and waits for respawn. It
-      carries on once they're back to twice that share (60%), or after 20 s
-      anyway to finish off the last few. The "most seen lately" drops by one
+      stops walking over to the last few and waits for respawn; a mob in reach
+      is still attacked (since 1.19.5). It walks to them again once they're
+      back to twice that share (60%), or after 20 s anyway to finish off the
+      last few. The "most seen lately" drops by one
       every 30 s it isn't reached, so one crowded moment doesn't hold it up;
     - **Home range** (in the Home section; 50% of the minimap by default, up
       to 50%; 0 = no home): how far from home it may go. Drift further than

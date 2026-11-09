@@ -50,8 +50,11 @@ g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp sr
 python3 tools/next_version.py --selftest && python3 tools/release_index.py --selftest
 ```
 
-Storage tests need ArduinoJson from `.pio/libdeps` (after one `pio run`). The
-release workflow runs all C++ and Python tests.
+Storage tests and the scenarios (`tests/scenarios.cpp`) need ArduinoJson from
+`.pio/libdeps` (after one `pio run`). The release workflow runs all C++ and
+Python tests. The scenarios are the behaviour contract: keep them passing, and
+when a change means one should expect something else, change that expectation
+deliberately and explain it in plain words (see tests/README.md).
 
 ## Conventions
 

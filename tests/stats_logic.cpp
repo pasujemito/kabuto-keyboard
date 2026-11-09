@@ -112,7 +112,8 @@ int main(){
     assert(smartAction(true,none,true,900,true,500,0,false)==SMART_WAIT&&smartAction(true,none,false,0,true,500,100,false)==SMART_WAIT);   // no home / no position
     // With mobs in sight (counts and distances): approach walks to the nearer
     // side's mobs when none are in reach, but not past 3/4 of the home range;
-    // auto-pause waits whatever's in reach; home still comes first.
+    // auto-pause waits instead of walking to the last few, but a mob in reach is
+    // always fought; home still comes first.
     SmartInput in;in.fresh=true;in.mobs=none;in.seenLeft=1;in.seenRight=2;in.nearLeft=180;in.nearRight=150;
     in.havePos=in.haveHome=true;in.pos=500;in.home=500;in.range=100;
     assert(smartDecide(in)==SMART_WAIT);                                   // approach off: as before
@@ -122,7 +123,7 @@ int main(){
     in.pos=500;in.seenLeft=0;in.nearLeft=-1;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
     in.seenRight=0;in.nearRight=-1;assert(smartDecide(in)==SMART_WAIT);   // none in sight
     in.seenRight=2;in.nearRight=150;in.mobs=MOB_READ|MOB_RIGHT;assert(smartDecide(in)==SMART_ATTACK);   // in reach: attack
-    in.paused=true;assert(smartDecide(in)==SMART_PAUSE);
+    in.paused=true;assert(smartDecide(in)==SMART_ATTACK);                  // paused, but a mob in reach: fought
     in.mobs=none;in.pos=580;assert(smartDecide(in)==SMART_PAUSE);         // auto-pause: waits where it is, inside the zone
     in.pos=540;assert(smartDecide(in)==SMART_PAUSE);in.pos=500;in.mobs=MOB_READ|MOB_RIGHT;
     in.pos=700;in.mobs=none;assert(smartDecide(in)==SMART_WALK_LEFT);     // drifted: home before pausing

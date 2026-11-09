@@ -20,6 +20,21 @@ and show up in the pad's **Updates** panel.
   With moving while attacking off, turn taps (a small step) no longer step
   outwards near the line. The same simulation, maps 1000-4000 px wide and
   5-20% zones: 0 px past the line. A mob's hit can still knock you back
+- ⏸ **Auto-pause never leaves a mob in reach alone**: with most mobs killed
+  it used to stand still for up to 20 s even with a mob right next to it.
+  Now it only stops walking over to the last few and waits for the respawn;
+  anything in reach is attacked
+- 🚶 **Walking to mobs stops at the map's edge margin** (and the zone's line,
+  counting a jump's drift), instead of creeping into the margin after a mob
+  standing there
+- 🧪 **Scenario tests**: the pad's real engine now plays the editor's default
+  pattern in a simulated map (platforms, falls, jump momentum, mobs that
+  wander and respawn, a screen reader that's a little late) and checks, in
+  plain words: keeps attacking, attacks only mobs in reach, walks to mobs in
+  sight, home 0 wanders freely, narrow zones hold, never falls off a platform
+  the zone fits on (nor into a gap to the next one), the map's edge margin
+  holds, knocked out it fights its way back, Set home while playing, stops
+  on death. Every release runs them; they found the two fixes above
 
 ## 1.19.4
 

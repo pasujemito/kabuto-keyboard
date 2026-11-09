@@ -465,22 +465,28 @@ int main() {
         q.approach=false;aware.setPattern(q);stopAt=millis()+3000;
         bounded([&]{seen(MOB_READ,0,2,-1,180);if(millis()>=stopAt)engine.stopFlag_=true;});
         assert(heldFor(R,250)==0&&attacks()==0&&engine.stopFlag_);engine.stopFlag_=false;
-        // Auto-pause at 30%: 6 mobs, then 1 left (in reach): waits for respawn,
-        // and attacks again once they're back.
-        q.autoPausePermille=300;q.attacksPerSet={6,6};aware.setPattern(q);
+        // Auto-pause at 30%: 6 mobs, then 1 left, out of reach: no walking over to it, it
+        // waits for the respawn and attacks again once they're back in reach.
+        q.autoPausePermille=300;q.attacksPerSet={6,6};q.approach=true;aware.setPattern(q);
         auto attackTimes=[&]{std::vector<uint32_t> t;for(auto e:hidEvents)if(e.down&&e.key==0&&e.mods==5)t.push_back(e.at);return t;};
         uint32_t fewAt=millis()+1000,backAt=millis()+6000;
-        bounded([&]{uint32_t now=millis();seen(MOB_READ|MOB_RIGHT,0,now>=fewAt&&now<backAt?1:6,-1,50);});
+        bounded([&]{uint32_t now=millis();bool few=now>=fewAt&&now<backAt;seen(few?MOB_READ:MOB_READ|MOB_RIGHT,0,few?1:6,-1,few?180:50);});
         auto times=attackTimes();
-        assert(times.size()==6&&times.front()<fewAt&&times.back()>=backAt);
+        assert(times.size()==6&&times.front()<fewAt&&times.back()>=backAt&&hopsWhileHeld(R)==0);
         for(uint32_t t:times)assert(t<fewAt+700||t>=backAt);
-        // The last few never respawn: after AUTO_PAUSE_MAX_MS they're attacked anyway.
+        // The last one in reach: attacked straight away, auto-pause or not.
         fewAt=millis()+1000;
         bounded([&]{seen(MOB_READ|MOB_RIGHT,0,millis()>=fewAt?1:6,-1,50);});
         times=attackTimes();
-        assert(times.size()==6&&times.back()>=fewAt+AUTO_PAUSE_MAX_MS&&!engine.stopFlag_);
-        bool gap=false;for(size_t i=1;i<times.size();++i)gap=gap||times[i]-times[i-1]>=AUTO_PAUSE_MAX_MS;
-        assert(gap);
+        assert(times.size()==6);
+        for(size_t i=1;i<times.size();++i)assert(times[i]-times[i-1]<2000);
+        // The last few never respawn: after AUTO_PAUSE_MAX_MS it walks over to them after all.
+        {fewAt=millis()+1000;uint32_t walkedAt=0;
+         bounded([&]{uint32_t now=millis();seen(now>=fewAt?MOB_READ:MOB_READ|MOB_RIGHT,0,now>=fewAt?1:6,-1,now>=fewAt?180:50);
+                  if(!walkedAt&&hopsWhileHeld(R)>=1){walkedAt=now;}
+                  if(walkedAt&&now>walkedAt+500)engine.stopFlag_=true;});
+         assert(walkedAt>=fewAt+AUTO_PAUSE_MAX_MS);engine.stopFlag_=false;}
+        q.approach=false;
         // A new map: home moves to where you arrive, so it doesn't walk back to the old map's spot.
         q.autoPausePermille=0;q.attacksPerSet={3,3};aware.setPattern(q);calls=0;mobsAt=millis()+2500;
         bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}

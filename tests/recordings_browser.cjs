@@ -463,6 +463,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     const homes=()=>page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool'&&w.steps[0].key==='home').length);
     await page.locator('#newSetHome').click();assert.equal(await homes(),1);
   }
+  // The scenarios (tests/scenarios.cpp) play the editor's default pattern from a fixture: keep them the same.
+  {const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures','default_pattern.json'),'utf8'));
+   const current=await page.evaluate(()=>{const q=defaultDynamicPattern();q.id='default';q.char_keys=q.char_potions=q.char_skills=false;return q;});
+   assert.deepEqual(current,fixture,'the editor\'s default pattern changed: update tests/fixtures/default_pattern.json (and check the scenarios)');}
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
   await page.locator('#networkSummary').click();
   assert.match(await page.locator('#networkStatus').textContent(),/Saved: HomeNet\. Joined only to check for updates/);

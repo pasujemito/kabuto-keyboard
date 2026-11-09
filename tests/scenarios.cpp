@@ -195,7 +195,6 @@ std::string defaultPatternJson;
 DynamicPattern loadPattern(std::function<void(JsonObject)> change) {
     JsonDocument doc;
     assert(!deserializeJson(doc, defaultPatternJson));
-    if (getenv("SCENARIO_NO_PAUSE")) doc["auto_pause"] = 0;   // diagnosis: auto-pause off
     change(doc.as<JsonObject>());
     JsonDocument cfg;
     cfg["version"] = 2;

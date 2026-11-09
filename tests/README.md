@@ -19,6 +19,12 @@ g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp sr
 /tmp/kabuto-engine-tests
 # After pio run has installed the ArduinoJson dependency:
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src tests/workflow_storage.cpp src/storage.cpp src/keymap.cpp -o /tmp/kabuto-storage-tests
+# Scenarios (also after pio run): the engine plays the editor's default pattern
+# (fixtures/default_pattern.json) in a simulated map and prints, per scenario,
+# what it expects and what it saw. SCENARIO_TRACE=<name part> prints a run's
+# second-by-second trace; SCENARIO_DEBUG=1 the longest idle stretch.
+g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs -I .pio/libdeps/esp32-s3-devkitc-1/ArduinoJson/src tests/scenarios.cpp src/macro_engine.cpp src/live_stats.cpp src/storage.cpp src/keymap.cpp -o /tmp/kabuto-scenarios
+/tmp/kabuto-scenarios
 /tmp/kabuto-storage-tests
 npm install --prefix /tmp/kabuto-ui-test --cache /tmp/kabuto-npm-cache --no-audit --no-fund jsdom@30.1.3
 NODE_PATH=/tmp/kabuto-ui-test/node_modules node tests/workflow_editor.cjs
@@ -95,3 +101,14 @@ release list forward, and the Updates panel (announcement, confirm-to-install,
 older-version warning, refusals, Wi-Fi form) in Chromium. Downloading and
 flashing over Wi-Fi, signature checks with mbedtls and rollback need hardware.
 The release workflow runs the C++ and Python tests on every release.
+
+## Scenarios
+
+`tests/scenarios.cpp` is the behaviour contract: each scenario says in plain
+words what should happen (keeps attacking, never past the zone's line, never
+falls off a platform the zone fits on, no key left held...) and checks it over
+several seeds. A new feature must keep them passing; when it changes what one
+should expect, change that expectation on purpose and say so in the changelog.
+The defaults it plays are the editor's: `tests/fixtures/default_pattern.json`,
+checked against `defaultDynamicPattern()` by `tests/recordings_browser.cjs`, so
+changing a default in the editor means updating the fixture too.

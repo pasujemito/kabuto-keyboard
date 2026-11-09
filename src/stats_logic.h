@@ -229,8 +229,8 @@ inline uint8_t smartDecide(const SmartInput& in) {
     // the air, no walking), for mobs on the inside.
     bool edge = homed && (off > homeInside(in.range) || -off > homeInside(in.range));
     if (edge) any = in.mobs & (off > 0 ? MOB_LEFT : MOB_RIGHT);
-    if (in.paused) return SMART_PAUSE;
-    if (any) return SMART_ATTACK;
+    if (any) return SMART_ATTACK;   // a mob in reach is always fought, auto-pause or not
+    if (in.paused) return SMART_PAUSE;   // most killed: wait for the respawn rather than walk to the last few
     bool left = in.seenLeft > 0, right = in.seenRight > 0;
     if (in.approach && (left || right)) {
         bool goLeft = left && (!right || (in.nearLeft >= 0 && (in.nearRight < 0 || in.nearLeft <= in.nearRight)));

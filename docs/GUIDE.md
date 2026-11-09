@@ -693,15 +693,16 @@ are gone with Wi-Fi readings).
       when out of range). To hunt somewhere else, walk there and press it
       again. A toggle or hold button replays the pattern: each replay keeps
       the home its press set. Nothing else moves it;
-    - **Set home** (since 1.19.4): a button just for home, so starting and
-      stopping a pattern no longer moves it. Add one with **🏠 Set home
-      button** in Recordings (it goes on the selected button when that's
-      empty), or tap **🏠 Set home here** on the dashboard. Pressed, home
-      becomes where you stand, on this map, and nothing that's playing stops:
-      a playing pattern switches to the new home at once. Patterns use it
-      over where they were started (on its map; another map gets a home of
-      its own, as before, and coming back finds the Set home one again).
-      **Forget home** on the dashboard goes back to home where you start;
+    - **Set home** (since 1.19.4; one per map, saved, since 1.19.5): a button
+      just for home, so starting and stopping a pattern never moves it. Add
+      one with **🏠 Set home button** in Recordings (it goes on the selected
+      button when that's empty), or tap **🏠 Set home here** on the
+      dashboard. Pressed, home on this map becomes where you stand, and
+      nothing that's playing stops: a playing pattern switches to it at once.
+      Each map keeps its own (up to 16; the pad keeps them over restarts), and
+      on a map with one, patterns always use it, never a home of their own.
+      A map without one still gets home where the pattern starts. **Forget
+      this map's home** on the dashboard removes this map's;
     - **Home is a zone** (since 1.18.16): home ± the range is where it
       fights. Inside it, it fights mobs in reach where they are, walks to ones
       in sight (not past ¾ of the range), and with nothing to fight it waits
@@ -709,7 +710,16 @@ are gone with Wi-Fi readings).
       zone, it fights its way back (since 1.19.4): with mobs about it keeps
       jump-attacking, the arrow held homewards, so it drifts back in as it
       fights; with none, it walks back in (to ¾ of the range), then carries
-      on; at the zone's edge it turns to face inwards, as at a map
+      on;
+    - **Staying on the platform** (since 1.19.5): moving while attacking or
+      walking outwards, the arrow is let go of early enough that a jump's
+      drift through the air can't carry you past ¾ of the range: the pad
+      learns how fast you move (kept for each map) and looks 0.8 s ahead.
+      Turn taps never step outwards near the line either. So with home in
+      the middle of a platform and a range under half its width, the pad
+      itself never walks or jumps you off. A mob's hit can still knock you
+      back, and a platform narrower than the zone can't be seen: set the
+      range to fit it at the zone's edge it turns to face inwards, as at a map
       edge. If it can't get back in within 10 s (a wall, another platform),
       home stays and walking back is tried again 20 s later;
     - **Walking: hop every** (600–1300 ms for new patterns): walking, home or

@@ -673,6 +673,31 @@ int main() {
              if(++calls>1){x+=r?1:0;x-=l?1:0;}maxX=std::max(maxX,x);minX=std::min(minX,x);
              liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_RIGHT);});
          assert(maxX<400&&minX>200&&attacks()==16&&held.empty());}
+        // With a jump's momentum: a jump carries on through the air at the speed it took off
+        // with (600 ms), readings come 40 ms late and only every 0.5%, and turns are taps
+        // (a small step). Whether moving while attacking or not, with mobs either side, the
+        // character never crosses the zone's line (home 30%, 10% and a narrow 5%).
+        auto physics=[&](DynamicPattern g,uint32_t ms,double speed){
+            aware.setPattern(g);double x=300,vx=0;bool air=false,l=false,r=false;uint32_t land=0,last=millis(),next=0;size_t seenEv=0;int sent=300;double worst=0;
+            std::vector<std::pair<uint32_t,int>> pipe;uint32_t t0=millis(),flip=0;int side=0;
+            auto step=[&](uint32_t to){while(last<to){uint32_t d=std::min<uint32_t>(to-last,5);last+=d;if(air&&last>=land)air=false;if(!air)vx=((r?1:0)-(l?1:0))*speed;x+=vx*d;}};
+            auto read=[&]{StatsReading rd;rd.hp=rd.mana=800;rd.x=sent;rd.y=500;rd.mobs=MOB_READ|(side?MOB_RIGHT:MOB_LEFT);rd.ml=side?0:2;rd.mr=side?2:0;rd.dl=side?-1:40;rd.dr=side?40:-1;rd.ir=1;liveStatsUpdate(rd);};
+            read();
+            playWith([](long upper){return upper>1?upper/2:0L;},[&]{
+                uint32_t now=millis();
+                for(;seenEv<hidEvents.size();++seenEv){const HidEvent& e=hidEvents[seenEv];step(e.at);
+                    if(e.key==L)l=e.down;else if(e.key==R)r=e.down;
+                    else if(e.key==0&&e.down&&(e.mods&4)&&!air){air=true;land=e.at+600;vx=((r?1:0)-(l?1:0))*speed;}}
+                step(now);worst=std::max(worst,std::fabs(x-300)-g.homeRangePermille);
+                if(now>=flip){flip=now+1500;side=!side;}
+                if(now>=next){next=now+70;pipe.push_back({now+40,(int)std::lround(x)});}
+                while(!pipe.empty()&&pipe.front().first<=now){if(std::abs(pipe.front().second-sent)>=5)sent=pipe.front().second;pipe.erase(pipe.begin());}
+                read();if(now-t0>ms)engine.stopFlag_=true;});
+            engine.stopFlag_=false;return worst;};
+        {DynamicPattern g=p;g.sets={100,100};g.attacksPerSet={2,4};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=100;g.turnChancePermille=500;
+         for(uint16_t glide: {0,600,1000})for(uint16_t range: {100,50}){g.glidePermille=glide;g.homeRangePermille=range;
+             double worst=physics(g,30000,0.1);assert(worst<=0);}
+         assert(held.empty());}
         // The map's edge the same way: "turn at map edges" 5%, moving while attacking towards
         // mobs on the left from 20%, sliding while an arrow is held: it stops near 5%, not 1%.
         {DynamicPattern g=p;g.sets={2,2};g.attacksPerSet={8,8};g.skills.clear();g.potions.clear();g.glidePermille=1000;g.smart=false;g.edgeMarginPermille=50;
@@ -692,27 +717,42 @@ int main() {
                   char form[48];homeReply(form,sizeof(form));if(v.haveHome&&v.homeOnMap)assert(std::string(form)=="home=1500&hm=1&hr=0");});
          assert(homeDot==420&&homeMap==1500);
          char form[48];homeReply(form,sizeof(form));assert(!form[0]);}   // nothing playing: no home to tell
-        // Set home: a home pinned where you stood is used over where the pattern starts (on
-        // its map), taken up at once when pinned again while playing, and ignored on another map.
+        // Set home: one home per map, where you stood. On its map it's always home, whatever
+        // spot a pattern starts from, press after press; pinned again while playing it's taken
+        // up at once; another map's doesn't count (that map gets a home of its own), and
+        // pinning there doesn't replace this one.
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={4,4};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=0;aware.setPattern(g);
-         seen(MOB_READ|MOB_LEFT,1,0,40,-1,600,"Henesys");assert(homePin());
-         PinnedHome pin=homePinned();assert(pin.set&&pin.home==600&&pin.onMap&&std::string(pin.map)=="Henesys");
-         bool always=true;
-         playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");
-                  PatternView v=patternViewSnapshot();if(v.active&&(!v.haveHome||v.home!=600||!v.homePinned))always=false;});
-         assert(always&&attacks()==4);
-         homeUnpin();assert(!homePinned().set);
+         homePinsLoad(nullptr,0);homePinsTakeDirty();
+         seen(MOB_READ|MOB_LEFT,1,0,40,-1,600,"Henesys");assert(homePin()&&homePinsTakeDirty()&&!homePinsTakeDirty());   // saved once
+         PinnedHome pin=homePinned("Henesys");assert(pin.set&&pin.home==600&&pin.onMap&&std::string(pin.map)=="Henesys");
+         assert(!homePinned("Ellinia").set&&homePinnedHere().home==600);
+         for(int start: {300,450,820}){   // new presses from anywhere: home stays put
+             engine.keptHomes_.clear();bool always=true;
+             playWith([](long){return 0L;},[&,start]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,start,"Henesys");
+                      PatternView v=patternViewSnapshot();if(v.active&&(!v.haveHome||v.home!=600||!v.homePinned))always=false;});
+             assert(always&&attacks()==4);}
+         assert(homeUnpin()&&!homePinned("Henesys").set&&!homeUnpin());
          calls=0;int last=-1;bool pinnedLast=false;
          playWith([](long){return 0L;},[&]{++calls;int x=calls<4?300:500;seen(MOB_READ|MOB_LEFT,1,0,40,-1,x,"Henesys");
                   if(calls==4)assert(homePin());   // pressed mid-play, standing at 50%
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){last=v.home;pinnedLast=v.homePinned;}});
          assert(last==500&&pinnedLast&&attacks()==4);
-         seen(MOB_READ|MOB_LEFT,1,0,40,-1,700,"Ellinia");assert(homePin());   // pinned on another map
+         seen(MOB_READ|MOB_LEFT,1,0,40,-1,700,"Ellinia");assert(homePin());   // Ellinia's own
+         assert(homePinned("Henesys").home==500&&homePinned("Ellinia").home==700);
          last=-1;
          playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){last=v.home;pinnedLast=v.homePinned;}});
-         assert(last==300&&!pinnedLast);
-         homeUnpin();}
+         assert(last==500&&pinnedLast);                                     // Henesys keeps 50%
+         last=-1;
+         playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Kerning_City");
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){last=v.home;pinnedLast=v.homePinned;}});
+         assert(last==300&&!pinnedLast);                                    // no Set home there: its own
+         // Full: the one pinned longest ago makes room.
+         for(int i=0;i<MAX_PINNED_HOMES;++i){char name[16];std::snprintf(name,sizeof(name),"Map_%d",i);seen(MOB_READ,0,0,-1,-1,100+i,name);assert(homePin());}
+         assert(!homePinned("Henesys").set&&!homePinned("Ellinia").set&&homePinned("Map_0").home==100&&homePinned("Map_15").home==115);
+         PinnedHome all[MAX_PINNED_HOMES];assert(homePinsCopy(all,MAX_PINNED_HOMES)==MAX_PINNED_HOMES);
+         homePinsLoad(all,2);assert(homePinsCopy(all,MAX_PINNED_HOMES)==2&&homePinned(all[0].map).home==all[0].home);
+         homePinsLoad(nullptr,0);homePinsTakeDirty();}
         // A Set home button (directly, or its one recording) pins home and never stops what's
         // playing; the "home" step inside a recording pins too, and isn't sent to the PC script.
         {Step tool;tool.type=StepType::TOOL;tool.value=TOOL_HOME;
@@ -724,16 +764,16 @@ int main() {
          engine.cfg_.layers[0].keys[1].steps={tool};
          assert(engine.isSetHome(engine.cfg_.layers[0].keys[0])&&engine.isSetHome(engine.cfg_.layers[0].keys[1]));
          seen(MOB_READ,0,0,-1,-1,420,"Henesys");
-         uint32_t before=homePinned().version;
+         uint32_t before=homePinsVersion();
          engine.running_=true;engine.runningKey_=2;engine.stopFlag_=false;   // something playing on button 3
-         engine.onKeyDown(0);assert(!engine.stopFlag_&&homePinned().version==before+1&&homePinned().home==420);
-         engine.onKeyDown(1);assert(!engine.stopFlag_&&homePinned().version==before+2);
+         engine.onKeyDown(0);assert(!engine.stopFlag_&&homePinsVersion()==before+1&&homePinned("Henesys").home==420);
+         engine.onKeyDown(1);assert(!engine.stopFlag_&&homePinsVersion()==before+2);
          engine.running_=false;engine.runningKey_=-1;
          char keys[32];toolKeysTake(keys,sizeof(keys));
-         run(engine,{tool});assert(homePinned().version==before+3);
+         run(engine,{tool});assert(homePinsVersion()==before+3);
          toolKeysTake(keys,sizeof(keys));assert(!keys[0]);
          engine.cfg_.layers[0].keys[0].steps.clear();engine.cfg_.layers[0].keys[1].steps.clear();engine.cfg_.workflows.pop_back();
-         homeUnpin();}
+         homePinsLoad(nullptr,0);homePinsTakeDirty();}
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

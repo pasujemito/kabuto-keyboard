@@ -158,6 +158,37 @@ struct SmartInput {
 // (mobs led you there), walk back, mobs or not, until HOME_INSIDE of the way
 // in (3/4 of the range from home), so you don't hover on the line.
 inline int homeInside(uint16_t range) { return range * 3 / 4; }
+// How far you still go once the arrow is let go of: a jump carries on through the
+// air at the speed it took off with, and the screen reader's readings come a little
+// late. The walking speed (tenths of a % of the map per ms) is learned while an arrow
+// is held: the most seen over DRIFT_WINDOW_MS (a guess before then), times
+// DRIFT_LOOKAHEAD_MS (a jump's time in the air and the readings' delay).
+const uint32_t DRIFT_LOOKAHEAD_MS = 800;
+const uint32_t DRIFT_WINDOW_MS = 300;
+const float DRIFT_SPEED_GUESS = 0.08f;   // until measured: 8% of the map a second (a 1500 px map at 120 px/s)
+const float DRIFT_SPEED_MAX = 0.25f;   // faster isn't walking (a knockback, a teleport): ignored
+struct DriftWatch {
+    bool measured = false;
+    float speed = DRIFT_SPEED_GUESS;
+    bool anchored = false;
+    int dir = 0, at = 0;
+    uint32_t since = 0;
+    // heldDir: +1 right arrow held, -1 left, 0 none.
+    void update(int heldDir, bool havePos, int pos, uint32_t now) {
+        if (!heldDir || !havePos) { anchored = false; return; }
+        if (!anchored || dir != heldDir) { anchored = true; dir = heldDir; at = pos; since = now; return; }
+        uint32_t dt = now - since;
+        if (dt < DRIFT_WINDOW_MS) return;
+        int moved = (pos - at) * dir;
+        float v = (float)moved / (float)dt;
+        if (moved > 0 && v <= DRIFT_SPEED_MAX) {
+            speed = measured && speed > v ? speed : v;
+            measured = true;
+        }
+        at = pos; since = now;
+    }
+    int ahead() const { return (int)(speed * DRIFT_LOOKAHEAD_MS + 0.5f); }
+};
 // Walking back in stops just inside the line (a tenth of the range in), so a
 // small slip past it is a short step back, not a walk home.
 inline int homeBack(uint16_t range) { return range - range / 10; }

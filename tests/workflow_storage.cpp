@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include "../src/storage.h"
 #include "../src/stats_logic.h"
+#include "../src/live_stats.h"
 #include <fstream>
 #include <iterator>
 #include <cassert>
@@ -207,5 +208,15 @@ int main(){
         R"({"active_character":5,"layers":[]})",
         R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"pp","char_keys":"yes","skills":[]}}]}]}]})"};
      for(auto raw:badCharacters){assert(!saveRawJson(String(raw),err));assert(readRawJson()==kept);}}
+    // Set home's homes: one line per map, read back as written; a broken line is skipped.
+    {PinnedHome in[2];std::strcpy(in[0].map,"Henesys");in[0].home=1420;in[0].onMap=true;in[0].stamp=3;
+     in[1].map[0]=0;in[1].home=-35;in[1].onMap=false;in[1].stamp=9;
+     assert(saveHomes(in,2));
+     PinnedHome out[4];assert(loadHomes(out,4)==2);
+     assert(out[0].set&&std::string(out[0].map)=="Henesys"&&out[0].home==1420&&out[0].onMap&&out[0].stamp==3);
+     assert(out[1].set&&!out[1].map[0]&&out[1].home==-35&&!out[1].onMap&&out[1].stamp==9);
+     LittleFS.files["/homes.txt"]=std::make_shared<std::string>("junk\nEllinia\t500\t1\t4\n");
+     assert(loadHomes(out,4)==1&&std::string(out[0].map)=="Ellinia"&&out[0].home==500);
+     LittleFS.files.erase("/homes.txt");assert(loadHomes(out,4)==0);}
     std::cout<<"workflow storage tests passed\n";
 }

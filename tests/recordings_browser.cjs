@@ -389,12 +389,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   patternState=null;liveState={...liveState,x:420,wx:1420,map:'Henesys',mobs:8,ml:0,mr:0,dl:-1,dr:-1};
   await page.waitForFunction(()=>/Idle|Playing/.test(document.querySelector('#liveStats').textContent));   // the pattern has stopped
   assert.equal(await page.locator('#liveStats .track .home').count(),0);
-  assert.equal(await page.locator('#liveStats button',{hasText:'Forget home'}).count(),0);
+  assert.equal(await page.locator('#liveStats button',{hasText:'Forget this map'}).count(),0);
   await page.locator('#liveStats button',{hasText:'Set home here'}).click();
   await page.waitForFunction(()=>document.querySelector('#liveStats .track .home'));
   assert.deepEqual(homeRequests,['/api/home/set']);
   assert.deepEqual(await page.locator('#liveStats .track .home').evaluate(e=>[e.style.left,e.style.width,e.title]),['41.2%','1.6%','Home (from Set home)']);
-  await page.locator('#liveStats button',{hasText:'Forget home'}).click();
+  await page.locator('#liveStats button',{hasText:'Forget this map'}).click();
   await page.waitForFunction(()=>!document.querySelector('#liveStats .track .home'));
   assert.deepEqual(homeRequests,['/api/home/set','/api/home/clear']);
   patternState=null;

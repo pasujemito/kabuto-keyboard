@@ -202,5 +202,14 @@ int main(){
     for(int i=0;i<10;++i)tk.push(i%2?TOOL_HIDE:TOOL_MARK,100);
     tk.take(100,out,sizeof(out));assert(std::string(out)=="mark,hide,mark,hide,mark,hide,mark,hide");   // 8 kept
     tk.push(TOOL_OUTLINES,0);tk.take(0,out,8);assert(!out[0]);   // doesn't fit: nothing half written
+    // Drift: the walking speed is learned while an arrow is held (the most seen over a
+    // 300 ms window), a guess before; teleport-fast moves (knockback) don't count.
+    {DriftWatch d;assert(!d.measured&&d.ahead()==(int)(DRIFT_SPEED_GUESS*DRIFT_LOOKAHEAD_MS+0.5f));
+     d.update(1,true,100,1000);d.update(1,true,110,1200);assert(!d.measured);   // under a window
+     d.update(1,true,130,1300);assert(d.measured&&d.speed>0.099f&&d.speed<0.101f&&d.ahead()==80);   // 30 in 300 ms
+     d.update(1,true,140,1600);assert(d.speed>0.099f);                          // slower: the most seen stays
+     d.update(1,true,300,1900);assert(d.speed<0.11f);                           // 160 in 300 ms: a knockback, ignored
+     d.update(0,false,0,2000);d.update(-1,true,300,2000);d.update(-1,true,240,2300);assert(d.speed>0.199f&&d.speed<0.201f);   // left, faster
+     d.update(-1,true,240,2600);assert(d.speed>0.199f);}                        // standing against a wall: no change
     std::cout<<"stats logic tests passed\n";
 }

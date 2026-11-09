@@ -8,7 +8,12 @@ int ml_ = -1, mr_ = -1, dl_ = -1, dr_ = -1, ir_ = -1;
 char mob_[LIVE_NAME_LEN] = {}, map_[LIVE_NAME_LEN] = {};
 PatternView view_;
 ToolKeys toolKeys_;
-PinnedHome pinned_;
+PinnedHome pins_[MAX_PINNED_HOMES];
+uint32_t pinsVersion_ = 0, pinStamp_ = 0;
+bool pinsDirty_ = false;
+// A map name as a key: "-" (a name it couldn't read) and "" are the same.
+void mapKey(const char* map, char* out) { memset(out, 0, LIVE_NAME_LEN); if (map && strcmp(map, "-")) strncpy(out, map, LIVE_NAME_LEN - 1); }
+int pinIndex(const char* key) { for (int i = 0; i < MAX_PINNED_HOMES; ++i) if (pins_[i].set && !strcmp(pins_[i].map, key)) return i; return -1; }
 uint32_t at_ = 0;
 bool any_ = false;
 XpTracker xpTracker_;
@@ -83,26 +88,75 @@ bool homePin() {
     LiveStats live = liveStatsSnapshot();
     bool onMap = live.wx != LIVE_NO_POS;
     if (!live.fresh || (!onMap && live.x < 0)) return false;
+    char key[LIVE_NAME_LEN]; mapKey(live.map, key);
     portENTER_CRITICAL(&mux_);
-    pinned_.set = true; pinned_.home = onMap ? live.wx : live.x; pinned_.onMap = onMap;
-    memset(pinned_.map, 0, LIVE_NAME_LEN);
-    if (strcmp(live.map, "-")) memcpy(pinned_.map, live.map, LIVE_NAME_LEN);   // "-": a name it couldn't read
-    ++pinned_.version;
+    int at = pinIndex(key);
+    if (at < 0) {   // a free place, else the one pinned longest ago
+        at = 0;
+        for (int i = 0; i < MAX_PINNED_HOMES; ++i) {
+            if (!pins_[i].set) { at = i; break; }
+            if (pins_[i].stamp < pins_[at].stamp) at = i;
+        }
+    }
+    PinnedHome& p = pins_[at];
+    p.set = true; p.home = onMap ? live.wx : live.x; p.onMap = onMap; memcpy(p.map, key, LIVE_NAME_LEN); p.stamp = ++pinStamp_;
+    ++pinsVersion_; pinsDirty_ = true;
     portEXIT_CRITICAL(&mux_);
     return true;
 }
 
-void homeUnpin() {
+bool homeUnpin() {
+    LiveStats live = liveStatsSnapshot();
+    char key[LIVE_NAME_LEN]; mapKey(live.map, key);
     portENTER_CRITICAL(&mux_);
-    if (pinned_.set) { pinned_.set = false; ++pinned_.version; }
+    int at = pinIndex(key);
+    if (at >= 0) { pins_[at] = PinnedHome(); ++pinsVersion_; pinsDirty_ = true; }
+    portEXIT_CRITICAL(&mux_);
+    return at >= 0;
+}
+
+PinnedHome homePinned(const char* map) {
+    char key[LIVE_NAME_LEN]; mapKey(map, key);
+    portENTER_CRITICAL(&mux_);
+    int at = pinIndex(key);
+    PinnedHome p = at >= 0 ? pins_[at] : PinnedHome();
+    portEXIT_CRITICAL(&mux_);
+    return p;
+}
+
+PinnedHome homePinnedHere() { return homePinned(liveStatsSnapshot().map); }
+
+uint32_t homePinsVersion() {
+    portENTER_CRITICAL(&mux_);
+    uint32_t v = pinsVersion_;
+    portEXIT_CRITICAL(&mux_);
+    return v;
+}
+
+uint8_t homePinsCopy(PinnedHome* out, uint8_t cap) {
+    uint8_t n = 0;
+    portENTER_CRITICAL(&mux_);
+    for (int i = 0; i < MAX_PINNED_HOMES && n < cap; ++i) if (pins_[i].set) out[n++] = pins_[i];
+    portEXIT_CRITICAL(&mux_);
+    return n;
+}
+
+void homePinsLoad(const PinnedHome* in, uint8_t count) {
+    portENTER_CRITICAL(&mux_);
+    for (int i = 0; i < MAX_PINNED_HOMES; ++i) pins_[i] = PinnedHome();
+    for (uint8_t i = 0; i < count && i < MAX_PINNED_HOMES; ++i) {
+        pins_[i] = in[i]; pins_[i].set = true; pins_[i].map[LIVE_NAME_LEN - 1] = 0;
+        if (pins_[i].stamp > pinStamp_) pinStamp_ = pins_[i].stamp;
+    }
+    ++pinsVersion_;
     portEXIT_CRITICAL(&mux_);
 }
 
-PinnedHome homePinned() {
+bool homePinsTakeDirty() {
     portENTER_CRITICAL(&mux_);
-    PinnedHome p = pinned_;
+    bool d = pinsDirty_; pinsDirty_ = false;
     portEXIT_CRITICAL(&mux_);
-    return p;
+    return d;
 }
 
 void toolKeyPush(uint8_t key) {

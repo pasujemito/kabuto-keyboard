@@ -532,11 +532,16 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
                 bool homePinnedHere=false;   // home came from a Set home button
                 auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;homePinnedHere=false;};
-                // A Set home button's home: used over where the pattern started, on its map (one whose
-                // name wasn't read: until this pattern sees the map change), and taken up at once
-                // when the button is pressed again while playing.
+                // A Set home button's home (one per map, kept in flash): on its map it's always home,
+                // never one of the pattern's own; a pattern only makes its own home on a map with
+                // none. Taken up at once when the button is pressed while playing. One pinned where
+                // the map's name wasn't read counts until this pattern sees the map change.
                 uint32_t pinSeen=0;bool movedMap=false;
-                auto pinFits=[&](const PinnedHome& p){return p.set&&(p.map[0]?lastMap==p.map:!movedMap);};
+                auto pinFor=[&]{
+                    if(!lastMap.empty()){PinnedHome p=homePinned(lastMap.c_str());if(p.set)return p;}
+                    if(!movedMap){PinnedHome p=homePinned("");if(p.set)return p;}
+                    return PinnedHome();
+                };
                 auto usePin=[&](const PinnedHome& p,const char* label){
                     haveHome=true;home=p.home;homeOnMap=p.onMap;homeOff=false;homePinnedHere=true;
                     char text[64];std::snprintf(text,sizeof(text),"%s: %d.%d%%",label,p.home/10,(p.home<0?-p.home:p.home)%10);
@@ -551,12 +556,17 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 int slide=0;bool haveSlide=false;
                 auto homeCheck=[&](const LiveStats& live,bool havePos,int pos){
                     if(live.fresh&&live.wx!=LIVE_NO_POS&&live.x>=0){slide=live.wx-live.x;haveSlide=true;}
-                    PinnedHome pin=homePinned();
-                    if(pin.version!=pinSeen){pinSeen=pin.version;if(pinFits(pin))usePin(pin,"home set by the Set home button");}
-                    else if(!haveHome&&pinFits(pin))usePin(pin,"home: the Set home button's");
+                    uint32_t pins=homePinsVersion();
+                    if(pins!=pinSeen||!haveHome||!homePinnedHere){
+                        bool changed=pins!=pinSeen;pinSeen=pins;
+                        PinnedHome pin=pinFor();
+                        if(pin.set&&(!homePinnedHere||pin.home!=home||pin.onMap!=homeOnMap||!haveHome))
+                            usePin(pin,changed&&haveHome?"home set by the Set home button":"home: this map's Set home");
+                    }
                     if(!havePos)return;
                     bool onMap=live.wx!=LIVE_NO_POS;
                     if(haveHome&&homeOnMap==onMap)return;
+                    if(haveHome&&homePinnedHere&&!haveSlide)return;   // a Set home stays, even read another way
                     if(haveHome&&haveSlide){home+=onMap?slide:-slide;homeOnMap=onMap;logStep(s,pc,millis(),0,true,"home kept (position read another way)");return;}
                     bool again=haveHome;setHome(live,pos);
                     char label[48];std::snprintf(label,sizeof(label),again?"home set again: %d.%d%%":"home set: %d.%d%%",pos/10,(pos<0?-pos:pos)%10);
@@ -638,6 +648,24 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     std::vector<Step> hop{delay(sample(pattern->walkHold)),edge(true,jump.keycode,jump.mods),delay(sample(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
                     executeSteps(hop,stop,state,depth+1);
                 };
+                // Checked every MOVE_GUARD_MS, and before a set moves while attacking: where the
+                // arrow held now would carry you, counting a jump's drift through the air
+                // (DriftWatch), not where you are. Past 3/4 of the home range, or into the map's
+                // edge margin, the arrow is let go of before the jump that would cross it.
+                DriftWatch airDrift;
+                auto outwards=[&](bool right,bool update)->const char*{
+                    LiveStats live=liveStatsSnapshot();
+                    if(!live.fresh)return nullptr;
+                    int pos=0;bool havePos=livePos(live,pos);
+                    if(update)airDrift.update(right?1:-1,havePos,pos,millis());
+                    int ahead=airDrift.ahead(),margin=pattern->edgeMarginPermille;
+                    if(margin&&live.x>=0&&((!right&&live.x-ahead<margin)||(right&&live.x+ahead>1000-margin)))return "map edge: stopped moving towards it";
+                    if(pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&havePos&&homeOnMap==(live.wx!=LIVE_NO_POS)){
+                        int off=pos-home,limit=homeInside(pattern->homeRangePermille);
+                        if((right&&off+ahead>limit)||(!right&&-off+ahead>limit))return "home zone edge: stopped moving outwards";
+                    }
+                    return nullptr;
+                };
                 auto smartWait=[&]{
                     static const char* const labels[]={"","smart: waiting for mobs","back into the home zone (it went past the boundary)","back into the home zone (it went past the boundary)",
                         "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs",
@@ -659,6 +687,12 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
                         if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"can't get home: home kept, trying again in 20 s");homeOff=true;homeOffAt=millis();homing=false;doing=-1;continue;}
                         if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
+                        if(toMobs&&outwards(act==SMART_APPROACH_RIGHT,false)){   // they're past the map's edge margin or the zone's line (with a jump's drift): wait for them
+                            stopWalking();act=SMART_WAIT;publish(act);
+                            if(doing!=(int)SMART_WAIT){logStep(s,pc,millis(),0,true,labels[act]);doing=SMART_WAIT;}
+                            potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
+                            std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);continue;
+                        }
                         if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;walk(facing());}
                         else{stopWalking();potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                              std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
@@ -719,19 +753,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // every MOVE_GUARD_MS, not only between attacks; the next jump faces inwards.
                 // The same for the map's edges ("turn at map edges", on your minimap dot).
                 moveGuard_=[&]{
-                    if(walking.empty())return;
-                    bool right=walking==pattern->right,left=walking==pattern->left;
-                    if(!right&&!left)return;
-                    LiveStats live=liveStatsSnapshot();
-                    if(!live.fresh)return;
-                    const char* why=nullptr;
-                    int margin=pattern->edgeMarginPermille;
-                    if(margin&&live.x>=0&&((left&&live.x<margin)||(right&&live.x>1000-margin)))why="map edge: stopped moving towards it";
-                    int pos=0;
-                    if(!why&&pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&livePos(live,pos)&&homeOnMap==(live.wx!=LIVE_NO_POS)){
-                        int off=pos-home,limit=homeInside(pattern->homeRangePermille);
-                        if((right&&off>limit)||(left&&-off>limit))why="home zone edge: stopped moving outwards";
-                    }
+                    bool right=!walking.empty()&&walking==pattern->right,left=!walking.empty()&&walking==pattern->left;
+                    if(!right&&!left){airDrift.update(0,false,0,millis());return;}
+                    const char* why=outwards(right,true);
                     if(!why)return;
                     stopWalking();moving=false;
                     logStep(s,pc,millis(),0,true,why);
@@ -741,6 +765,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                  if(kept!=keptHomes_.end()){haveHome=true;home=kept->second.home;homeOnMap=kept->second.onMap;lastMap=kept->second.map;slide=kept->second.slide;haveSlide=kept->second.haveSlide;
                      logStep(s,pc,stepStartedAt,0,true,"home kept from this button press");}}
                 {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);mapCheck(live);homeCheck(live,havePos,pos);if(live.fresh&&strcmp(live.map,"-")&&lastMap.empty())lastMap=live.map;}
+                {auto known=lastMap.empty()?driftSpeeds_.end():driftSpeeds_.find(lastMap);if(known!=driftSpeeds_.end()){airDrift.speed=known->second;airDrift.measured=true;}}
                 publish(SMART_ATTACK);
                 // Establish the actual initial facing before the first attack (gliding: in the first jump).
                 turn();
@@ -783,6 +808,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                             turnInAir=false;
                         }else if(!glide)stopWalking();   // done returning: let go
                         else if(glide){
+                            if(moving&&outwards(arrow==pattern->right,false))moving=false;   // that move would carry you over the line
                             if(moving){if(hold(arrow))actions.push_back(delay(sample(GLIDE_RUN_UP)));turnInAir=false;}
                             else{stopWalking();airTurn=turnInAir;turnInAir=false;}
                         }
@@ -828,10 +854,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(!want)want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;
-                    else if(random(1000L)<pattern->turnChancePermille)facingLeft=!facingLeft;
+                    else if(random(1000L)<pattern->turnChancePermille&&!outwards(facingLeft,false))facingLeft=!facingLeft;   // not to face a line it's about to cross
                     publish(SMART_ATTACK);
                     if(returning){if(facingLeft!=wasLeft)hold(facing());}   // carrying on homewards: no tap
-                    else if(!glide)tap(facing(),pattern->directionHold,pattern->directionAfter);
+                    else if(!glide){if(facingLeft!=wasLeft||!outwards(!facingLeft,false))tap(facing(),pattern->directionHold,pattern->directionAfter);}   // a tap is a small step: none outwards near the line
                     else{
                         moving=(uint32_t)random(1000L)<pattern->glidePermille;   // the next set: on the move or standing
                         if(!moving)stopWalking();
@@ -844,6 +870,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     for(;potionTaps[k]&&!stop;--potionTaps[k])tap(dynamicKeycode(potionCode(k)),pattern->potions[k].hold,pattern->potions[k].after);
                 moveGuard_=nullptr;
                 stopWalking();
+                if(airDrift.measured&&!lastMap.empty()&&lastMap!="-"&&driftSpeeds_.size()<32)driftSpeeds_[lastMap]=airDrift.speed;   // a map it knows by name only
                 if(haveHome){KeptHome& k=keptHomes_[pattern->id];k.home=home;k.onMap=homeOnMap;k.map=lastMap;k.slide=slide;k.haveSlide=haveSlide;}
                 patternViewSet(PatternView());
                 releaseTracked();

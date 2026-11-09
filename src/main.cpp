@@ -176,6 +176,11 @@ void setup() {
     }
     ensureDefaultConfig();
 
+    {   // Set home's homes, one per map
+        static PinnedHome homes[MAX_PINNED_HOMES];
+        uint8_t n = loadHomes(homes, MAX_PINNED_HOMES);
+        if (n) { homePinsLoad(homes, n); Serial.printf("[home] %u saved home(s)\n", n); }
+    }
     Macros.begin();
     if (!Macros.load()) {
         Serial.println("[cfg] no valid config, starting empty");
@@ -196,6 +201,10 @@ void setup() {
 
 void loop() {
     Macros.processCommands();   // apply queued web actions on this (engine) task
+    if (homePinsTakeDirty()) {   // a Set home pressed: keep it over a restart
+        static PinnedHome homes[MAX_PINNED_HOMES];
+        if (!saveHomes(homes, homePinsCopy(homes, MAX_PINNED_HOMES))) Serial.println("[home] couldn't save homes");
+    }
     matrixScan();
     configButtonPoll();
     usbStatsPoll();

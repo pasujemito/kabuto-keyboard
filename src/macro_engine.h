@@ -218,6 +218,8 @@ private:
     // pattern, and each replay carries on with the home its press set.
     struct KeptHome { int home = 0; bool onMap = false; std::string map; int slide = 0; bool haveSlide = false; };
     std::map<std::string, KeptHome> keptHomes_;
+    // Walking speed learned per map (DriftWatch), kept between button presses.
+    std::map<std::string, float> driftSpeeds_;
     // Called every few ms while a delay runs, during a dynamic pattern: lets go of
     // an arrow carrying you out of the home zone at once, not at the next attack.
     std::function<void()> moveGuard_;

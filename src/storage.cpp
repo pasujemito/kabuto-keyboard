@@ -1,6 +1,7 @@
 #include "storage.h"
 #include "keymap.h"
 #include "stats_logic.h"
+#include "live_stats.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <set>
@@ -669,4 +670,45 @@ void ensureDefaultConfig() {
     cfg.layers[0].name = "Base";
     // Leave all keys empty by default; the user fills them in via the web UI.
     saveConfig(cfg);
+}
+
+// --- Set home's homes ---------------------------------------------------------
+static const char* HOMES_FILE = "/homes.txt";
+
+bool saveHomes(const PinnedHome* homes, uint8_t count) {
+    File f = LittleFS.open(HOMES_FILE, "w");
+    if (!f) return false;
+    for (uint8_t i = 0; i < count; ++i) {
+        char line[LIVE_NAME_LEN + 40];
+        int n = snprintf(line, sizeof(line), "%s\t%d\t%d\t%lu\n", homes[i].map, homes[i].home, homes[i].onMap ? 1 : 0, (unsigned long)homes[i].stamp);
+        if (n > 0) f.write((const uint8_t*)line, (size_t)n < sizeof(line) ? (size_t)n : sizeof(line) - 1);
+    }
+    f.close();
+    return true;
+}
+
+uint8_t loadHomes(PinnedHome* homes, uint8_t cap) {
+    File f = LittleFS.open(HOMES_FILE, "r");
+    if (!f) return 0;
+    String text = f.readString();
+    f.close();
+    uint8_t n = 0;
+    int start = 0;
+    while (start < (int)text.length() && n < cap) {
+        int end = text.indexOf('\n', start);
+        if (end < 0) end = text.length();
+        String line = text.substring(start, end);
+        start = end + 1;
+        int a = line.indexOf('\t'), b = a < 0 ? -1 : line.indexOf('\t', a + 1), c = b < 0 ? -1 : line.indexOf('\t', b + 1);
+        if (c < 0 || a >= (int)LIVE_NAME_LEN) continue;   // not a home line
+        PinnedHome& h = homes[n];
+        h = PinnedHome();
+        memcpy(h.map, line.c_str(), a); h.map[a] = 0;
+        h.home = atoi(line.substring(a + 1, b).c_str());
+        h.onMap = atoi(line.substring(b + 1, c).c_str()) != 0;
+        h.stamp = (uint32_t)strtoul(line.substring(c + 1).c_str(), nullptr, 10);
+        h.set = true;
+        ++n;
+    }
+    return n;
 }

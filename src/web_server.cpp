@@ -132,8 +132,8 @@ static void handleStatus(AsyncWebServerRequest* req) {
             n["text"] = liveStopReason(notices.kind[i]); n["agoMs"] = now - notices.at[i];
         }
     }
-    // The Set home button's home.
-    PinnedHome pin = homePinned();
+    // This map's Set home.
+    PinnedHome pin = homePinnedHere();   // the map you're on
     if (pin.set) {
         JsonObject h = d["pinnedHome"].to<JsonObject>();
         h["home"] = pin.home; h["onMap"] = pin.onMap;

@@ -112,7 +112,8 @@ int main(){
     assert(smartAction(true,none,true,900,true,500,0,false)==SMART_WAIT&&smartAction(true,none,false,0,true,500,100,false)==SMART_WAIT);   // no home / no position
     // With mobs in sight (counts and distances): approach walks to the nearer
     // side's mobs when none are in reach, but not past 3/4 of the home range;
-    // auto-pause waits whatever's in reach; home still comes first.
+    // auto-pause waits instead of walking to the last few, but a mob in reach is
+    // always fought; home still comes first.
     SmartInput in;in.fresh=true;in.mobs=none;in.seenLeft=1;in.seenRight=2;in.nearLeft=180;in.nearRight=150;
     in.havePos=in.haveHome=true;in.pos=500;in.home=500;in.range=100;
     assert(smartDecide(in)==SMART_WAIT);                                   // approach off: as before
@@ -122,7 +123,7 @@ int main(){
     in.pos=500;in.seenLeft=0;in.nearLeft=-1;assert(smartDecide(in)==SMART_APPROACH_RIGHT);
     in.seenRight=0;in.nearRight=-1;assert(smartDecide(in)==SMART_WAIT);   // none in sight
     in.seenRight=2;in.nearRight=150;in.mobs=MOB_READ|MOB_RIGHT;assert(smartDecide(in)==SMART_ATTACK);   // in reach: attack
-    in.paused=true;assert(smartDecide(in)==SMART_PAUSE);
+    in.paused=true;assert(smartDecide(in)==SMART_ATTACK);                  // paused, but a mob in reach: fought
     in.mobs=none;in.pos=580;assert(smartDecide(in)==SMART_PAUSE);         // auto-pause: waits where it is, inside the zone
     in.pos=540;assert(smartDecide(in)==SMART_PAUSE);in.pos=500;in.mobs=MOB_READ|MOB_RIGHT;
     in.pos=700;in.mobs=none;assert(smartDecide(in)==SMART_WALK_LEFT);     // drifted: home before pausing
@@ -202,5 +203,14 @@ int main(){
     for(int i=0;i<10;++i)tk.push(i%2?TOOL_HIDE:TOOL_MARK,100);
     tk.take(100,out,sizeof(out));assert(std::string(out)=="mark,hide,mark,hide,mark,hide,mark,hide");   // 8 kept
     tk.push(TOOL_OUTLINES,0);tk.take(0,out,8);assert(!out[0]);   // doesn't fit: nothing half written
+    // Drift: the walking speed is learned while an arrow is held (the most seen over a
+    // 300 ms window), a guess before; teleport-fast moves (knockback) don't count.
+    {DriftWatch d;assert(!d.measured&&d.ahead()==(int)(DRIFT_SPEED_GUESS*DRIFT_LOOKAHEAD_MS+0.5f));
+     d.update(1,true,100,1000);d.update(1,true,110,1200);assert(!d.measured);   // under a window
+     d.update(1,true,130,1300);assert(d.measured&&d.speed>0.099f&&d.speed<0.101f&&d.ahead()==80);   // 30 in 300 ms
+     d.update(1,true,140,1600);assert(d.speed>0.099f);                          // slower: the most seen stays
+     d.update(1,true,300,1900);assert(d.speed<0.11f);                           // 160 in 300 ms: a knockback, ignored
+     d.update(0,false,0,2000);d.update(-1,true,300,2000);d.update(-1,true,240,2300);assert(d.speed>0.199f&&d.speed<0.201f);   // left, faster
+     d.update(-1,true,240,2600);assert(d.speed>0.199f);}                        // standing against a wall: no change
     std::cout<<"stats logic tests passed\n";
 }

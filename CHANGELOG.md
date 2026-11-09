@@ -3,6 +3,39 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.5
+
+- 🏠 **Set home is saved, one per map**: each map keeps its own Set home
+  (up to 16), on the pad, so a restart keeps them and setting home on one
+  map no longer replaces another's. On a map with one, patterns always use
+  it: starting, stopping or toggling a pattern never moves it. A map
+  without one still gets home where the pattern starts. **Forget this map's
+  home** on the dashboard removes the map's
+- 🧱 **Doesn't jump off the edge**: a simulation with a jump's momentum
+  (the character keeps drifting through the air after the arrow is let go,
+  and readings come a little late) showed moving while attacking could
+  carry the character 30-100 px past the home line on narrow zones. Now the
+  arrow is let go of early enough for the drift: the pad learns how fast you
+  move on each map and looks 0.8 s ahead, before the jump that would cross.
+  With moving while attacking off, turn taps (a small step) no longer step
+  outwards near the line. The same simulation, maps 1000-4000 px wide and
+  5-20% zones: 0 px past the line. A mob's hit can still knock you back
+- ⏸ **Auto-pause never leaves a mob in reach alone**: with most mobs killed
+  it used to stand still for up to 20 s even with a mob right next to it.
+  Now it only stops walking over to the last few and waits for the respawn;
+  anything in reach is attacked
+- 🚶 **Walking to mobs stops at the map's edge margin** (and the zone's line,
+  counting a jump's drift), instead of creeping into the margin after a mob
+  standing there
+- 🧪 **Scenario tests**: the pad's real engine now plays the editor's default
+  pattern in a simulated map (platforms, falls, jump momentum, mobs that
+  wander and respawn, a screen reader that's a little late) and checks, in
+  plain words: keeps attacking, attacks only mobs in reach, walks to mobs in
+  sight, home 0 wanders freely, narrow zones hold, never falls off a platform
+  the zone fits on (nor into a gap to the next one), the map's edge margin
+  holds, knocked out it fights its way back, Set home while playing, stops
+  on death. Every release runs them; they found the two fixes above
+
 ## 1.19.4
 
 - ⚔ **Fights its way back home**: outside the home zone with mobs about, it

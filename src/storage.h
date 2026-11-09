@@ -22,3 +22,9 @@ StorageInfo storageInfo();
 
 // Write a minimal valid default config if none exists yet.
 void ensureDefaultConfig();
+
+// Set home's homes, one per map (live_stats.h), in HOMES_FILE: a line each,
+// "map<TAB>home<TAB>onMap<TAB>stamp". Loaded at boot, saved when they change.
+struct PinnedHome;
+bool saveHomes(const PinnedHome* homes, uint8_t count);
+uint8_t loadHomes(PinnedHome* homes, uint8_t cap);

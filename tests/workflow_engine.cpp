@@ -550,10 +550,11 @@ int main() {
          assert(held.empty()&&!heldMods);
          // Smart, gliding: walking home runs straight into attacking, the arrow never let go.
          g.edgeMarginPermille=0;g.smart=true;g.homeRangePermille=100;g.sets={1,1};g.glidePermille=1000;g.walkHold={280,650};aware.setPattern(g);
-         walked=false;calls=0;
+         walked=false;calls=0;int wx=450;uint32_t lastStep=0;
          playWith([](long){return 0L;},[&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}
                   walked=walked||hopsWhileHeld(L)>=2;
-                  liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});
+                  if(std::find(held.begin(),held.end(),L)!=held.end()&&wx>320&&millis()-lastStep>=20){--wx;lastStep=millis();}   // walking: 5% a second
+                  liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,wx,500);});
          assert(walked&&(dirs()==std::vector<uint8_t>{L})&&attacks()==3&&attacksHolding(L)==3&&held.empty());}
         // Home on its own: Smart off, a home range set, drifted past it: walks back
         // (arrow held, hopping), then attacks there; nothing is waited for.

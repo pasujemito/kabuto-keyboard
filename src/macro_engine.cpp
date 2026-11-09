@@ -529,6 +529,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 AutoPause autoPause;
                 bool approachOff=false;uint32_t approachOffAt=0;
                 bool homeOff=false;uint32_t homeOffAt=0;   // couldn't get home: not tried again for HOME_RETRY_MS (home kept)
+                DriftWatch airDrift;   // how fast you move here: a jump's drift, and the zone's safety band
+                auto inner=[&]{return homeInsideBand(pattern->homeRangePermille,airDrift.knock());};   // the zone's inner line
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
                 bool homePinnedHere=false;   // home came from a Set home button
                 auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;homePinnedHere=false;};
@@ -595,7 +597,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 auto smartInput=[&](const LiveStats& live,bool havePos,int pos){
                     SmartInput in;in.fresh=live.fresh;in.mobs=live.mobs;in.seenLeft=live.ml;in.seenRight=live.mr;in.nearLeft=live.dl;in.nearRight=live.dr;
                     if(homeOff&&millis()-homeOffAt>=HOME_RETRY_MS)homeOff=false;
-                    in.havePos=havePos;in.pos=pos;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;
+                    in.havePos=havePos;in.pos=pos;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;in.inside=inner();
                     in.haveHome=haveHome&&!homeOff&&mapSeen.empty();   // another map's name showing: the old home means nothing there
                     in.approach=pattern->approach&&(!approachOff||millis()-approachOffAt>=10000);
                     in.paused=autoPause.update(live.fresh&&live.ml>=0&&live.mr>=0?live.ml+live.mr:-1,pattern->autoPausePermille,millis());
@@ -643,28 +645,35 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(!glide){tap(facing(),pattern->directionHold,pattern->directionAfter);return;}
                     if(!walking.empty())hold(facing());else turnInAir=true;
                 };
-                auto walk=[&](DynamicKey key){
-                    hold(key);
-                    std::vector<Step> hop{delay(sample(pattern->walkHold)),edge(true,jump.keycode,jump.mods),delay(sample(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
-                    executeSteps(hop,stop,state,depth+1);
-                };
+                bool onFoot=false;   // walking between hops: stops at once when let go, no jump's drift
                 // Checked every MOVE_GUARD_MS, and before a set moves while attacking: where the
                 // arrow held now would carry you, counting a jump's drift through the air
-                // (DriftWatch), not where you are. Past 3/4 of the home range, or into the map's
+                // (DriftWatch), not where you are. Past the zone's inner line (its safety band), or into the map's
                 // edge margin, the arrow is let go of before the jump that would cross it.
-                DriftWatch airDrift;
                 auto outwards=[&](bool right,bool update)->const char*{
                     LiveStats live=liveStatsSnapshot();
                     if(!live.fresh)return nullptr;
                     int pos=0;bool havePos=livePos(live,pos);
                     if(update)airDrift.update(right?1:-1,havePos,pos,millis());
-                    int ahead=airDrift.ahead(),margin=pattern->edgeMarginPermille;
+                    int ahead=onFoot?airDrift.lag():airDrift.ahead(),margin=pattern->edgeMarginPermille;
                     if(margin&&live.x>=0&&((!right&&live.x-ahead<margin)||(right&&live.x+ahead>1000-margin)))return "map edge: stopped moving towards it";
                     if(pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&havePos&&homeOnMap==(live.wx!=LIVE_NO_POS)){
-                        int off=pos-home,limit=homeInside(pattern->homeRangePermille);
+                        int off=pos-home,limit=inner();
                         if((right&&off+ahead>limit)||(!right&&-off+ahead>limit))return "home zone edge: stopped moving outwards";
                     }
                     return nullptr;
+                };
+                // Walking: the arrow held, a hop (a quick jump) after each walk_hold. On foot only the
+                // readings' delay counts; a hop carries on through the air, so before it the full
+                // drift is checked and the arrow let go if the hop would land past the line.
+                auto walk=[&](DynamicKey key){
+                    hold(key);onFoot=true;
+                    std::vector<Step> stroll{delay(sample(pattern->walkHold))};
+                    executeSteps(stroll,stop,state,depth+1);onFoot=false;
+                    if(stop)return;
+                    if(!walking.empty()&&outwards(walking==pattern->right,false))stopWalking();
+                    std::vector<Step> hop{edge(true,jump.keycode,jump.mods),delay(sample(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
+                    executeSteps(hop,stop,state,depth+1);
                 };
                 auto smartWait=[&]{
                     static const char* const labels[]={"","smart: waiting for mobs","back into the home zone (it went past the boundary)","back into the home zone (it went past the boundary)",
@@ -687,7 +696,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
                         if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"can't get home: home kept, trying again in 20 s");homeOff=true;homeOffAt=millis();homing=false;doing=-1;continue;}
                         if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
-                        if(toMobs&&outwards(act==SMART_APPROACH_RIGHT,false)){   // they're past the map's edge margin or the zone's line (with a jump's drift): wait for them
+                        bool blocked=false;if(toMobs){onFoot=true;blocked=outwards(act==SMART_APPROACH_RIGHT,false)!=nullptr;onFoot=false;}   // walking: each hop is checked on its own
+                        if(blocked){   // they're past the map's edge margin or the zone's line (with a jump's drift): wait for them
                             stopWalking();act=SMART_WAIT;publish(act);
                             if(doing!=(int)SMART_WAIT){logStep(s,pc,millis(),0,true,labels[act]);doing=SMART_WAIT;}
                             potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
@@ -713,7 +723,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                      bool was=returning;returning=zone&&homeReturning(returning,havePos,pos,true,home,pattern->homeRangePermille);
                      if(returning&&!was)logStep(s,pc,millis(),0,true,"past the home zone: fighting the way back");}
                     // The home zone's edge first (face inwards), then map edges and mobs.
-                    int want=homeFacing(true,havePos,pos,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille);
+                    int want=homeFacing(true,havePos,pos,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille,inner());
                     if(!want)want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;turn();}
                     publish(SMART_ATTACK);
@@ -749,7 +759,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     break;
                 }
                 // The home zone's hard edge: holding an arrow outwards (moving while attacking,
-                // walking to mobs) is let go of as soon as you're past 3/4 of the range, checked
+                // walking to mobs) is let go of as soon as you're past the zone's inner line, checked
                 // every MOVE_GUARD_MS, not only between attacks; the next jump faces inwards.
                 // The same for the map's edges ("turn at map edges", on your minimap dot).
                 moveGuard_=[&]{
@@ -850,7 +860,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     // Live facing (map edge, mobs) wins; otherwise the turn chance.
                     LiveStats live=liveStatsSnapshot();
                     int livePlace=0;bool havePlace=livePos(live,livePlace);
-                    int want=homeFacing(live.fresh,havePlace,livePlace,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille);
+                    int want=homeFacing(live.fresh,havePlace,livePlace,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille,inner());
                     if(!want)want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;

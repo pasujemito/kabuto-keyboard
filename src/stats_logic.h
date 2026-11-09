@@ -134,8 +134,8 @@ const uint8_t MOB_LEFT = 1, MOB_RIGHT = 2, MOB_RIGHT_NEARER = 4, MOB_READ = 8;
 // `range` (tenths of a minimap width; 0 = no home) it's a zone, home ± range.
 // Outside it, walk back in first (homeDecide). Then: auto-pause (`paused`, see
 // AutoPause) waits; mobs in reach are attacked; with `approach`, mobs you can
-// see but not reach are walked to (the nearer side), not past 3/4 of the
-// range; else wait where you are. No fresh reading, or no mob detector on
+// see but not reach are walked to (the nearer side), not into the zone's
+// safety band (SmartInput::inside); else wait where you are. No fresh reading, or no mob detector on
 // this map: Smart can't tell where mobs are, so it stands still
 // (SMART_NO_READINGS / SMART_NO_DETECTOR) rather than attack blindly.
 const uint32_t MOVE_GUARD_MS = 40;     // while moving, where you are is looked at this often (the home zone's edge)
@@ -152,19 +152,33 @@ struct SmartInput {
     bool havePos = false, haveHome = false, homing = false, approach = false, paused = false;
     int pos = 0, home = 0;
     uint16_t range = 0;
+    int inside = -1;   // the inner line (homeInsideBand); -1: 3/4 of the range
 };
 // Home is a zone: home ± range, where fighting happens (any pattern with a
 // home range, Smart or not). Inside it nothing pulls you back. Outside it
 // (mobs led you there), walk back, mobs or not, until HOME_INSIDE of the way
 // in (3/4 of the range from home), so you don't hover on the line.
 inline int homeInside(uint16_t range) { return range * 3 / 4; }
+// The inner line from a safety band measured in your own movement, not in % of the
+// minimap (the pad never knows a map's width in pixels): a knockback is about
+// KNOCKBACK_MS of walking, the same real distance on every map, turned into
+// minimap units with the walking speed learned on this map (DriftWatch::knock).
+// Kept between half the range and just inside the line; -1: 3/4 of the range.
+const uint32_t KNOCKBACK_MS = 400;   // ~50 px at 125 px/s
+inline int homeInsideBand(uint16_t range, int band) {
+    if (band < 0) return homeInside(range);
+    int inner = (int)range - band, least = range / 2, most = (int)range - 1;
+    return inner < least ? least : inner > most ? most : inner;
+}
+inline int zoneInside(const SmartInput& in) { return in.inside >= 0 ? in.inside : homeInside(in.range); }
 // How far you still go once the arrow is let go of: a jump carries on through the
 // air at the speed it took off with, and the screen reader's readings come a little
 // late. The walking speed (tenths of a % of the map per ms) is learned while an arrow
 // is held: the most seen over DRIFT_WINDOW_MS (a guess before then), times
 // DRIFT_LOOKAHEAD_MS (a jump's time in the air and the readings' delay).
 const uint32_t DRIFT_LOOKAHEAD_MS = 800;
-const uint32_t DRIFT_WINDOW_MS = 300;
+const uint32_t DRIFT_WINDOW_MS = 600;   // long enough that the readings' 0.5% steps don't inflate it
+const uint32_t READ_LAG_MS = 150;   // a reading's age when it arrives (a frame and the cable): on foot, all that counts
 const float DRIFT_SPEED_GUESS = 0.08f;   // until measured: 8% of the map a second (a 1500 px map at 120 px/s)
 const float DRIFT_SPEED_MAX = 0.25f;   // faster isn't walking (a knockback, a teleport): ignored
 struct DriftWatch {
@@ -188,6 +202,8 @@ struct DriftWatch {
         at = pos; since = now;
     }
     int ahead() const { return (int)(speed * DRIFT_LOOKAHEAD_MS + 0.5f); }
+    int knock() const { return (int)(speed * KNOCKBACK_MS + 0.5f); }   // a knockback's room
+    int lag() const { return (int)(speed * READ_LAG_MS + 0.5f); }       // on foot: the readings' delay
 };
 // Walking back in stops just inside the line (a tenth of the range in), so a
 // small slip past it is a short step back, not a walk home.
@@ -210,11 +226,11 @@ inline bool homeReturning(bool was, bool havePos, int pos, bool haveHome, int ho
 }
 // At the zone's edge (past where walking back stops), face inwards, as at a
 // map edge: -1 left, +1 right, 0 no opinion.
-inline int homeFacing(bool fresh, bool havePos, int pos, bool haveHome, int home, uint16_t range) {
+inline int homeFacing(bool fresh, bool havePos, int pos, bool haveHome, int home, uint16_t range, int inside = -1) {
     if (!fresh || !havePos || !haveHome || !range) return 0;
-    int off = pos - home;
-    if (off > homeInside(range)) return -1;
-    if (-off > homeInside(range)) return +1;
+    int off = pos - home, line = inside >= 0 ? inside : homeInside(range);
+    if (off > line) return -1;
+    if (-off > line) return +1;
     return 0;
 }
 inline uint8_t smartDecide(const SmartInput& in) {
@@ -224,17 +240,17 @@ inline uint8_t smartDecide(const SmartInput& in) {
     uint8_t back = homeDecide(in);
     if (back != SMART_ATTACK) return back;   // outside the zone, nothing to fight: walk back in
     if (homed && (off > in.range || -off > in.range)) return SMART_ATTACK;   // outside with mobs about: fight your way back
-    // At the zone's edge (past 3/4 of the range) you face inwards: only mobs on the
-    // inside count. Mobs in reach only on the outside: stand and wait (no attacking
-    // the air, no walking), for mobs on the inside.
-    bool edge = homed && (off > homeInside(in.range) || -off > homeInside(in.range));
+    // At the zone's edge (past the inner line: the safety band) you face inwards: only
+    // mobs on the inside count. Mobs in reach only on the outside: stand and wait (no
+    // attacking the air, no walking), for mobs on the inside.
+    bool edge = homed && (off > zoneInside(in) || -off > zoneInside(in));
     if (edge) any = in.mobs & (off > 0 ? MOB_LEFT : MOB_RIGHT);
     if (any) return SMART_ATTACK;   // a mob in reach is always fought, auto-pause or not
     if (in.paused) return SMART_PAUSE;   // most killed: wait for the respawn rather than walk to the last few
     bool left = in.seenLeft > 0, right = in.seenRight > 0;
     if (in.approach && (left || right)) {
         bool goLeft = left && (!right || (in.nearLeft >= 0 && (in.nearRight < 0 || in.nearLeft <= in.nearRight)));
-        int limit = homeInside(in.range);   // not towards the zone's edge
+        int limit = zoneInside(in);   // not into the safety band
         if (!homed || (goLeft ? off > -limit : off < limit)) return goLeft ? SMART_APPROACH_LEFT : SMART_APPROACH_RIGHT;
     }
     return (in.mobs & MOB_READ) ? SMART_WAIT : SMART_NO_DETECTOR;   // nothing to fight (inside, or only past the edge): wait where you are

@@ -109,3 +109,22 @@ or the build hooks runs `.github/workflows/release.yml`: picks the next version
 tests, signs with the `UPDATE_SIGNING_KEY` secret and publishes `firmware.bin` +
 `versions.json`. To release, add a `CHANGELOG.md` entry; raise the base in
 `src/config.h` for a minor or major step.
+
+### Which number goes up
+
+Decide per pull request, before merging, and say which in the PR:
+
+- **New feature or a significant change in what the pad does** (a new setting,
+  panel, button or mode; a new kind of behaviour, such as Set home or
+  characters): raise the **minor** number and reset the patch. Set
+  `FIRMWARE_VERSION` in `src/config.h` to the next minor, e.g. `1.19.0` →
+  `1.20.0`, and head the `CHANGELOG.md` entry `## 1.20.0`.
+- **Small change, fix, or a change to existing logic** (tuning, a bug fix,
+  wording, a rule refined within an existing feature, tests or docs): leave
+  `src/config.h` alone. The release workflow counts the patch up by itself,
+  `1.20.0` → `1.20.1` → `1.20.2`...; head the entry with that next number.
+- **Major** (`2.0.0`) only when the user asks: something that breaks saved
+  configs or needs a fresh setup.
+
+When one pull request has both, the bigger step wins (a feature with fixes is
+a minor release). If unsure, ask the user.

@@ -205,12 +205,23 @@ int main(){
     tk.push(TOOL_OUTLINES,0);tk.take(0,out,8);assert(!out[0]);   // doesn't fit: nothing half written
     // Drift: the walking speed is learned while an arrow is held (the most seen over a
     // 300 ms window), a guess before; teleport-fast moves (knockback) don't count.
+    // Drift: the walking speed is learned while an arrow is held (the most seen over a
+    // 600 ms window), a guess before; teleport-fast moves (knockback) don't count. The
+    // zone's safety band is a knockback's walking time at that speed (0.4 s), on foot only
+    // the readings' delay (0.15 s).
     {DriftWatch d;assert(!d.measured&&d.ahead()==(int)(DRIFT_SPEED_GUESS*DRIFT_LOOKAHEAD_MS+0.5f));
-     d.update(1,true,100,1000);d.update(1,true,110,1200);assert(!d.measured);   // under a window
-     d.update(1,true,130,1300);assert(d.measured&&d.speed>0.099f&&d.speed<0.101f&&d.ahead()==80);   // 30 in 300 ms
-     d.update(1,true,140,1600);assert(d.speed>0.099f);                          // slower: the most seen stays
-     d.update(1,true,300,1900);assert(d.speed<0.11f);                           // 160 in 300 ms: a knockback, ignored
-     d.update(0,false,0,2000);d.update(-1,true,300,2000);d.update(-1,true,240,2300);assert(d.speed>0.199f&&d.speed<0.201f);   // left, faster
-     d.update(-1,true,240,2600);assert(d.speed>0.199f);}                        // standing against a wall: no change
+     d.update(1,true,100,1000);d.update(1,true,140,1400);assert(!d.measured);   // under a window
+     d.update(1,true,160,1600);assert(d.measured&&d.speed>0.099f&&d.speed<0.101f&&d.ahead()==80&&d.knock()==40&&d.lag()==15);   // 60 in 600 ms
+     d.update(1,true,180,2200);assert(d.speed>0.099f);                          // slower: the most seen stays
+     d.update(1,true,400,2800);assert(d.speed<0.11f);                           // 220 in 600 ms: a knockback, ignored
+     d.update(0,false,0,3000);d.update(-1,true,300,3000);d.update(-1,true,180,3600);assert(d.speed>0.199f&&d.speed<0.201f);   // left, faster
+     d.update(-1,true,180,4200);assert(d.speed>0.199f);}                        // standing against a wall: no change
+    // The inner line: the range less a knockback's room, kept between half the range and
+    // just inside the line; unknown (-1): 3/4 of the range.
+    assert(homeInsideBand(100,-1)==75&&homeInsideBand(100,10)==90&&homeInsideBand(100,80)==50&&homeInsideBand(100,0)==99);
+    assert(homeFacing(true,true,592,true,500,100,90)==-1&&homeFacing(true,true,585,true,500,100,90)==0);   // past the inner line: face inwards
+    {SmartInput in;in.fresh=true;in.mobs=MOB_READ;in.seenRight=1;in.nearRight=150;in.approach=true;in.havePos=in.haveHome=true;in.home=500;in.range=100;
+     in.pos=580;assert(smartDecide(in)==SMART_WAIT);                       // 3/4 by default: no walking out
+     in.inside=90;assert(smartDecide(in)==SMART_APPROACH_RIGHT);}          // a narrower band: walks on
     std::cout<<"stats logic tests passed\n";
 }

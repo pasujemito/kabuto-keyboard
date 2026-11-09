@@ -3,6 +3,26 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.6
+
+- 🧱 **The home zone's safety band is real distance, not a share of the
+  zone**: it was a quarter of the range, so on a big map (Perion) a lot of
+  the zone went unused, and on a small one there was little room for a
+  knockback. The pad never knows a map's width in pixels, so the band is now
+  measured in your own movement: about 0.4 s of walking (a knockback), turned
+  into minimap % with the speed the pad learns on each map. In a test on a
+  6000 px map with a 10% zone, mobs standing at 90% of the way out are now
+  walked to and killed (before, it stopped 200 px short); on a 1000 px map it
+  keeps the same real room and is never knocked past the line
+- 🚶 **Walking uses the zone better**: on foot only the readings' delay is
+  allowed for; a jump's drift is checked just before each hop
+- 📏 The walking speed is measured over 0.6 s (was 0.3), so the minimap's
+  0.5% steps no longer make it read high on big maps
+- 🧪 New scenarios: knockback near the zone's edge on a 1000 px and a 6000 px
+  map, and mobs near the line on a big map
+- 📘 AGENTS.md: which version number goes up (a feature: 1.x.0; a fix or a
+  change to existing logic: the patch)
+
 ## 1.19.5
 
 - 🏠 **Set home is saved, one per map**: each map keeps its own Set home

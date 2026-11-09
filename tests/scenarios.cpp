@@ -54,7 +54,7 @@ std::string fmt(const char* f, ...) { char b[400]; va_list a; va_start(a, f); vs
 
 // ---- the world ----------------------------------------------------------------
 struct Platform { double x0, x1; int y; };   // y: height in px (0: the floor)
-struct Mob { int platform; double x, vx = 0; int hp = 3; bool alive = true; uint32_t respawnAt = 0, wanderAt = 0; };
+struct Mob { int platform; double x, vx = 0; int hp = 3; bool alive = true, still = false; uint32_t respawnAt = 0, wanderAt = 0; };
 struct World {
     double width = 2000;              // map width in px
     std::vector<Platform> platforms{{0, 2000, 0}};
@@ -95,7 +95,18 @@ struct Sim {
     bool mobInReach() const { for (auto& m : w.mobs) if (inReach(m)) return true; return false; }
     // One it should be attacking: in reach and, with a home zone, inside it (the pad's rule:
     // the zone first; at its edge, mobs outside are left alone).
-    bool targetInReach() const { for (auto& m : w.mobs) if (inReach(m) && (!zone || std::fabs(m.x - homeX) <= rangePx)) return true; return false; }
+    // In the zone's safety band (about 0.4 s of walking from the line) it faces inwards and
+    // only mobs on the inside count, as the pad does.
+    bool targetInReach() const {
+        double band = std::min(rangePx / 2, w.speed * 400 * 1.5), off = x - homeX;   // the pad measures the speed: allow it 50% over
+        bool inBand = zone && std::fabs(off) > rangePx - band;
+        for (auto& m : w.mobs) {
+            if (!inReach(m) || (zone && std::fabs(m.x - homeX) > rangePx)) continue;
+            if (inBand && (m.x - x) * off > 0) continue;   // on the outer side, from the band
+            return true;
+        }
+        return false;
+    }
     void land() {   // where you come down: this platform if you're over it, else the one below
         const Platform& p = w.platforms[platform];
         if (x >= p.x0 && x <= p.x1) return;
@@ -116,7 +127,7 @@ struct Sim {
             if (!air) land();   // walked off the end
             for (auto& m : w.mobs) {
                 if (!m.alive) { if (last >= m.respawnAt) { const Platform& p = w.platforms[m.platform]; m.alive = true; m.hp = 3; m.x = p.x0 + 20 + std::rand() % std::max(1, (int)(p.x1 - p.x0 - 40)); } continue; }
-                if (last >= m.wanderAt) { m.wanderAt = last + 2000 + std::rand() % 2000; m.vx = (std::rand() % 3 - 1) * 0.03; }
+                if (!m.still && last >= m.wanderAt) { m.wanderAt = last + 2000 + std::rand() % 2000; m.vx = (std::rand() % 3 - 1) * 0.03; }
                 const Platform& p = w.platforms[m.platform];
                 m.x = std::max(p.x0 + 5, std::min(p.x1 - 5, m.x + m.vx * d));
                 if (w.knockback && !air && sameLevel(m.platform, platform) && std::fabs(m.x - x) < 25 && last - lastTouch > 3000) {
@@ -128,7 +139,11 @@ struct Sim {
     void attack(uint32_t at) {
         ++run.attacks; idleSince = 0;
         if (zone && std::fabs(x - homeX) > rangePx) ++run.attacksOutside;
-        if (!mobInReach()) ++run.wasted;
+        if (!mobInReach() && !(zone && std::fabs(x - homeX) > rangePx)) {
+            ++run.wasted;
+            double near = 1e9; for (auto& m : w.mobs) if (m.alive && sameLevel(m.platform, platform) && std::fabs(m.x - x) < std::fabs(near)) near = m.x - x;
+            run.timed.push_back({at, fmt("ATTACK WITH NO MOB IN REACH: x=%.0f face=%d air=%d L=%d R=%d nearest %+.0f px", x, facing, air, left, right, near)});
+        }   // outside the zone it fights its way back on purpose
         int hit = 0;
         for (auto& m : w.mobs) {
             double dx = (m.x - x) * facing;
@@ -278,7 +293,7 @@ void dumpIdle(const Run& r) {
 struct Many { std::vector<Run> runs; };
 Run lastRun;
 
-Many repeat(const Setup& s, const DynamicPattern& p, int seeds = 4) { Many m; for (int i = 1; i <= seeds; ++i) m.runs.push_back(play(s, p, 1000 + i * 7919)); lastRun = m.runs[0]; return m; }
+Many repeat(const Setup& s, const DynamicPattern& p, int seeds = 4) { Many m; for (int i = 1; i <= seeds; ++i) m.runs.push_back(play(s, p, 1000 + i * 7919)); lastRun = m.runs[0]; for (auto& r : m.runs) if (r.wasted > lastRun.wasted || r.maxX > lastRun.maxX) lastRun = r; return m; }
 template <class F> double worst(const Many& m, F f) { double v = -1e18; for (auto& r : m.runs) v = std::max(v, (double)f(r)); return v; }
 template <class F> double least(const Many& m, F f) { double v = 1e18; for (auto& r : m.runs) v = std::min(v, (double)f(r)); return v; }
 double perMin(const Run& r, int n) { return n * 60000.0 / std::max<uint32_t>(1, r.endedAt - r.startedAt); }
@@ -286,8 +301,8 @@ double idle(const Many& m) { const Run* w = &m.runs[0]; for (auto& r : m.runs) i
 std::vector<Expect> rules(const Many& m, bool smart) {
     std::vector<Expect> e;
     e.push_back({"no key is left held down", worst(m, [](const Run& r) { return r.keysLeft; }) == 0});
-    if (smart) e.push_back({"with Smart on, (almost) no attack without a mob in reach (≤5%)",
-        worst(m, [](const Run& r) { return r.attacks ? 100.0 * r.wasted / r.attacks : 0; }) <= 5});
+    if (smart) e.push_back({"with Smart on, (almost) no attack without a mob in reach (at most 5% or 2 attacks: a mob can step out of reach mid-swing; fighting its way back in from outside the zone excepted)",
+        worst(m, [](const Run& r) { return r.wasted <= 2 ? 0.0 : 100.0 * r.wasted / r.attacks; }) <= 5});
     return e;
 }
 
@@ -308,7 +323,7 @@ int main() {
      double rate = least(m, [](const Run& r) { return perMin(r, r.attacks); }), kills = least(m, [](const Run& r) { return r.kills; });
      e.push_back({"keeps attacking: never more than 4 s with a mob in reach and no attack", idle(m) <= 4});
      e.push_back({"kills mobs", kills >= 3});
-     e.push_back({"never inside the map-edge margin (12%, give or take the screen reader's 0.5%)", least(m, [](const Run& r) { return r.minX; }) >= 230 && worst(m, [](const Run& r) { return r.maxX; }) <= 1770});
+     e.push_back({"never inside the map-edge margin (12%; give or take the screen reader's 0.5% and one turn step to face a mob)", least(m, [](const Run& r) { return r.minX; }) >= 215 && worst(m, [](const Run& r) { return r.maxX; }) <= 1785});
      report("Attacking (defaults)", "keeps attacking and killing mobs, stays out of the map-edge margin, no key left held",
             e, fmt("%.0f attacks/min, longest idle by a mob %.1f s, %.0f kills, x %.0f–%.0f px", rate, idle(m), kills, least(m, [](const Run& r) { return r.minX; }), worst(m, [](const Run& r) { return r.maxX; })));}
 
@@ -337,7 +352,7 @@ int main() {
      auto e = rules(m, true);
      e.push_back({"never walks back to a home", worst(m, [](const Run& r) { return r.walkedHome; }) == 0});
      e.push_back({"keeps attacking: never more than 4 s with a mob in reach and no attack", idle(m) <= 4});
-     e.push_back({"never inside the map-edge margin", least(m, [](const Run& r) { return r.minX; }) >= 230 && worst(m, [](const Run& r) { return r.maxX; }) <= 1770});
+     e.push_back({"never inside the map-edge margin (give or take 0.5% and one turn step)", least(m, [](const Run& r) { return r.minX; }) >= 215 && worst(m, [](const Run& r) { return r.maxX; }) <= 1785});
      report("Home at 0%", "no home: it goes where the mobs are, never walks back to a spot, stays out of the map-edge margin",
             e, fmt("x %.0f–%.0f px, %.0f attacks/min, longest idle by a mob %.1f s", least(m, [](const Run& r) { return r.minX; }), worst(m, [](const Run& r) { return r.maxX; }), least(m, [](const Run& r) { return perMin(r, r.attacks); }), idle(m)));}
 
@@ -409,6 +424,32 @@ int main() {
      e.push_back({"never past the new zone's line", worst(m, [](const Run& r) { return r.furthestPast; }) <= 0});
      report("Set home while playing", "home moves to where you stand (75%) and the pattern carries on around it, without stopping",
             e, fmt("furthest %+.0f px from the line, %.0f attacks/min, longest idle by a mob %.1f s", worst(m, [](const Run& r) { return r.furthestPast; }), least(m, [](const Run& r) { return perMin(r, r.attacks); }), idle(m)));}
+
+    // 12. The zone's safety band is measured in your own movement (about 0.4 s of walking: one
+    // knockback), not in % of the minimap: the same real room on a small map and a big one.
+    // With mobs knocking you back, it stays inside the line on both maps.
+    for (double width : {1000.0, 6000.0}) {
+        Setup s; s.world.width = width; s.world.platforms = {{0, width, 0}}; s.startX = width / 2; s.world.knockback = true;
+        s.world.mobs = spread(0, width * 0.05, width * 0.95, (int)(width / 140));
+        auto m = repeat(s, with([](JsonObject p) { p["home_range"] = 0.1; }));
+        auto e = rules(m, true);
+        double past = worst(m, [](const Run& r) { return r.furthestPast; });
+        e.push_back({"knocked back near the edge, still never past the line", past <= 0});
+        report(fmt("Knockback near the zone's edge, %.0f px map", width).c_str(), "the safety band is about one knockback in real distance whatever the map's size: never past the line",
+               e, fmt("furthest %+.0f px from the line", past));
+    }
+    // 13. ...and on a big map the band doesn't waste the zone: mobs just inside the line (90% of
+    // the way out, 540 px from home on a 6000 px map with a 10% zone) are walked to and killed.
+    // A band of a quarter of the zone (150 px) plus a jump's drift stopped it 200 px short.
+    {Setup s; s.world.width = 6000; s.world.platforms = {{0, 6000, 0}}; s.startX = 3000; s.maxMs = 60000;
+     Mob a; a.platform = 0; a.x = 3540; a.still = true; Mob b = a; b.x = 3545; s.world.mobs = {a, b};   // standing still
+     auto m = repeat(s, with([](JsonObject p) { p["home_range"] = 0.1; p["auto_pause"] = 0; }));
+     auto e = rules(m, true);
+     double kills = least(m, [](const Run& r) { return r.kills; }), reached = least(m, [](const Run& r) { return r.maxX - 3000; });
+     e.push_back({"walks out and kills mobs at 90% of the zone", kills >= 1});
+     e.push_back({"never past the line", worst(m, [](const Run& r) { return r.furthestPast; }) <= 0});
+     report("Big map: mobs near the zone's line", "the safety band is real distance, so on a big map it walks out to mobs near the line and kills them",
+            e, fmt("kills: %.0f, reached %.0f of 600 px from home", kills, reached));}
 
     // 11. Death: it stops, nothing left held.
     {Setup s; s.world.mobs = spread(0, 100, 1900, 10); s.maxMs = 60000;

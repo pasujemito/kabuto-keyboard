@@ -653,8 +653,8 @@ are gone with Wi-Fi readings).
   count (with mobs in reach only outside, it stands and waits; it steps
   back in, just inside the line, only once it's past it). Since 1.19.3 the
   boundary is a hard edge: while an arrow is held, the position is checked
-  every 40 ms, and moving outwards past 3/4 of the boundary lets go of it at
-  once, so home 25% with 10% keeps you within 15-35% of the map (knockback
+  every 40 ms, and moving outwards into the zone's safety band lets go of it
+  at once, so home 25% with 10% keeps you within 15-35% of the map (knockback
   aside, which is stepped back from).
 - **Home** is its own section, apart from Smart: with a home range set, a
   pattern walks back home when it drifts past it, Smart on or off (see Home
@@ -671,8 +671,8 @@ are gone with Wi-Fi readings).
       drinking potions, until some appear (the log says "smart: waiting for
       mobs");
     - **Walk to mobs** (on for new patterns): with none in reach but some in
-      sight, it walks towards the nearer side's (staying within ¾ of the home
-      range) and attacks once they're in reach. Mobs it can't reach in 6 s
+      sight, it walks towards the nearer side's (staying out of the home
+      zone's safety band and the map's edge margin) and attacks once they're in reach. Mobs it can't reach in 6 s
       (another platform) are left for 10 s;
     - **Auto-pause** (30% for new patterns, 0 = off): once most of the mobs
       you could see are killed (fewer than 30% of the most seen lately), it
@@ -706,23 +706,30 @@ are gone with Wi-Fi readings).
       this map's home** on the dashboard removes this map's;
     - **Home is a zone** (since 1.18.16): home ± the range is where it
       fights. Inside it, it fights mobs in reach where they are, walks to ones
-      in sight (not past ¾ of the range), and with nothing to fight it waits
+      in sight (not into the safety band), and with nothing to fight it waits
       where it is: nothing pulls it back home. If mobs lead it outside the
       zone, it fights its way back (since 1.19.4): with mobs about it keeps
       jump-attacking, the arrow held homewards, so it drifts back in as it
-      fights; with none, it walks back in (to ¾ of the range), then carries
-      on;
-    - **Staying on the platform** (since 1.19.5): moving while attacking or
-      walking outwards, the arrow is let go of early enough that a jump's
-      drift through the air can't carry you past ¾ of the range: the pad
-      learns how fast you move (kept for each map) and looks 0.8 s ahead.
-      Turn taps never step outwards near the line either. So with home in
-      the middle of a platform and a range under half its width, the pad
-      itself never walks or jumps you off. A mob's hit can still knock you
-      back, and a platform narrower than the zone can't be seen: set the
-      range to fit it at the zone's edge it turns to face inwards, as at a map
+      fights; with none, it walks back in (to just inside the line), then
+      carries on; at the zone's edge it turns to face inwards, as at a map
       edge. If it can't get back in within 10 s (a wall, another platform),
       home stays and walking back is tried again 20 s later;
+    - **The safety band** (since 1.19.6): inside each end of the zone, room for
+      a knockback, measured in your own movement rather than in % of the
+      minimap (the pad never knows how wide a map is in pixels): about 0.4 s
+      of walking, the same real distance on a small map and on Perion. In it
+      the character faces inwards and doesn't walk or move outwards; a hit
+      that pushes it there, or past the line, is stepped back from. It's at
+      most half the range (a quarter before the pad has seen you move);
+    - **Staying on the platform** (since 1.19.5): moving while attacking or
+      walking outwards, the arrow is let go of early enough that you stop
+      before the safety band: the pad learns how fast you move (kept for each
+      map) and allows for a jump's drift through the air (0.8 s) before each
+      jump, and for the readings' delay (0.15 s) on foot. Turn taps never step
+      outwards near the line either. So with home in the middle of a platform
+      and a range under half its width, the pad itself never walks or jumps
+      you off. A platform narrower than the zone can't be seen: set the range
+      to fit it;
     - **Walking: hop every** (600–1300 ms for new patterns): walking, home or
       to mobs, holds the arrow key down the whole way and hops (a quick jump)
       after each random time in that range, as you would. The arrow is let go

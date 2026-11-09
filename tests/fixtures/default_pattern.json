@@ -1,0 +1,113 @@
+{
+ "id": "default",
+ "jump_to_attack": [
+  45,
+  120
+ ],
+ "attack_to_jump_up": [
+  30,
+  120
+ ],
+ "jump_up_to_attack_up": [
+  16,
+  80
+ ],
+ "combo_gap": [
+  510,
+  760
+ ],
+ "dir_hold": [
+  85,
+  195
+ ],
+ "dir_after": [
+  16,
+  330
+ ],
+ "attacks_per_set": [
+  2,
+  10
+ ],
+ "sets": [
+  8,
+  12
+ ],
+ "turn_chance": 0.85,
+ "tempo_drift": 0.15,
+ "shuffle_skills": true,
+ "keys": {
+  "jump": "ALT",
+  "attack": "CTRL",
+  "left": "LEFT",
+  "right": "RIGHT"
+ },
+ "potions": [
+  {
+   "id": "hp",
+   "enabled": true,
+   "key": "C",
+   "backup_keys": [],
+   "below": 50,
+   "bar_max": 0,
+   "per_tap": 0,
+   "every_ms": [
+    40000,
+    70000
+   ],
+   "repeats": [
+    1,
+    1
+   ],
+   "hold": [
+    85,
+    110
+   ],
+   "after": [
+    400,
+    700
+   ]
+  },
+  {
+   "id": "mana",
+   "enabled": true,
+   "key": "V",
+   "backup_keys": [],
+   "below": 30,
+   "bar_max": 0,
+   "per_tap": 0,
+   "every_ms": [
+    25000,
+    45000
+   ],
+   "repeats": [
+    1,
+    1
+   ],
+   "hold": [
+    85,
+    110
+   ],
+   "after": [
+    400,
+    700
+   ]
+  }
+ ],
+ "edge_margin": 0.12,
+ "stuck_after_ms": 20000,
+ "face_mobs": true,
+ "smart": true,
+ "home_range": 0.5,
+ "auto_pause": 0.3,
+ "approach": true,
+ "walk_hold": [
+  600,
+  1300
+ ],
+ "glide": 0.6,
+ "attack": true,
+ "char_keys": false,
+ "char_potions": false,
+ "char_skills": false,
+ "skills": []
+}

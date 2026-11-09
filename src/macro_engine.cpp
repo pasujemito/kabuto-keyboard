@@ -648,6 +648,24 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     std::vector<Step> hop{delay(sample(pattern->walkHold)),edge(true,jump.keycode,jump.mods),delay(sample(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
                     executeSteps(hop,stop,state,depth+1);
                 };
+                // Checked every MOVE_GUARD_MS, and before a set moves while attacking: where the
+                // arrow held now would carry you, counting a jump's drift through the air
+                // (DriftWatch), not where you are. Past 3/4 of the home range, or into the map's
+                // edge margin, the arrow is let go of before the jump that would cross it.
+                DriftWatch airDrift;
+                auto outwards=[&](bool right,bool update)->const char*{
+                    LiveStats live=liveStatsSnapshot();
+                    if(!live.fresh)return nullptr;
+                    int pos=0;bool havePos=livePos(live,pos);
+                    if(update)airDrift.update(right?1:-1,havePos,pos,millis());
+                    int ahead=airDrift.ahead(),margin=pattern->edgeMarginPermille;
+                    if(margin&&live.x>=0&&((!right&&live.x-ahead<margin)||(right&&live.x+ahead>1000-margin)))return "map edge: stopped moving towards it";
+                    if(pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&havePos&&homeOnMap==(live.wx!=LIVE_NO_POS)){
+                        int off=pos-home,limit=homeInside(pattern->homeRangePermille);
+                        if((right&&off+ahead>limit)||(!right&&-off+ahead>limit))return "home zone edge: stopped moving outwards";
+                    }
+                    return nullptr;
+                };
                 auto smartWait=[&]{
                     static const char* const labels[]={"","smart: waiting for mobs","back into the home zone (it went past the boundary)","back into the home zone (it went past the boundary)",
                         "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs",
@@ -669,6 +687,12 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
                         if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"can't get home: home kept, trying again in 20 s");homeOff=true;homeOffAt=millis();homing=false;doing=-1;continue;}
                         if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
+                        if(toMobs&&outwards(act==SMART_APPROACH_RIGHT,false)){   // they're past the map's edge margin or the zone's line (with a jump's drift): wait for them
+                            stopWalking();act=SMART_WAIT;publish(act);
+                            if(doing!=(int)SMART_WAIT){logStep(s,pc,millis(),0,true,labels[act]);doing=SMART_WAIT;}
+                            potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
+                            std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);continue;
+                        }
                         if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;walk(facing());}
                         else{stopWalking();potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                              std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
@@ -728,24 +752,6 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // walking to mobs) is let go of as soon as you're past 3/4 of the range, checked
                 // every MOVE_GUARD_MS, not only between attacks; the next jump faces inwards.
                 // The same for the map's edges ("turn at map edges", on your minimap dot).
-                // Checked every MOVE_GUARD_MS, and before a set moves while attacking: where the
-                // arrow held now would carry you, counting a jump's drift through the air
-                // (DriftWatch), not where you are. Past 3/4 of the home range, or into the map's
-                // edge margin, the arrow is let go of before the jump that would cross it.
-                DriftWatch airDrift;
-                auto outwards=[&](bool right,bool update)->const char*{
-                    LiveStats live=liveStatsSnapshot();
-                    if(!live.fresh)return nullptr;
-                    int pos=0;bool havePos=livePos(live,pos);
-                    if(update)airDrift.update(right?1:-1,havePos,pos,millis());
-                    int ahead=airDrift.ahead(),margin=pattern->edgeMarginPermille;
-                    if(margin&&live.x>=0&&((!right&&live.x-ahead<margin)||(right&&live.x+ahead>1000-margin)))return "map edge: stopped moving towards it";
-                    if(pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&havePos&&homeOnMap==(live.wx!=LIVE_NO_POS)){
-                        int off=pos-home,limit=homeInside(pattern->homeRangePermille);
-                        if((right&&off+ahead>limit)||(!right&&-off+ahead>limit))return "home zone edge: stopped moving outwards";
-                    }
-                    return nullptr;
-                };
                 moveGuard_=[&]{
                     bool right=!walking.empty()&&walking==pattern->right,left=!walking.empty()&&walking==pattern->left;
                     if(!right&&!left){airDrift.update(0,false,0,millis());return;}

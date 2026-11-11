@@ -3,6 +3,21 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 1.19.7
+
+- 🏠 **Home only comes from the Set home button**: pressing a pattern's
+  button (or toggling it) no longer sets home where you stand, and arriving
+  on a map no longer makes one there, so home never moves by itself. Each
+  map keeps its own Set home, saved on the pad. On a map with no Set home
+  there's no home zone: the pattern plays as with a range of 0 (the map's
+  edge margin still holds) and the dashboard says "🏠 No home on this map:
+  press Set home"
+- 🧭 A Set home made from the map position isn't compared with a minimap-dot
+  reading (or the other way round) while the screen reader only has the
+  other: the zone waits for the same kind of reading to come back
+- 🧪 New scenario: no Set home on the map (no zone, never walks back to the
+  start, the dashboard says so)
+
 ## 1.19.6
 
 - 🧱 **The home zone's safety band is real distance, not a share of the

@@ -384,6 +384,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   patternState={...patternState,smart:false};
   await page.waitForFunction(()=>/Smart off/.test(document.querySelector('#liveStats').textContent));
   assert.doesNotMatch(await page.locator('#liveStats').textContent(),/Can't see mobs/);
+  // A home range but no Set home on this map: the dashboard says so.
+  patternState={...patternState,home:undefined,noHome:true};
+  await page.waitForFunction(()=>/No home on this map: press Set home/.test(document.querySelector('#liveStats').textContent));
   // Set home here: pins home where you stand; with nothing playing it shows as a mark
   // on its map, and Forget home clears it.
   patternState=null;liveState={...liveState,x:420,wx:1420,map:'Henesys',mobs:8,ml:0,mr:0,dl:-1,dr:-1};

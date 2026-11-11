@@ -234,6 +234,7 @@ struct Setup {
     int startPlatform = 0; double startX = 1000;
     uint32_t maxMs = 120000;
     std::function<void(Sim&, uint32_t)> during;   // called every tick (ms since start)
+    bool setHome = true;   // press Set home where you start (the only way home is set), when the pattern has a zone
 };
 Run play(const Setup& setup, const DynamicPattern& p, unsigned seed) {
     std::srand(seed);
@@ -242,8 +243,9 @@ Run play(const Setup& setup, const DynamicPattern& p, unsigned seed) {
     sim.last = millis(); sim.nextFrame = millis();
     for (auto& m : sim.w.mobs) m.wanderAt = millis();
     sim.zone = p.homeRangePermille > 0; sim.homeX = setup.startX; sim.rangePx = p.homeRangePermille / 1000.0 * sim.w.width;
-    homePinsLoad(nullptr, 0); engine.keptHomes_.clear(); engine.driftSpeeds_.clear();
+    homePinsLoad(nullptr, 0); engine.driftSpeeds_.clear();
     liveStatsUpdate(sim.read()); sim.sentX = sim.read().x;
+    if (sim.zone && setup.setHome) { bool ok = homePin(); assert(ok); } else sim.zone = false;   // no Set home: no zone
     hidEvents.clear(); held.clear(); heldMods = 0;
     uint32_t t0 = millis(), end = t0 + setup.maxMs; sim.run.startedAt = t0;
     testDelayHook = [&] {
@@ -450,6 +452,22 @@ int main() {
      e.push_back({"never past the line", worst(m, [](const Run& r) { return r.furthestPast; }) <= 0});
      report("Big map: mobs near the zone's line", "the safety band is real distance, so on a big map it walks out to mobs near the line and kills them",
             e, fmt("kills: %.0f, reached %.0f of 600 px from home", kills, reached));}
+
+    // 14. A zone set in the pattern but no Set home pressed on this map: no home at all. It
+    // plays as with 0% (where the mobs are, the map's edge margin still holds), never walks
+    // back to where it started, and the dashboard says why.
+    {Setup s; s.world.mobs = spread(0, 100, 1900, 8); s.setHome = false;
+     bool told = false;
+     s.during = [&told](Sim&, uint32_t) { PatternView v = patternViewSnapshot(); if (v.active && !v.haveHome && v.homeRange) told = true; };
+     auto m = repeat(s, with([](JsonObject p) { p["home_range"] = 0.1; }));
+     auto e = rules(m, true);
+     double lo = least(m, [](const Run& r) { return r.minX; }), hi = worst(m, [](const Run& r) { return r.maxX; });
+     e.push_back({"never walks back to where it started", worst(m, [](const Run& r) { return r.walkedHome; }) == 0});
+     e.push_back({"goes beyond the 10% zone it would have had (no home: none)", lo < 800 || hi > 1200});
+     e.push_back({"the dashboard says there's no home on this map", told});
+     e.push_back({"keeps attacking: never more than 4 s with a mob in reach and no attack", idle(m) <= 4});
+     report("No Set home on this map", "home only comes from the Set home button: without one there's no zone, it plays as with 0%, and the dashboard says so",
+            e, fmt("x %.0f–%.0f px (a zone would have been 800–1200), dashboard told: %s", lo, hi, told ? "yes" : "no"));}
 
     // 11. Death: it stops, nothing left held.
     {Setup s; s.world.mobs = spread(0, 100, 1900, 10); s.maxMs = 60000;

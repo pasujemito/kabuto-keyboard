@@ -521,9 +521,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // Between attacks: stop on a death or login screen,
                 // turn for map edges and mobs, and turn (then stop) when stuck.
                 StuckWatch stuck;
-                // Smart mode: home is where you were when the button started the
-                // pattern, or where you arrived on a new map (map position if the
-                // script sends it, else the minimap dot).
+                // Home comes only from the Set home button (one per map, see below): never from
+                // pressing the pattern's button or arriving on a map. No Set home on this map: no
+                // home zone, as with a range of 0 (the map's edge margin still holds).
                 bool haveHome=false,homing=false,homeOnMap=false;int home=0;
                 std::string lastMap;
                 AutoPause autoPause;
@@ -532,12 +532,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 DriftWatch airDrift;   // how fast you move here: a jump's drift, and the zone's safety band
                 auto inner=[&]{return homeInsideBand(pattern->homeRangePermille,airDrift.knock());};   // the zone's inner line
                 auto livePos=[](const LiveStats& live,int& pos){pos=live.wx!=LIVE_NO_POS?live.wx:live.x;return live.fresh&&(live.wx!=LIVE_NO_POS||live.x>=0);};
-                bool homePinnedHere=false;   // home came from a Set home button
-                auto setHome=[&](const LiveStats& live,int pos){haveHome=true;home=pos;homeOnMap=live.wx!=LIVE_NO_POS;homePinnedHere=false;};
-                // A Set home button's home (one per map, kept in flash): on its map it's always home,
-                // never one of the pattern's own; a pattern only makes its own home on a map with
-                // none. Taken up at once when the button is pressed while playing. One pinned where
-                // the map's name wasn't read counts until this pattern sees the map change.
+                bool homePinnedHere=false;   // home came from a Set home button (always, since 1.19.7)
+                // The Set home button's home (one per map, kept in flash) is the only home. Taken
+                // up at once when the button is pressed while playing. One pinned where the map's
+                // name wasn't read counts until this pattern sees the map change.
                 uint32_t pinSeen=0;bool movedMap=false;
                 auto pinFor=[&]{
                     if(!lastMap.empty()){PinnedHome p=homePinned(lastMap.c_str());if(p.set)return p;}
@@ -549,12 +547,9 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     char text[64];std::snprintf(text,sizeof(text),"%s: %d.%d%%",label,p.home/10,(p.home<0?-p.home:p.home)%10);
                     logStep(s,pc,millis(),0,true,text);
                 };
-                // Home is set as soon as there's a position (every pattern, so the dashboard and the
-                // game layer can show it; only Smart walks back to it). A home from the minimap dot
-                // can't be compared with a map position (or back): it's set again from the new one.
-                // Home only moves when you press the button or arrive on another map. If the map
-                // position comes or goes (the dot found, the minimap's slide lost), the same spot is
-                // kept in the other units, using the slide (map position - dot) last seen.
+                // If the map position comes or goes (the dot found, the minimap's slide lost), the
+                // same spot is kept in the other units, using the slide (map position - dot) last
+                // seen; without one, home waits for its own units to come back.
                 int slide=0;bool haveSlide=false;
                 auto homeCheck=[&](const LiveStats& live,bool havePos,int pos){
                     if(live.fresh&&live.wx!=LIVE_NO_POS&&live.x>=0){slide=live.wx-live.x;haveSlide=true;}
@@ -565,16 +560,13 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(pin.set&&(!homePinnedHere||pin.home!=home||pin.onMap!=homeOnMap||!haveHome))
                             usePin(pin,changed&&haveHome?"home set by the Set home button":"home: this map's Set home");
                     }
-                    if(!havePos)return;
+                    (void)pos;
+                    if(!havePos||!haveHome)return;   // no Set home here: no home
                     bool onMap=live.wx!=LIVE_NO_POS;
-                    if(haveHome&&homeOnMap==onMap)return;
-                    if(haveHome&&homePinnedHere&&!haveSlide)return;   // a Set home stays, even read another way
-                    if(haveHome&&haveSlide){home+=onMap?slide:-slide;homeOnMap=onMap;logStep(s,pc,millis(),0,true,"home kept (position read another way)");return;}
-                    bool again=haveHome;setHome(live,pos);
-                    char label[48];std::snprintf(label,sizeof(label),again?"home set again: %d.%d%%":"home set: %d.%d%%",pos/10,(pos<0?-pos:pos)%10);
-                    logStep(s,pc,millis(),0,true,label);
+                    if(homeOnMap==onMap||!haveSlide)return;
+                    home+=onMap?slide:-slide;homeOnMap=onMap;logStep(s,pc,millis(),0,true,"home kept (position read another way)");
                 };
-                // Another map: home is wherever you arrive. Only a name it knows counts ("-", a name
+                // Another map: that map's Set home, if it has one, else no home. Only a name it knows counts ("-", a name
                 // it can't read, is often just something over the name for a moment), and only once
                 // it has stayed MAP_CHANGE_MS, so a misread reading or two never moves home.
                 std::string mapSeen;uint32_t mapSeenAt=0;
@@ -586,7 +578,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(millis()-mapSeenAt<MAP_CHANGE_MS)return;
                     lastMap=live.map;mapSeen.clear();
                     movedMap=true;
-                    if(haveHome){haveHome=false;logStep(s,pc,millis(),0,true,"new map, new home");}
+                    if(haveHome){haveHome=false;homePinnedHere=false;logStep(s,pc,millis(),0,true,"new map: its own Set home, or none");}
                 };
                 // What the dashboard shows.
                 auto publish=[&](uint8_t action){
@@ -598,7 +590,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     SmartInput in;in.fresh=live.fresh;in.mobs=live.mobs;in.seenLeft=live.ml;in.seenRight=live.mr;in.nearLeft=live.dl;in.nearRight=live.dr;
                     if(homeOff&&millis()-homeOffAt>=HOME_RETRY_MS)homeOff=false;
                     in.havePos=havePos;in.pos=pos;in.home=home;in.range=pattern->homeRangePermille;in.homing=homing;in.inside=inner();
-                    in.haveHome=haveHome&&!homeOff&&mapSeen.empty();   // another map's name showing: the old home means nothing there
+                    in.haveHome=haveHome&&!homeOff&&mapSeen.empty()&&homeOnMap==(live.wx!=LIVE_NO_POS);   // another map's name showing, or home in other units: it means nothing here
                     in.approach=pattern->approach&&(!approachOff||millis()-approachOffAt>=10000);
                     in.paused=autoPause.update(live.fresh&&live.ml>=0&&live.mr>=0?live.ml+live.mr:-1,pattern->autoPausePermille,millis());
                     return in;
@@ -723,7 +715,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                      bool was=returning;returning=zone&&homeReturning(returning,havePos,pos,true,home,pattern->homeRangePermille);
                      if(returning&&!was)logStep(s,pc,millis(),0,true,"past the home zone: fighting the way back");}
                     // The home zone's edge first (face inwards), then map edges and mobs.
-                    int want=homeFacing(true,havePos,pos,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille,inner());
+                    int want=homeFacing(true,havePos,pos,haveHome&&mapSeen.empty()&&homeOnMap==(live.wx!=LIVE_NO_POS),home,pattern->homeRangePermille,inner());
                     if(!want)want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;turn();}
                     publish(SMART_ATTACK);
@@ -771,9 +763,6 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     logStep(s,pc,millis(),0,true,why);
                 };
                 logStep(s,pc,stepStartedAt,0,true,"dynamic: starting");
-                {auto kept=keptHomes_.find(pattern->id);   // a replay of the same press: its home stands
-                 if(kept!=keptHomes_.end()){haveHome=true;home=kept->second.home;homeOnMap=kept->second.onMap;lastMap=kept->second.map;slide=kept->second.slide;haveSlide=kept->second.haveSlide;
-                     logStep(s,pc,stepStartedAt,0,true,"home kept from this button press");}}
                 {LiveStats live=liveStatsSnapshot();int pos=0;bool havePos=livePos(live,pos);mapCheck(live);homeCheck(live,havePos,pos);if(live.fresh&&strcmp(live.map,"-")&&lastMap.empty())lastMap=live.map;}
                 {auto known=lastMap.empty()?driftSpeeds_.end():driftSpeeds_.find(lastMap);if(known!=driftSpeeds_.end()){airDrift.speed=known->second;airDrift.measured=true;}}
                 publish(SMART_ATTACK);
@@ -860,7 +849,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     // Live facing (map edge, mobs) wins; otherwise the turn chance.
                     LiveStats live=liveStatsSnapshot();
                     int livePlace=0;bool havePlace=livePos(live,livePlace);
-                    int want=homeFacing(live.fresh,havePlace,livePlace,haveHome&&mapSeen.empty(),home,pattern->homeRangePermille,inner());
+                    int want=homeFacing(live.fresh,havePlace,livePlace,haveHome&&mapSeen.empty()&&homeOnMap==(live.wx!=LIVE_NO_POS),home,pattern->homeRangePermille,inner());
                     if(!want)want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
                     bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;
@@ -881,7 +870,6 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 moveGuard_=nullptr;
                 stopWalking();
                 if(airDrift.measured&&!lastMap.empty()&&lastMap!="-"&&driftSpeeds_.size()<32)driftSpeeds_[lastMap]=airDrift.speed;   // a map it knows by name only
-                if(haveHome){KeptHome& k=keptHomes_[pattern->id];k.home=home;k.onMap=homeOnMap;k.map=lastMap;k.slide=slide;k.haveSlide=haveSlide;}
                 patternViewSet(PatternView());
                 releaseTracked();
                 logStep(s,pc,stepStartedAt,millis()-stepStartedAt,true,stop?"dynamic: stopped":"dynamic: finished");
@@ -1040,7 +1028,6 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
 }
 
 void MacroEngine::runMacro(const KeyBinding& kb) {
-    keptHomes_.clear();   // a new press: a new home (replays of this one keep theirs)
     moveGuard_ = nullptr;
     choiceHistory_.clear();
     callStack_.clear();

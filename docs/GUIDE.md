@@ -685,15 +685,14 @@ are gone with Wi-Fi readings).
       to 50%; 0 = no home): how far from home it may go. Drift further than
       that with no mobs in reach, or twice that whatever's around, and it
       walks back. This part works with Smart off too;
-    - **Home is where you press the button**: set by itself where you stand
-      when any dynamic pattern starts (or where you arrive on a new map: a
-      map name it knows, showing for 3 s; a name misread for a moment never
-      moves home), and
-      shown on the dashboard and on the game layer's minimap (a green line,
-      the range a band under it; the strip says "you 41% · home 37% ◀", amber
-      when out of range). To hunt somewhere else, walk there and press it
-      again. A toggle or hold button replays the pattern: each replay keeps
-      the home its press set. Nothing else moves it;
+    - **Home comes only from Set home** (since 1.19.7): pressing a
+      pattern's button, toggling it or arriving on a map never sets or moves
+      it. It's shown on the dashboard and on the game layer's minimap (a green
+      line, the range a band under it; the strip says "you 41% · home 37% ◀",
+      amber when out of range). On a map with no Set home there's no home
+      zone: the pattern plays as with a range of 0 (the map's edge margin
+      still holds) and the dashboard says "🏠 No home on this map: press Set
+      home";
     - **Set home** (since 1.19.4; one per map, saved, since 1.19.5): a button
       just for home, so starting and stopping a pattern never moves it. Add
       one with **🏠 Set home button** in Recordings (it goes on the selected
@@ -702,8 +701,8 @@ are gone with Wi-Fi readings).
       nothing that's playing stops: a playing pattern switches to it at once.
       Each map keeps its own (up to 16; the pad keeps them over restarts), and
       on a map with one, patterns always use it, never a home of their own.
-      A map without one still gets home where the pattern starts. **Forget
-      this map's home** on the dashboard removes this map's;
+      A map without one has no home (since 1.19.7). **Forget this map's
+      home** on the dashboard removes this map's;
     - **Home is a zone** (since 1.18.16): home ± the range is where it
       fights. Inside it, it fights mobs in reach where they are, walks to ones
       in sight (not into the safety band), and with nothing to fight it waits

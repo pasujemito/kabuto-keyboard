@@ -147,6 +147,7 @@ static void handleStatus(AsyncWebServerRequest* req) {
         p["smart"] = view.smart; p["action"] = view.action < 10 ? actions[view.action] : "attack";
         p["facing"] = view.facingLeft ? "left" : "right";
         if (view.haveHome) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; p["homePinned"] = view.homePinned; }
+        else if (view.homeRange) p["noHome"] = true;   // a home range, but no Set home on this map
         if (view.peak >= 0) p["peak"] = view.peak;
     }
     String out; serializeJson(d, out);

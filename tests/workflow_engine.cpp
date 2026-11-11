@@ -63,6 +63,8 @@ void run(MacroEngine& engine, std::vector<Step> steps) {
     assert(engine.callStack_.empty());
     assert(held.empty());
 }
+// Press Set home where the latest reading says you stand (the only way home is set).
+void pinHere(){homePinsLoad(nullptr,0);bool ok=homePin();assert(ok);}
 int main() {
     MacroEngine engine;
     engine.config().randomizedDelay=false;
@@ -415,7 +417,7 @@ int main() {
         // Drifted from home with no mobs: walks back (holds left), then waits; mobs return once home.
         // (The first tap sets the facing; any left press after it is the walk.)
         bool walked=false;int calls=0;
-        play([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}   // home: map x 300
+        play([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);pinHere();return;}   // home: map x 300
                  auto d=dirs();walked=walked||(d.size()>=2&&d.back()==L);
                  liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});   // drifted to 450
         assert(walked&&attacks()==3);
@@ -449,7 +451,7 @@ int main() {
         // (the test's draws give its minimum), not separate taps; it's let go
         // before attacking.
         q.walkHold={400,900};aware.setPattern(q);walked=false;calls=0;
-        bounded([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}
+        bounded([&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);pinHere();return;}
                  walked=walked||hopsWhileHeld(L)>=2;
                  liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,walked?320:450,500);});
         assert(walked&&heldFor(L,800)==1&&holds(L,250)==0&&attacks()==3&&held.empty());
@@ -489,12 +491,12 @@ int main() {
         q.approach=false;
         // A new map: home moves to where you arrive, so it doesn't walk back to the old map's spot.
         q.autoPausePermille=0;q.attacksPerSet={3,3};aware.setPattern(q);calls=0;mobsAt=millis()+2500;
-        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
+        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");pinHere();return;}
                  seen(millis()>=mobsAt?MOB_READ|MOB_LEFT:MOB_READ,millis()>=mobsAt,0,millis()>=mobsAt?40:-1,-1,900,"Ellinia");});
         assert(heldFor(L,250)==0&&heldFor(R,250)==0&&attacks()==3&&firstAttack()>=mobsAt);
         // Same map, same drift: walks home.
         calls=0;walked=false;
-        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");return;}
+        bounded([&]{if(++calls==1){seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");pinHere();return;}
                  walked=walked||heldFor(L,250)>=1;seen(walked?MOB_READ|MOB_LEFT:MOB_READ,walked,0,walked?40:-1,-1,walked?320:900,"Henesys");});
         assert(walked&&attacks()==3);
         // Home is a zone (home ± range, here 30% ± 10%): a mob inside it is fought where
@@ -505,7 +507,7 @@ int main() {
             r.dl=(mobs&MOB_LEFT)?40:-1;r.dr=(mobs&MOB_RIGHT)?40:-1;liveStatsUpdate(r);};
         q.walkHold={280,650};aware.setPattern(q);calls=0;
         uint32_t homeShownAt=0,noneFrom=0,mobsBack=0;
-        bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);return;}      // pressed here: home is 30%
+        bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);pinHere();return;}      // pressed here: home is 30%
                  PatternView v=patternViewSnapshot();if(v.haveHome&&v.home==300&&!v.homeOnMap)homeShownAt=millis();
                  if(attacks()<1){at(360,MOB_READ|MOB_RIGHT);return;}          // a mob 6% from home: fought where it is
                  if(!noneFrom){noneFrom=millis();mobsBack=noneFrom+2500;}
@@ -516,14 +518,14 @@ int main() {
         // further out: it stands still, no attacking the air and no walking, until a mob
         // turns up on the inside.
         {calls=0;uint32_t insideAt=0;
-         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);insideAt=millis()+2500;return;}
+         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_RIGHT);insideAt=millis()+2500;pinHere();return;}
                   at(380,millis()>=insideAt?MOB_READ|MOB_LEFT:MOB_READ|MOB_RIGHT);});   // a mob on the inside after 2.5 s
          assert(hopsWhileHeld(L)==0&&hopsWhileHeld(R)==0&&attacks()==3&&firstAttack()>=insideAt&&held.empty());}
         // Outside the zone (42%, 12% from home) with a mob in reach: no running back, it
         // fights its way back: jump-attacks with the homeward arrow held, sliding home
         // while the arrow is down, and stops holding it once just inside (39%).
         {calls=0;int x=420;uint32_t insideAt=0;
-         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_LEFT);return;}
+         bounded([&]{if(++calls==1){at(300,MOB_READ|MOB_LEFT);pinHere();return;}
                   bool l=std::find(held.begin(),held.end(),L)!=held.end();if(l&&x>350)--x;if(!insideAt&&x<=390)insideAt=millis();
                   at(x,MOB_READ|MOB_LEFT);});
          int whileReturning=0,afterwards=0;bool down=false;
@@ -551,7 +553,7 @@ int main() {
          // Smart, gliding: walking home runs straight into attacking, the arrow never let go.
          g.edgeMarginPermille=0;g.smart=true;g.homeRangePermille=100;g.sets={1,1};g.glidePermille=1000;g.walkHold={280,650};aware.setPattern(g);
          walked=false;calls=0;int wx=450;uint32_t lastStep=0;
-         playWith([](long){return 0L;},[&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);return;}
+         playWith([](long){return 0L;},[&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT,300,500);pinHere();return;}
                   walked=walked||hopsWhileHeld(L)>=2;
                   if(std::find(held.begin(),held.end(),L)!=held.end()&&wx>320&&millis()-lastStep>=20){--wx;lastStep=millis();}   // walking: 5% a second
                   liveStatsUpdate(500,500,-1,LIVE_OK,500,500,walked?MOB_READ|MOB_LEFT:MOB_READ,wx,500);});
@@ -560,7 +562,7 @@ int main() {
         // (arrow held, hopping), then attacks there; nothing is waited for.
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={3,3};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=100;g.walkHold={280,650};
          aware.setPattern(g);walked=false;calls=0;
-         playWith([](long){return 0L;},[&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,300,500);return;}   // home: map x 300
+         playWith([](long){return 0L;},[&]{if(++calls==1){liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,300,500);pinHere();return;}   // home: map x 300
                   walked=walked||hopsWhileHeld(L)>=1;
                   liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,walked?320:450,500);});   // drifted to 450, no mobs
          assert(walked&&attacks()==3&&held.empty());
@@ -568,24 +570,31 @@ int main() {
          g.homeRangePermille=0;aware.setPattern(g);calls=0;
          playWith([](long){return 0L;},[&]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ,calls==1?300:450,500);});
          assert(hopsWhileHeld(L)==0&&attacks()==3);}
-        // Home stays where the button set it. A map name misread for a moment ("-", or
-        // another name under 3 s) doesn't move it; a new map that stays does.
+        // Home stays where Set home put it. A map name misread for a moment ("-", or another
+        // name under 3 s) doesn't drop it; a new map that stays has its own Set home, or none.
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={6,6};g.skills.clear();g.potions.clear();g.smart=true;g.homeRangePermille=100;
          aware.setPattern(g);calls=0;bool moved=false;uint32_t t0=0;
+         homePinsLoad(nullptr,0);seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Henesys");assert(homePin());   // Set home in Henesys at 30%
          playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();uint32_t t=millis()-t0;
                   const char* map=t>1000&&t<1400?"-":t>2000&&t<3500?"Ellinia":"Henesys";   // flickers, and another name for 1.5 s
                   seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,map);
-                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home!=300)moved=true;});
+                  PatternView v=patternViewSnapshot();if(v.active&&(!v.haveHome||v.home!=300))moved=true;});
          assert(!moved&&attacks()==6);
-         g.attacksPerSet={10,10};aware.setPattern(g);calls=0;bool rehomed=false;   // long enough to see the 3 s pass
+         g.attacksPerSet={10,10};aware.setPattern(g);calls=0;bool none=false;   // long enough to see the 3 s pass
          playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();uint32_t t=millis()-t0;
                   bool there=t>1000;seen(MOB_READ|MOB_LEFT,1,0,40,-1,there?900:300,there?"Ellinia":"Henesys");   // really moved to Ellinia
+                  PatternView v=patternViewSnapshot();if(there&&t>5000&&v.active&&!v.haveHome)none=true;});
+         assert(none&&attacks()==10);                                      // no Set home in Ellinia: no home
+         seen(MOB_READ|MOB_LEFT,1,0,40,-1,900,"Ellinia");assert(homePin());   // Set home in Ellinia at 90%
+         calls=0;bool rehomed=false;
+         playWith([](long){return 0L;},[&]{if(++calls==1)t0=millis();uint32_t t=millis()-t0;
+                  bool there=t>1000;seen(MOB_READ|MOB_LEFT,1,0,40,-1,there?900:300,there?"Ellinia":"Henesys");
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home==900)rehomed=true;});
-         assert(rehomed&&attacks()==10);}
+         assert(rehomed&&attacks()==10);homePinsLoad(nullptr,0);}
         // Can't walk home within 10 s (a wall): home is kept, and walking back is tried again 20 s later.
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={3,3};g.skills.clear();g.potions.clear();g.smart=true;g.homeRangePermille=100;g.walkHold={280,650};
          aware.setPattern(g);calls=0;bool moved=false;uint32_t t0=0;
-         playWith([](long){return 0L;},[&]{if(++calls==1){t0=millis();seen(MOB_READ,0,0,-1,-1,300,"Henesys");return;}
+         playWith([](long){return 0L;},[&]{if(++calls==1){t0=millis();seen(MOB_READ,0,0,-1,-1,300,"Henesys");pinHere();return;}
                   seen(MOB_READ,0,0,-1,-1,450,"Henesys");   // drifted 15%, and walking never gets you closer
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home!=300)moved=true;
                   if(millis()-t0>45000)engine.stopFlag_=true;});   // walk 10 s, give up 20 s, walk 10 s again
@@ -596,7 +605,7 @@ int main() {
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={4,4};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=100;
          aware.setPattern(g);calls=0;bool sameSpot=true;
          playWith([](long){return 0L;},[&]{++calls;bool mapPos=calls<3||calls>6;   // map position, then the dot only, then the map position again
-                  liveStatsUpdate(500,500,-1,LIVE_OK,420,500,0,mapPos?1420:LIVE_NO_POS,500);
+                  liveStatsUpdate(500,500,-1,LIVE_OK,420,500,0,mapPos?1420:LIVE_NO_POS,500);if(calls==1)pinHere();
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome&&v.home!=(v.homeOnMap?1420:420))sameSpot=false;});
          assert(sameSpot&&hopsWhileHeld(L)==0&&hopsWhileHeld(R)==0&&attacks()==4);}
         // Support only (attack off): never jumps, attacks or presses an arrow; drinks by the
@@ -629,29 +638,22 @@ int main() {
          playWith([](long){return 0L;},[&]{liveStatsUpdate(800,800,-1,millis()>=dieAt?LIVE_DEAD:LIVE_OK);});
          assert(engine.stopFlag_&&held.empty());engine.stopFlag_=false;
          liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;}
-        // One button press playing the pattern again (a toggle button replays it): the
-        // replay keeps the home that press set, though you've moved since; a new press
-        // sets a new one where you are.
+        // Home only comes from Set home: pressing the pattern's button never sets one. With no
+        // Set home on the map there's no home, press after press (the dashboard says so); with
+        // one, every press uses it, wherever you stand.
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={2,2};g.skills.clear();g.potions.clear();g.homeRangePermille=100;
          Step once=dynamic;once.setPattern(g);
-         int secondHome=-1;bool second=false;calls=0;
-         auto replay=[&](std::vector<Step> steps,int x0,int x1){calls=0;testRandomHook=[](long){return 0L;};
-             testDelayHook=[&,x0,x1]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,calls<3?x0:x1,500,MOB_READ|MOB_LEFT);
-                 PatternView v=patternViewSnapshot();if(second&&v.active&&v.haveHome)secondHome=v.home;};
-             liveStatsUpdate(500,500,-1,LIVE_OK,x0,500,MOB_READ|MOB_LEFT);hidEvents.clear();
-             KeyBinding key;key.steps=steps;engine.oneShot_=true;engine.stopFlag_=false;
-             engine.keptHomes_.clear();engine.runMacro(key);testDelayHook={};testRandomHook={};};
-         // Two plays in one press: the second starts at 36% but keeps home 30%.
-         Step second1=once;std::vector<Step> twice{once,second1};
-         testDelayHook={};second=false;
-         {calls=0;testRandomHook=[](long){return 0L;};
-          testDelayHook=[&]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,calls<3?300:360,500,MOB_READ|MOB_LEFT);
-              PatternView v=patternViewSnapshot();if(engine.keptHomes_.count(g.id))second=true;if(second&&v.active&&v.haveHome)secondHome=v.home;};
-          liveStatsUpdate(500,500,-1,LIVE_OK,300,500,MOB_READ|MOB_LEFT);hidEvents.clear();
-          KeyBinding key;key.steps=twice;engine.oneShot_=true;engine.stopFlag_=false;engine.runMacro(key);testDelayHook={};testRandomHook={};}
-         assert(second&&secondHome==300);
-         // A new press: home is where you are now.
-         secondHome=-1;second=true;replay({once},360,360);assert(secondHome==360);}
+         homePinsLoad(nullptr,0);
+         auto press=[&](int x,bool& anyHome,int& seenHome,bool& noHome){anyHome=false;seenHome=-1;noHome=false;testRandomHook=[](long){return 0L;};
+             testDelayHook=[&,x]{liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_LEFT);
+                 PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){anyHome=true;seenHome=v.home;}if(v.active&&!v.haveHome&&v.homeRange)noHome=true;};
+             liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_LEFT);hidEvents.clear();
+             KeyBinding key;key.steps={once};engine.oneShot_=true;engine.stopFlag_=false;engine.runMacro(key);testDelayHook={};testRandomHook={};};
+         bool anyHome,noHome;int seenHome;
+         for(int x: {300,360,420}){press(x,anyHome,seenHome,noHome);assert(!anyHome&&noHome&&attacks()==2);}
+         liveStatsUpdate(500,500,-1,LIVE_OK,330,500,MOB_READ|MOB_LEFT);assert(homePin());   // Set home at 33%
+         for(int x: {300,360,420}){press(x,anyHome,seenHome,noHome);assert(anyHome&&seenHome==330&&!noHome);}
+         homePinsLoad(nullptr,0);}
         // Characters: a pattern using the active character's potions drinks with its key, and
         // two such patterns share the wait (switching patterns doesn't drink again); a pattern
         // with its own potions keeps its own.
@@ -675,11 +677,12 @@ int main() {
         // boundary 10%: the arrow is let go of past 37.5%, so it never leaves 20-40%.
         {DynamicPattern g=p;g.sets={2,2};g.attacksPerSet={8,8};g.skills.clear();g.potions.clear();g.glidePermille=1000;g.smart=false;g.homeRangePermille=100;
          aware.setPattern(g);int x=300,maxX=300,minX=300;calls=0;
+         liveStatsUpdate(500,500,-1,LIVE_OK,300,500,MOB_READ|MOB_RIGHT);pinHere();   // Set home at 30%
          playWith([](long){return 0L;},[&]{
              bool r=std::find(held.begin(),held.end(),R)!=held.end(),l=std::find(held.begin(),held.end(),L)!=held.end();
              if(++calls>1){x+=r?1:0;x-=l?1:0;}maxX=std::max(maxX,x);minX=std::min(minX,x);
              liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_RIGHT);});
-         assert(maxX<400&&minX>200&&attacks()==16&&held.empty());}
+         assert(maxX<400&&minX>200&&attacks()==16&&held.empty());homePinsLoad(nullptr,0);}
         // With a jump's momentum: a jump carries on through the air at the speed it took off
         // with (600 ms), readings come 40 ms late and only every 0.5%, and turns are taps
         // (a small step). Whether moving while attacking or not, with mobs either side, the
@@ -689,7 +692,7 @@ int main() {
             std::vector<std::pair<uint32_t,int>> pipe;uint32_t t0=millis(),flip=0;int side=0;
             auto step=[&](uint32_t to){while(last<to){uint32_t d=std::min<uint32_t>(to-last,5);last+=d;if(air&&last>=land)air=false;if(!air)vx=((r?1:0)-(l?1:0))*speed;x+=vx*d;}};
             auto read=[&]{StatsReading rd;rd.hp=rd.mana=800;rd.x=sent;rd.y=500;rd.mobs=MOB_READ|(side?MOB_RIGHT:MOB_LEFT);rd.ml=side?0:2;rd.mr=side?2:0;rd.dl=side?-1:40;rd.dr=side?40:-1;rd.ir=1;liveStatsUpdate(rd);};
-            read();
+            read();pinHere();   // Set home at 30%
             playWith([](long upper){return upper>1?upper/2:0L;},[&]{
                 uint32_t now=millis();
                 for(;seenEv<hidEvents.size();++seenEv){const HidEvent& e=hidEvents[seenEv];step(e.at);
@@ -704,7 +707,7 @@ int main() {
         {DynamicPattern g=p;g.sets={100,100};g.attacksPerSet={2,4};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=100;g.turnChancePermille=500;
          for(uint16_t glide: {0,600,1000})for(uint16_t range: {100,50}){g.glidePermille=glide;g.homeRangePermille=range;
              double worst=physics(g,30000,0.1);assert(worst<=0);}
-         assert(held.empty());}
+         assert(held.empty());homePinsLoad(nullptr,0);}
         // The map's edge the same way: "turn at map edges" 5%, moving while attacking towards
         // mobs on the left from 20%, sliding while an arrow is held: it stops near 5%, not 1%.
         {DynamicPattern g=p;g.sets={2,2};g.attacksPerSet={8,8};g.skills.clear();g.potions.clear();g.glidePermille=1000;g.smart=false;g.edgeMarginPermille=50;
@@ -714,19 +717,19 @@ int main() {
              if(++calls>1){x+=r?1:0;x-=l?1:0;}minX=std::min(minX,x);
              liveStatsUpdate(500,500,-1,LIVE_OK,x,500,MOB_READ|MOB_LEFT);});
          assert(minX>=40&&attacks()==16&&held.empty());}
-        // Home is set at the start of every pattern (not only Smart), for the
-        // dashboard and the game layer; a home from the dot is set again once map
-        // positions come, rather than compared with them.
+        // A Set home made from the minimap dot is shown on the dashboard and the game layer
+        // (every pattern, not only Smart), and kept as the same spot once map positions come.
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={4,4};g.skills.clear();g.potions.clear();aware.setPattern(g);
          int homeDot=-1,homeMap=-1;calls=0;
+         liveStatsUpdate(500,500,-1,LIVE_OK,420,500,0,LIVE_NO_POS,500);pinHere();   // Set home from the dot at 42%
          playWith([](long){return 0L;},[&]{++calls;liveStatsUpdate(500,500,-1,LIVE_OK,420,500,0,calls>3?1500:LIVE_NO_POS,500);
                   PatternView v=patternViewSnapshot();if(v.haveHome&&!v.homeOnMap)homeDot=v.home;if(v.haveHome&&v.homeOnMap)homeMap=v.home;
                   char form[48];homeReply(form,sizeof(form));if(v.haveHome&&v.homeOnMap)assert(std::string(form)=="home=1500&hm=1&hr=0");});
          assert(homeDot==420&&homeMap==1500);
-         char form[48];homeReply(form,sizeof(form));assert(!form[0]);}   // nothing playing: no home to tell
+         char form[48];homeReply(form,sizeof(form));assert(!form[0]);homePinsLoad(nullptr,0);}   // nothing playing: no home to tell
         // Set home: one home per map, where you stood. On its map it's always home, whatever
         // spot a pattern starts from, press after press; pinned again while playing it's taken
-        // up at once; another map's doesn't count (that map gets a home of its own), and
+        // up at once; another map's doesn't count (a map without one has no home), and
         // pinning there doesn't replace this one.
         {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={4,4};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=0;aware.setPattern(g);
          homePinsLoad(nullptr,0);homePinsTakeDirty();
@@ -734,7 +737,7 @@ int main() {
          PinnedHome pin=homePinned("Henesys");assert(pin.set&&pin.home==600&&pin.onMap&&std::string(pin.map)=="Henesys");
          assert(!homePinned("Ellinia").set&&homePinnedHere().home==600);
          for(int start: {300,450,820}){   // new presses from anywhere: home stays put
-             engine.keptHomes_.clear();bool always=true;
+             bool always=true;
              playWith([](long){return 0L;},[&,start]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,start,"Henesys");
                       PatternView v=patternViewSnapshot();if(v.active&&(!v.haveHome||v.home!=600||!v.homePinned))always=false;});
              assert(always&&attacks()==4);}
@@ -753,7 +756,7 @@ int main() {
          last=-1;
          playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Kerning_City");
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){last=v.home;pinnedLast=v.homePinned;}});
-         assert(last==300&&!pinnedLast);                                    // no Set home there: its own
+         assert(last==-1);                                                  // no Set home there: no home at all
          // Full: the one pinned longest ago makes room.
          for(int i=0;i<MAX_PINNED_HOMES;++i){char name[16];std::snprintf(name,sizeof(name),"Map_%d",i);seen(MOB_READ,0,0,-1,-1,100+i,name);assert(homePin());}
          assert(!homePinned("Henesys").set&&!homePinned("Ellinia").set&&homePinned("Map_0").home==100&&homePinned("Map_15").home==115);

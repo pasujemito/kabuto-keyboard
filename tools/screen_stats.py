@@ -79,7 +79,7 @@ A minimap that slides as you walk is followed, so your map position keeps up.
 Run the self-test (no screen or pad needed):
     python screen_stats.py --selftest
 """
-import argparse, json, os, queue, random, re, sys, threading, time, urllib.error, urllib.parse, urllib.request
+import argparse, json, os, queue, random, re, sys, threading, time, urllib.error, urllib.parse, urllib.request, zlib
 
 BARS = (("hp", "HP"), ("mana", "Mana"), ("xp", "XP"))
 CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
@@ -660,6 +660,7 @@ class MapReader:
     def __init__(self, maps, light=170, min_score=0.8):
         self.maps = {name: [int(r, 16) for r in m["rows"]] for name, m in maps.items() if name_taught(m)}
         self.light, self.min_score, self.last, self.name = light, min_score, None, ""
+        self.mark, self.unnamed = "", {}   # a name it wasn't taught: its mark, and the ones seen so far
 
     def read(self, raw, w, h, limit=None):
         rows = text_rows(raw, w, h, self.light, limit)
@@ -667,7 +668,30 @@ class MapReader:
             self.last = rows
             score, name = max([(rows_score(rows, m), n) for n, m in sorted(self.maps.items())] or [(0, "")])
             self.name = name if score >= self.min_score else ""
+            self.mark = "" if self.name else self.unnamed_mark(rows, w if limit is None else max(0, min(w, limit)))
         return self.name
+
+    def unnamed_mark(self, rows, width):
+        """A stand-in name for a map it wasn't taught, from the name's own pixels
+        ("unnamed-3fa2c1"), so the pad can still tell one map from another: a
+        Set home made on one must never show up on the next. The same name
+        gives the same mark (also one seen a pixel off, this run); "" when the
+        area holds no writing (too few or too many light pixels)."""
+        lit = ones(rows)
+        if lit < UNNAMED_MIN_PIXELS or lit * 2 > width * len(rows):
+            return ""
+        for mark, seen in self.unnamed.items():
+            if rows_score(rows, seen) >= self.min_score:
+                return mark
+        mark = UNNAMED + "%06x" % (zlib.crc32(",".join("%x" % r for r in rows).encode()) & 0xFFFFFF)
+        if len(self.unnamed) < 64:
+            self.unnamed[mark] = rows
+        return mark
+
+UNNAMED, UNNAMED_MIN_PIXELS = "unnamed-", 20
+def untaught(name):
+    """A map the script wasn't taught: "-" (no name read) or an unnamed mark."""
+    return name == "-" or str(name or "").startswith(UNNAMED)
 
 def safe_name(name):
     """A map or mob name as the pad keeps it: letters, digits, - and _ (spaces
@@ -1799,7 +1823,8 @@ class Screen:
         if found.get("mn"):
             out["mn"] = safe_name(found["mn"])
         if name is not None:
-            out["map"] = safe_name(name) if name else "-"   # "-": a map you haven't taught
+            # A map you haven't taught: its mark (so the pad still knows it's another map), or "-" with no name to go by.
+            out["map"] = safe_name(name) if name else (self.maps.mark if self.maps and self.maps.mark else "-")
         return out
 
 # ---- setup --------------------------------------------------------------------
@@ -2768,13 +2793,13 @@ def describe(r, xp=""):
     if r.get("mobs") is not None:
         parts.append("mobs " + (r["mobs"] or "-"))
     if r.get("mobs") is None and r.get("state", "ok") == "ok":
-        parts.append("mobs: not looking" + (" (map not taught: F9)" if r.get("map") == "-" else ""))
+        parts.append("mobs: not looking" + (" (map not taught: F9)" if untaught(r.get("map")) else ""))
     if r.get("ml") is not None:
         near = lambda side: "%d%%" % r["d" + side] if r.get("d" + side) is not None else "-"
         parts.append("in reach %s (%d)" % (r["ir"] if r.get("ir") is not None else "?", r["ml"] + r["mr"]))
         parts.append("seen L%d (%s) R%d (%s)" % (r["ml"], near("l"), r["mr"], near("r")) + (" " + r["mn"] if r.get("mn") else ""))
     if r.get("map") is not None:
-        parts.append("map " + (r["map"] if r["map"] != "-" else "not taught"))
+        parts.append("map " + (r["map"] if not untaught(r["map"]) else "not taught"))
     if r.get("state", "ok") != "ok":
         parts.append("!! " + STATE_TEXT.get(r["state"], r["state"].upper()))
     return "  ".join(parts)
@@ -3188,7 +3213,7 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp="", home=N
                 out.append(Cell(xp, BAR_COLORS["xp"], 136))
     if r.get("state", "ok") != "ok":   # first after the bars: the rest (mobs, map) may be cut
         out.append(Cell(STATE_TEXT.get(r["state"], r["state"].upper()), RED, None, "warn"))
-    if r.get("map") == "-":
+    if untaught(r.get("map")):
         out.append(Cell("new map, mobs not seen: F9" if maps else "map not taught", RED, 186, "pin",
                         "new map: F9" if maps else "map not taught"))
     elif r.get("map"):
@@ -3208,7 +3233,7 @@ def layer_status(r, link, game=None, maps=(), hint=None, tol=None, xp="", home=N
                             RED if d <= 100 else DIM, 156, "target", "%s %d%%" % (who, d)))
     elif r.get("mobs") is not None:
         out.append(Cell("mobs " + (r["mobs"] or "-"), INK, 60, "mob", r["mobs"] or "-"))
-    elif r.get("map") != "-":   # nothing to say how many: smart can't stop for them
+    elif not untaught(r.get("map")):   # nothing to say how many: smart can't stop for them
         out.append(Cell("not looking for mobs" + (": F9 on this map" if maps else ""), RED, None, "mob",
                         "no mobs" + (": F9" if maps else "")))
     if tol is not None:   # how close a colour must be to a mob's (F6 looser, F7 stricter)
@@ -4154,7 +4179,18 @@ def selftest():
     for x, y, x1, y1 in ellinia:
         paint(fake.px, 800, 600 + x, 92 + y, 600 + x1, 92 + y1, white)
     r = screen.read()
-    assert r["map"] == "-" and r["mobs"] == "" and "ml" not in r and "not taught" in describe(r), r   # the setup's (green) mobs: none here
+    assert untaught(r["map"]) and r["mobs"] == "" and "ml" not in r and "not taught" in describe(r), r   # the setup's (green) mobs: none here
+    # A map it wasn't taught still gets a name of its own (from its name's pixels), so the pad can
+    # tell it from the next one: a Set home made on one map must never show up on another.
+    reader = MapReader({})
+    name_a = [0b0111001110011100111, 0b0100101001010010100, 0b0111001110011100111, 0b0100101001010010100, 0b0100101001010010111]
+    name_b = [0b1110000111000011100, 0b1010000101000010100, 0b1110011101110011100, 0b0010010100010010000, 0b1110011101110011100]
+    mark_a, mark_b = reader.unnamed_mark(name_a, 60), reader.unnamed_mark(name_b, 60)
+    assert mark_a.startswith(UNNAMED) and mark_b.startswith(UNNAMED) and mark_a != mark_b, (mark_a, mark_b)
+    assert reader.unnamed_mark(name_a, 60) == mark_a and MapReader({}).unnamed_mark(name_a, 60) == mark_a   # the same after a restart
+    assert reader.unnamed_mark([row << 1 for row in name_a], 60) == mark_a          # seen a pixel off: still that map
+    assert reader.unnamed_mark([0, 0, 1, 0, 0], 60) == "" and reader.unnamed_mark([(1 << 60) - 1] * 5, 60) == ""   # no writing there
+    assert untaught("-") and untaught(mark_a) and not untaught("Henesys") and safe_name(mark_a) == mark_a and len(mark_a) <= 23
     # A map with its own minimap size: read from the setup's top-left corner,
     # 100 x 50 here, so the same dot is further across; the outline follows.
     paint(fake.px, 800, 600, 92, 660, 106, dark)

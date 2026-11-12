@@ -798,6 +798,17 @@ int main() {
          playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"Kerning_City");
                   PatternView v=patternViewSnapshot();if(v.active&&v.haveHome){last=v.home;pinnedLast=v.homePinned;}});
          assert(last==-1);                                                  // no Set home there: no home at all
+         // A Set home made where no map name was read ("-") is never borrowed by a map whose name is
+         // read (a taught one, or the script's stand-in for an untaught one): it was some other map's.
+         seen(MOB_READ|MOB_LEFT,1,0,40,-1,250,"-");assert(homePin()&&homePinned("").home==250);
+         for(const char* map: {"Kerning_City","unnamed-3fa2c1"}){last=-1;
+             playWith([](long){return 0L;},[&,map]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,map);
+                      PatternView v=patternViewSnapshot();if(v.active&&v.haveHome)last=v.home;});
+             assert(last==-1);}
+         seen(MOB_READ|MOB_LEFT,1,0,40,-1,640,"unnamed-3fa2c1");assert(homePin()&&homePinned("unnamed-3fa2c1").home==640&&!homePinned("unnamed-77aa01").set);   // each untaught map: its own
+         last=-1;playWith([](long){return 0L;},[&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1,300,"-");
+                  PatternView v=patternViewSnapshot();if(v.active&&v.haveHome)last=v.home;});
+         assert(last==250);   // still no name to go by: the nameless one, as before
          // Full: the one pinned longest ago makes room.
          for(int i=0;i<MAX_PINNED_HOMES;++i){char name[16];std::snprintf(name,sizeof(name),"Map_%d",i);seen(MOB_READ,0,0,-1,-1,100+i,name);assert(homePin());}
          assert(!homePinned("Henesys").set&&!homePinned("Ellinia").set&&homePinned("Map_0").home==100&&homePinned("Map_15").home==115);

@@ -2358,6 +2358,8 @@ async function pollMacroLog(){
 }
 /* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
 // What a playing dynamic pattern is doing, as /api/status reports it.
+// A map the screen reader wasn't taught: "-" (no name read) or its stand-in name ("unnamed-3fa2c1").
+const untaughtMap=name=>name==='-'||String(name||'').startsWith('unnamed-');
 const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Back into the home zone',approach:'🚶 Walking to mobs',break:'☕ Taking a break',
   noreadings:'⚠ No readings from the PC: not attacking',support:'🧪 Support only: potions & skills',nodetector:'⚠ No mob detection on this map: not attacking'};
 function runningLabel(){
@@ -2382,7 +2384,7 @@ function renderLiveStats(live,pattern=status.pattern){
   // Mobs in your reach first, everything seen in brackets: what Smart attacks is the first number.
   if(fresh&&live.ml>=0&&live.mr>=0){const seen=live.ml+live.mr,inReach=live.ir>=0?live.ir:((live.mobs&1?1:0)+(live.mobs&2?1:0));
     chip(`⚔ In reach ${inReach} (${seen})`,inReach?'attack':'dim','Mobs inside your reach now, and (in brackets) all the mobs you can see');}
-  if(fresh&&live.map)chip(live.map==='-'?'🗺 Map not taught':'🗺 '+mobName(live.map),live.map==='-'?'dim':'','The map the screen reader recognised by its name');
+  if(fresh&&live.map)chip(untaughtMap(live.map)?'🗺 Map not taught':'🗺 '+mobName(live.map),untaughtMap(live.map)?'dim':'',untaughtMap(live.map)?'A map the screen reader wasn\'t taught. It still tells it apart from other maps, so its Set home is its own':'The map the screen reader recognised by its name');
   box.appendChild(head);
   if(!live)return;
   const pct=t=>(t/10).toFixed(t%10?1:0)+'%';
@@ -2434,7 +2436,7 @@ function renderLiveStats(live,pattern=status.pattern){
   }else if(fresh){
     // No counts: say why, so "keeps attacking" has an answer.
     const warn=el('div','live-mobs live-warn');
-    warn.textContent='👾 Mobs not counted: '+(live.map==='-'?'this map isn\'t taught. On it, press Which map (F9) and pick it.':
+    warn.textContent='👾 Mobs not counted: '+(untaughtMap(live.map)?'this map isn\'t taught. On it, press Which map (F9) and pick it.':
       !(live.mobs&8)?'no mob detection on this map. Teach it with Which map (F9), with its mobs in map.json.':
       'only sides in reach (an older mob setup). Teach the map with mob sprites for counts and distances.');
     box.appendChild(warn);

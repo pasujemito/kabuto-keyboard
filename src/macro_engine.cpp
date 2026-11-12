@@ -543,8 +543,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // up at once when the button is pressed while playing. One pinned where the map's
                 // name wasn't read counts until this pattern sees the map change.
                 uint32_t pinSeen=0;bool movedMap=false;
+                // A map whose name is read has its own Set home or none: one made where no name
+                // was read is never borrowed (it belonged to some other map).
                 auto pinFor=[&]{
-                    if(!lastMap.empty()){PinnedHome p=homePinned(lastMap.c_str());if(p.set)return p;}
+                    if(!lastMap.empty())return homePinned(lastMap.c_str());
                     if(!movedMap){PinnedHome p=homePinned("");if(p.set)return p;}
                     return PinnedHome();
                 };

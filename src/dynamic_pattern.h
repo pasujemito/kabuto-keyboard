@@ -58,6 +58,14 @@ struct DynamicPattern {
     bool charKeys = false, charPotions = false, charSkills = false;
     DynamicRange walkHold{280,650};   // smart: walking (home or to mobs) holds the arrow, jumping after each of these
     uint16_t glidePermille = 0;       // share of sets moving while jump-attacking (arrow held); >0 also turns in the air
+    // A rhythm that never settles (2.0; patterns saved before play exactly as they did).
+    uint16_t peakPermille = 500;         // where in a timing range most draws land (500 = the middle; lower = quick, with a long tail)
+    uint16_t hesitationPermille = 0;     // share of gaps after an attack stretched HESITATION times (a moment's hesitation)
+    uint16_t wobblePermille = 0;         // each play shifts every timing range by up to this much, so no two plays share an average
+    uint16_t breakChancePermille = 0;    // after a set: the chance of a short break of breakMs
+    DynamicRange breakMs{700,2500};
+    DynamicRange restEvery{0,0};         // a longer rest this often (ms; 0-0 = off), lasting restMs
+    DynamicRange restMs{8000,30000};
     // Defaults match patterns saved before keys were configurable.
     DynamicKey jump = dynamicModifier(0x04);     // KM_LALT
     DynamicKey attack = dynamicModifier(0x01);   // KM_LCTRL
@@ -115,13 +123,42 @@ inline int32_t tempoDriftStep(int32_t offset, uint16_t drift, int32_t noise) {
     return offset > limit ? limit : offset < -limit ? -limit : offset;
 }
 
-// Inverse CDF of a symmetric triangular distribution, quantized to integer
+// Inverse CDF of a triangular distribution, quantized to integer
 // milliseconds/counts. Draw is in [0, 1000000], including both endpoints.
-inline uint32_t triangularSample(DynamicRange range, uint32_t draw) {
+// `peak` (permille of the range) is where most draws land: 500 is symmetric
+// (counts, and patterns from before 2.0); lower leans quick with a longer tail
+// on the slow side, as a person's timings do.
+inline uint32_t triangularSample(DynamicRange range, uint32_t draw, uint16_t peak = 500) {
     if (range.min == range.max) return range.min;
     const double u = (draw > 1000000 ? 1000000 : draw) / 1000000.0;
+    const double m = (peak > 1000 ? 1000 : peak) / 1000.0;
     const double span = range.max - range.min;
-    const double value = u < .5 ? range.min + span * std::sqrt(u / 2.0)
-                                : range.max - span * std::sqrt((1.0-u) / 2.0);
+    const double value = u < m ? range.min + span * std::sqrt(u * m)
+                               : range.max - span * std::sqrt((1.0-u) * (1.0-m));
     return static_cast<uint32_t>(std::lround(value));
+}
+
+// A hesitation: the gap after an attack, this many times as long (permille).
+const DynamicRange HESITATION{1500,3000};
+inline uint32_t hesitate(uint32_t gap, uint32_t timesPermille) { return (uint32_t)((uint64_t)gap * timesPermille / 1000); }
+
+// Per-play wobble: a timing range moved as a whole by `offset` permille (within
+// +/-wobble), so one play runs a little quicker or slower than the next. Never
+// past 90 s (the longest hold), never out of order.
+inline DynamicRange wobbleRange(DynamicRange range, int32_t offset) {
+    auto scale = [offset](uint32_t v) {
+        int64_t out = (int64_t)v * (1000 + offset) / 1000;
+        return (uint32_t)(out < 0 ? 0 : out > 90000 && v <= 90000 ? 90000 : out);
+    };
+    DynamicRange out{scale(range.min), scale(range.max)};
+    if (out.max < out.min) out.max = out.min;
+    return out;
+}
+// The pattern as this play runs it: each timing range wobbled by its own draw.
+// `draw(n)` returns a whole number in [0, n).
+template <typename Draw> inline void wobblePattern(DynamicPattern& p, Draw draw) {
+    if (!p.wobblePermille) return;
+    const int32_t w = p.wobblePermille;
+    for (DynamicRange* r : {&p.jumpToAttack, &p.attackToJumpUp, &p.jumpUpToAttackUp, &p.comboGap, &p.directionHold, &p.directionAfter, &p.walkHold})
+        *r = wobbleRange(*r, (int32_t)draw(2 * w + 1) - w);
 }

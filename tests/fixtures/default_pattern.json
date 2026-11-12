@@ -34,6 +34,22 @@
  ],
  "turn_chance": 0.85,
  "tempo_drift": 0.15,
+ "peak": 0.35,
+ "hesitation": 0.03,
+ "wobble": 0.08,
+ "break_chance": 0.06,
+ "break_ms": [
+  700,
+  2500
+ ],
+ "rest_every_ms": [
+  360000,
+  840000
+ ],
+ "rest_ms": [
+  8000,
+  30000
+ ],
  "shuffle_skills": true,
  "keys": {
   "jump": "ALT",

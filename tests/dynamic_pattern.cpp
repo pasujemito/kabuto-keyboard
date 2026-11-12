@@ -14,6 +14,21 @@ int main(){
     assert(middle>edge*2);assert(total/100001>49.9&&total/100001<50.1);
     // Counts use the same sampler and never leave the configured integer range.
     for(uint32_t draw=0;draw<=1000000;draw+=97){auto n=triangularSample({2,10},draw);assert(n>=2&&n<=10);}
+    // A peak off the middle (2.0): the same ends, most draws near the peak, the mean pulled towards it
+    // (a triangle's mean is (min + peak + max) / 3), a longer tail on the far side. 500 is the old sampler.
+    assert(triangularSample({45,120},0,350)==45&&triangularSample({45,120},1000000,350)==120&&triangularSample({45,120},500000,500)==83);
+    {double sum=0;unsigned low=0,n=0;
+     for(uint32_t draw=0;draw<=1000000;draw+=10){auto v=triangularSample({0,100},draw,350);assert(v<=100);sum+=v;low+=v<50;++n;}
+     assert(sum/n>44.5&&sum/n<45.5&&low>n*6/10);
+     assert(triangularSample({0,100},350000,350)==35);   // the peak itself: 35% of draws fall below it
+     assert(triangularSample({0,100},1000000,0)==100&&triangularSample({0,100},0,1000)==0&&triangularSample({0,100},1000000,1000)==100);}
+    // Hesitation and per-play wobble.
+    assert(hesitate(600,1500)==900&&hesitate(600,3000)==1800&&HESITATION.min==1500&&HESITATION.max==3000);
+    {DynamicRange r=wobbleRange({510,760},-80);assert(r.min==469&&r.max==699);r=wobbleRange({510,760},0);assert(r.min==510&&r.max==760);
+     r=wobbleRange({80000,90000},300);assert(r.min==90000&&r.max==90000);   // never past the longest hold
+     DynamicPattern w;w.wobblePermille=0;wobblePattern(w,[](int32_t){return 0;});assert(w.comboGap.min==510);   // off: untouched
+     w.wobblePermille=100;wobblePattern(w,[](int32_t n){return n-1;});assert(w.comboGap.min==561&&w.comboGap.max==836&&w.jumpToAttack.max==132);
+     assert(w.attacksPerSet.min==2&&w.sets.max==12);}   // counts never wobble
     // Tempo drift reverts toward 1.0x and never leaves +/-drift.
     assert(tempoDriftStep(100,150,0)==90&&tempoDriftStep(-100,150,0)==-90);
     assert(tempoDriftStep(150,150,75)==150&&tempoDriftStep(-150,150,-75)==-150);

@@ -3,6 +3,71 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 2.0.0
+
+A major release because you asked for one: nothing saved breaks. Patterns,
+recordings and Set homes from 1.x load and play exactly as before; the new
+settings are off in them until you switch them on (or pick a **Start from**
+preset). **Update the PC script too.**
+
+- 🏠 **Home no longer turns up by itself** (two causes, both fixed):
+  - On a map the screen reader wasn't taught, the map's name read as "-", and
+    every such map shared one Set home: set home on one map, and the next
+    untaught map had a home at the same spot without you pressing anything
+    (kept over restarts, too). Now the PC script gives an untaught map a
+    stand-in name made from its name's own pixels (`unnamed-680edc`), so every
+    map has its own Set home, taught or not. On your Perion videos the map
+    reads as the same stand-in name in all 529 frames. A Set home made where
+    no name was read is never borrowed by a map whose name is read
+  - The script counted how far the minimap had "slid", for games whose
+    minimap scrolls. MapleStory's shows the whole map and never slides, so
+    one misjudged view shifted every map position from then on, saved homes
+    with it. For MapleStory the dot is now the map position, always
+    (`"sliding_minimap": true` in `kabuto-bars.json` turns the count back on
+    for a game that needs it)
+  - A Set home saved by 1.x on an untaught map can't be told which map it was
+    for: press Set home once more on the maps you use
+- ☕ **A rhythm that never settles** (new settings in every pattern, under
+  **Natural rhythm**; all work without the PC screen reader):
+  - **Short break** (new patterns: 6% chance after a set, 0.7–2.5 s): it just
+    stops for a moment, nothing held. With the screen reader, not while HP
+    reads under 40%
+  - **Rest** (every 6–14 min, for 8–30 s): a longer stop. The timer carries
+    on over repeats of a toggle; not playing for half a minute counts as a
+    rest. With the screen reader it waits until no mob is in reach and HP
+    isn't low, and ends when a mob comes into reach (cut before half of it,
+    the remainder is taken later). Potions are still drunk by the bars
+  - **Hesitation** (3% of attacks): the pause after an attack is 1.5–3 times
+    as long
+  - **Timing peak** (35%): timings lean quick with a longer slow tail, as a
+    person's do, instead of piling up in the middle of each range
+  - **Different every play** (8%): each play shifts every timing range a
+    little quicker or slower, so no two plays have the same average
+  - The dashboard shows "☕ Taking a break"; the pad's log says "a short
+    break", "resting" and "rest cut short: a mob came close"
+- 📱 **The page, phone first**:
+  - The pattern editor fills the screen on a phone, with chips along the top
+    that jump to a section (Basics, Keys, Rhythm, Timing, Home, Screen,
+    Potions, Skills) and **Apply** always in reach at the bottom
+  - It opens compact: a setting's explanation, choices and default show
+    while you're on that setting. **ⓘ Explain** opens them all (remembered)
+  - What's happening now (notifications, bars, mobs, home) is at the top of
+    the Buttons tab, above the buttons
+  - Recordings: New recording, Dynamic pattern and Import in one row; Storage,
+    Home Wi-Fi and Updates grouped in one card
+  - The Home section said home is set each time you press the button; it now
+    says what's true since 1.19.7 (only Set home sets it)
+  - On a PC window about 1280 px wide the Assign column was cut off at the
+    left: fixed
+- 🧪 Scenarios: a new one for breaks and rests. Three expectations changed,
+  on purpose: "Zone overlapping the map edge" allows one turn step into the
+  margin (215 px, as the two other edge scenarios already did; with more
+  seeds the old code reached 226 px too, the 230 px limit only held by luck);
+  "Knocked out of the zone" now puts a mob next to where you land and
+  requires that it never walks home (how many attacks land before it's back
+  inside, about a second, was luck: 2 of 24 seeds had none before this
+  release)
+
 ## 1.19.7
 
 - 🏠 **Home only comes from the Set home button**: pressing a pattern's

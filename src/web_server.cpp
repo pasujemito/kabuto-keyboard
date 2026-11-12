@@ -143,8 +143,8 @@ static void handleStatus(AsyncWebServerRequest* req) {
     PatternView view = patternViewSnapshot();
     if (view.active) {
         JsonObject p = d["pattern"].to<JsonObject>();
-        static const char* const actions[] = {"attack", "wait", "home", "home", "pause", "approach", "approach", "noreadings", "nodetector", "support"};
-        p["smart"] = view.smart; p["action"] = view.action < 10 ? actions[view.action] : "attack";
+        static const char* const actions[] = {"attack", "wait", "home", "home", "pause", "approach", "approach", "noreadings", "nodetector", "support", "break"};
+        p["smart"] = view.smart; p["action"] = view.action < 11 ? actions[view.action] : "attack";
         p["facing"] = view.facingLeft ? "left" : "right";
         if (view.haveHome) { p["home"] = view.home; p["homeOnMap"] = view.homeOnMap; p["homeRange"] = view.homeRange; p["homePinned"] = view.homePinned; }
         else if (view.homeRange) p["noHome"] = true;   // a home range, but no Set home on this map

@@ -15,7 +15,7 @@ firmware updates from this repo's GitHub releases.
 | --- | --- |
 | `src/main.cpp` | setup/loop, key matrix scan, status LED |
 | `src/macro_engine.*` | step model and playback (incl. dynamic patterns) |
-| `src/dynamic_pattern.h` | pattern struct, characters (`Character`, `withCharacter`), triangular sampler, tempo drift (pure) |
+| `src/dynamic_pattern.h` | pattern struct, characters (`Character`, `withCharacter`), triangular sampler (with a peak), tempo drift, hesitation, per-play wobble (pure) |
 | `src/storage.*` | LittleFS + JSON parse/validate/save of `/macros.json` |
 | `src/web_server.*` | REST API; serves the gzipped UI from firmware |
 | `src/updater.*` | GitHub release checks, signed installs, rollback |
@@ -24,7 +24,7 @@ firmware updates from this repo's GitHub releases.
 | `src/access_logic.h` | PIN rules, login lockout, cookie parsing (pure) |
 | `src/update_logic.h` | version/payload/rollback rules (pure) |
 | `src/live_stats.*` | latest readings from the PC (bars, game state incl. the test popup, minimap x/y and map position, mob sides/counts/distances, map name) and what a playing pattern is doing (dashboard) |
-| `src/stats_logic.h` | XP rate, live potions, stop reasons, notifications, edge/mob facing, stuck, smart decisions, auto-pause (pure) |
+| `src/stats_logic.h` | XP rate, live potions, stop reasons, notifications, edge/mob facing, stuck, smart decisions, auto-pause, breaks and rests (pure) |
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
@@ -94,7 +94,10 @@ deliberately and explain it in plain words (see tests/README.md).
   `minimap`, which F9 teaching (size) or F12 (a hand-marked box with
   `left`/`top`) fills in. Machine-learned data (name pixels,
   mob colours) stays in `kabuto-bars.json`. Maps are told apart by the name's
-  pixels (no OCR); the pad only gets the name. With numpy (optional, never
+  pixels (no OCR); the pad only gets the name, and an untaught map gets a
+  stand-in name from those pixels (`unnamed-...`, `untaught()` / `untaughtMap`
+  in the UI) so Set homes stay per map. MapleStory's minimap never slides
+  (`whole_map`): there the dot is the map position. With numpy (optional, never
   required: CI has none), mobs are found by shape from their animation frames
   (`mob.png` + `mob.*.png`) and you by your name tag; numpy-only code must
   stay behind `numpy_or_none()` and its self-tests skip without it.

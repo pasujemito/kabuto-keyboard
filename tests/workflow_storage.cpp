@@ -109,6 +109,14 @@ int main(){
     String drifting(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"d","tempo_drift":0.15,"skills":[]}}]}]}]})");
     assert(saveRawJson(drifting,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
     assert(roundtrip.layers[0].keys[0].steps[0].pattern()->tempoDriftPermille==150);
+    // Before 2.0: no hesitation, wobble, breaks or rests, and timings peak in the middle.
+    {const DynamicPattern* old=roundtrip.layers[0].keys[0].steps[0].pattern();
+     assert(old->peakPermille==500&&!old->hesitationPermille&&!old->wobblePermille&&!old->breakChancePermille&&!old->restEvery.max);}
+    String lively(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"d","peak":0.35,"hesitation":0.03,"wobble":0.08,"break_chance":0.06,"break_ms":[700,2500],"rest_every_ms":[360000,840000],"rest_ms":[8000,30000],"skills":[]}}]}]}]})");
+    assert(saveRawJson(lively,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
+    {const DynamicPattern* q=roundtrip.layers[0].keys[0].steps[0].pattern();
+     assert(q->peakPermille==350&&q->hesitationPermille==30&&q->wobblePermille==80&&q->breakChancePermille==60&&q->breakMs.min==700&&q->breakMs.max==2500);
+     assert(q->restEvery.min==360000&&q->restEvery.max==840000&&q->restMs.min==8000&&q->restMs.max==30000);}
     // Screen reader keys on the pad: "tool" steps keep their key; unknown keys are refused.
     String tools(R"J({"layers":[{"keys":[{"steps":[{"type":"call","workflow":"m"}]}]}],"workflows":[{"id":"m","name":"Mark (F8)","steps":[{"type":"tool","key":"mark"}]},{"id":"h","steps":[{"type":"tool","key":"hide"}]}]})J");
     assert(saveRawJson(tools,err));assert(loadConfig(cfg));
@@ -167,6 +175,13 @@ int main(){
       R"({"id":"p","walk_hold":[300,6000],"skills":[]})",
       R"({"id":"p","glide":1.5,"skills":[]})",
       R"({"id":"p","glide":true,"skills":[]})",
+      R"({"id":"p","peak":1.2,"skills":[]})",
+      R"({"id":"p","hesitation":0.6,"skills":[]})",
+      R"({"id":"p","wobble":0.31,"skills":[]})",
+      R"({"id":"p","break_chance":2,"skills":[]})",
+      R"({"id":"p","break_ms":[50,400],"skills":[]})",
+      R"({"id":"p","rest_every_ms":[10000,60000],"skills":[]})",
+      R"({"id":"p","rest_ms":[500,2000],"skills":[]})",
       R"({"id":"p","attack":"no","skills":[]})",
       R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":["C"]}],"skills":[]})",
       R"({"id":"p","potions":[{"id":"hp","key":"C","backup_keys":["B","B"]}],"skills":[]})",

@@ -142,7 +142,7 @@ const uint32_t MOVE_GUARD_MS = 40;     // while moving, where you are is looked 
 const uint32_t MAP_CHANGE_MS = 3000;   // another map's name must hold this long before home moves there
 const uint32_t HOME_RETRY_MS = 20000;  // couldn't walk home in 10 s: home is kept, walking back tried again after this
 enum SmartAction : uint8_t { SMART_ATTACK, SMART_WAIT, SMART_WALK_LEFT, SMART_WALK_RIGHT, SMART_PAUSE, SMART_APPROACH_LEFT, SMART_APPROACH_RIGHT,
-                             SMART_NO_READINGS, SMART_NO_DETECTOR, SMART_SUPPORT };
+                             SMART_NO_READINGS, SMART_NO_DETECTOR, SMART_SUPPORT, SMART_BREAK };
 const uint32_t SUPPORT_CHECK_MS = 1000;   // support only (attack off): potions and skills are looked at this often
 struct SmartInput {
     bool fresh = false;
@@ -285,6 +285,42 @@ struct AutoPause {
         if (!paused && !spent && seen > 0 && (uint32_t)seen * 1000 < (uint32_t)peak * share) { paused = true; since = now; }
         return paused;
     }
+};
+
+// ---- breaks and rests ---------------------------------------------------------
+// A person stops now and then: a short break after some sets (the pattern's
+// chance), and a longer rest every so often (its timer). Both work on their own.
+// With the screen reader: neither starts while HP reads under BREAK_MIN_HP (a
+// short break is a couple of seconds, so mobs about don't stop it; low health
+// does), and a rest also waits until no mob is in reach (restSafe). A short
+// break still owed after BREAK_OWED_MS is forgotten (the moment has passed); a
+// rest stays owed until it's safe. A rest ends early when a mob comes into
+// reach (restOver): cut before half of it, the remainder is owed again. Not
+// playing for REST_IDLE_MS counts as having rested.
+const uint32_t BREAK_OWED_MS = 15000;
+const uint32_t REST_IDLE_MS = 30000;
+const int BREAK_MIN_HP = 400;   // tenths of a percent
+enum BreakKind : uint8_t { BREAK_NONE, BREAK_SHORT, BREAK_REST };
+inline bool mobInReach(bool fresh, uint8_t mobs) { return fresh && (mobs & MOB_READ) && (mobs & (MOB_LEFT | MOB_RIGHT)); }
+inline bool breakSafe(bool fresh, int hp) { return !(fresh && hp >= 0 && hp < BREAK_MIN_HP); }
+inline bool restSafe(bool fresh, int hp, uint8_t mobs) { return breakSafe(fresh, hp) && !mobInReach(fresh, mobs); }
+inline bool restOver(bool fresh, uint8_t mobs) { return mobInReach(fresh, mobs); }
+struct Breaks {
+    uint32_t shortMs = 0, shortAt = 0;   // a short break owed: how long, and since when
+    uint32_t restMs = 0;                 // a rest owed: how long (0: none)
+    uint32_t length = 0;                 // of the one take() just handed out
+    void oweShort(uint32_t ms, uint32_t now) { if (!shortMs && ms) { shortMs = ms; shortAt = now; } }
+    void oweRest(uint32_t ms) { if (!restMs) restMs = ms; }
+    // After a set: the break to take now (its time in `length`), if any. A rest
+    // covers a short break owed with it.
+    uint8_t take(bool safe, bool safeToRest, uint32_t now) {
+        if (shortMs && now - shortAt >= BREAK_OWED_MS) shortMs = 0;
+        if (restMs && safeToRest) { length = restMs; restMs = shortMs = 0; return BREAK_REST; }
+        if (shortMs && safe) { length = shortMs; shortMs = 0; return BREAK_SHORT; }
+        return BREAK_NONE;
+    }
+    // A rest that ended after `done` of `length`: cut before half, the rest of it is owed again.
+    void cut(uint32_t done) { if (done < length / 2) restMs = length - done; }
 };
 
 inline int liveFacing(bool fresh, int x, uint16_t edgeMarginTenths, bool faceMobs, uint8_t mobSides) {

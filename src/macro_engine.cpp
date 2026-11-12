@@ -449,11 +449,17 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // Don't start attacking a death, login or test screen.
                 {LiveStats live=liveStatsSnapshot();const char* reason=live.fresh?liveStopReason(live.state):nullptr;
                  if(reason){char label[80];std::snprintf(label,sizeof(label),"skipped: %s",reason);logStep(s,pc,stepStartedAt,0,true,label);break;}}
+                // Each play wobbles its timing ranges a little, so no two plays share an average.
+                DynamicPattern wobbled;
+                if(pattern->wobblePermille){wobbled=*pattern;wobblePattern(wobbled,[](int32_t n){return (int32_t)random((long)n);});pattern=&wobbled;}
                 auto sample=[](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L));};
+                // Timings lean towards the pattern's peak (counts and waits between uses stay symmetric).
+                const uint16_t peak=pattern->peakPermille;
+                auto timed=[peak](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L),peak);};
                 auto delay=[](uint32_t ms){Step step;step.type=StepType::DELAY;step.value=ms;step.maxValue=ms;return step;};
                 auto edge=[](bool down,uint8_t key,uint8_t mods){Step step;step.type=down?StepType::KEY_DOWN:StepType::KEY_UP;step.keycode=key;step.modifiers=mods;return step;};
                 auto tap=[&](DynamicKey key,DynamicRange hold,DynamicRange after){
-                    std::vector<Step> actions{edge(true,key.keycode,key.mods),delay(sample(hold)),edge(false,key.keycode,key.mods),delay(sample(after))};
+                    std::vector<Step> actions{edge(true,key.keycode,key.mods),delay(timed(hold)),edge(false,key.keycode,key.mods),delay(timed(after))};
                     executeSteps(actions,stop,state,depth+1);
                 };
                 const DynamicKey jump=pattern->jump,attack=pattern->attack;
@@ -537,8 +543,10 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // up at once when the button is pressed while playing. One pinned where the map's
                 // name wasn't read counts until this pattern sees the map change.
                 uint32_t pinSeen=0;bool movedMap=false;
+                // A map whose name is read has its own Set home or none: one made where no name
+                // was read is never borrowed (it belonged to some other map).
                 auto pinFor=[&]{
-                    if(!lastMap.empty()){PinnedHome p=homePinned(lastMap.c_str());if(p.set)return p;}
+                    if(!lastMap.empty())return homePinned(lastMap.c_str());
                     if(!movedMap){PinnedHome p=homePinned("");if(p.set)return p;}
                     return PinnedHome();
                 };
@@ -660,11 +668,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // drift is checked and the arrow let go if the hop would land past the line.
                 auto walk=[&](DynamicKey key){
                     hold(key);onFoot=true;
-                    std::vector<Step> stroll{delay(sample(pattern->walkHold))};
+                    std::vector<Step> stroll{delay(timed(pattern->walkHold))};
                     executeSteps(stroll,stop,state,depth+1);onFoot=false;
                     if(stop)return;
                     if(!walking.empty()&&outwards(walking==pattern->right,false))stopWalking();
-                    std::vector<Step> hop{edge(true,jump.keycode,jump.mods),delay(sample(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
+                    std::vector<Step> hop{edge(true,jump.keycode,jump.mods),delay(timed(WALK_JUMP_HOLD)),edge(false,jump.keycode,jump.mods)};
                     executeSteps(hop,stop,state,depth+1);
                 };
                 auto smartWait=[&]{
@@ -786,6 +794,45 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         logStep(entry,pc,millis(),0,true,label);
                     }
                 };
+                // Breaks: after a set, a short one at the pattern's chance; a longer rest when its
+                // timer is up (kept between plays; not playing for a while counts as a rest). With
+                // readings neither starts on low HP; a rest also waits until no mob is in reach, and ends when one comes.
+                // Potions are still drunk by the bars meanwhile.
+                Breaks breaks;
+                const bool rests=pattern->restEvery.max>0;
+                const std::string restKey=pattern->id+"/rest",playedKey=pattern->id+"/played";
+                if(rests){
+                    auto played=dynamicSkillTimers_.find(playedKey);
+                    if(played==dynamicSkillTimers_.end()||(uint32_t)(millis()-played->second.lastRun)>=REST_IDLE_MS||!dynamicSkillTimers_.count(restKey))
+                        dynamicSkillTimers_[restKey]={millis(),sample(pattern->restEvery)};
+                }
+                auto takeBreak=[&]{
+                    uint32_t now=millis();
+                    if(pattern->breakChancePermille&&(uint32_t)random(1000L)<pattern->breakChancePermille)breaks.oweShort(timed(pattern->breakMs),now);
+                    if(rests){
+                        DynamicSkillTimer& rest=dynamicSkillTimers_[restKey];
+                        if((uint32_t)(now-rest.lastRun)>=rest.wait){breaks.oweRest(timed(pattern->restMs));rest={now,sample(pattern->restEvery)};}
+                        dynamicSkillTimers_[playedKey]={now,0};
+                    }
+                    LiveStats live=liveStatsSnapshot();
+                    uint8_t kind=breaks.take(breakSafe(live.fresh,live.hp),restSafe(live.fresh,live.hp,live.mobs),now);
+                    if(kind==BREAK_NONE)return;
+                    stopWalking();moving=false;publish(SMART_BREAK);
+                    uint32_t id=logStep(s,pc,now,0,false,kind==BREAK_REST?"resting":"a short break");
+                    bool cut=false;
+                    while(!stop&&(uint32_t)(millis()-now)<breaks.length){
+                        live=liveStatsSnapshot();
+                        if(stopReason(live))break;
+                        if(kind==BREAK_REST&&restOver(live.fresh,live.mobs)){cut=true;break;}
+                        potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
+                        uint32_t left=breaks.length-(uint32_t)(millis()-now);
+                        std::vector<Step> pause{delay(left<150?left:150)};executeSteps(pause,stop,state,depth+1);
+                    }
+                    updateLogDuration(id,millis()-now,true);
+                    if(cut){breaks.cut((uint32_t)(millis()-now));logStep(s,pc,millis(),0,true,"rest cut short: a mob came close");}
+                    if(rests)dynamicSkillTimers_[playedKey]={millis(),0};
+                    stuck=StuckWatch();   // standing still on purpose isn't stuck
+                };
                 for(uint32_t set=0;set<sets&&!stop;++set){
                     uint32_t count=sample(pattern->attacksPerSet),started=millis();
                     Step entry=s;entry.keycode=facing().keycode;entry.value=count;
@@ -796,34 +843,35 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(screenCheck())break;
                         decidePotions();
                         if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
-                        uint32_t gap=(uint32_t)((uint64_t)sample(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
+                        uint32_t gap=(uint32_t)((uint64_t)timed(pattern->comboGap)*(uint32_t)(1000+tempo)/1000);
+                        if(pattern->hesitationPermille&&(uint32_t)random(1000L)<pattern->hesitationPermille)gap=hesitate(gap,timed(HESITATION));   // a moment's hesitation
                         std::vector<Step> actions;
                         // Gliding: the arrow held into the jump (a short run-up when just pressed), or,
                         // standing, a turn owed made in the air: the arrow pressed after take-off and
                         // let go with the attack.
                         bool airTurn=false;DynamicKey arrow=facing();
                         if(returning){   // fighting the way back: the arrow held homewards through the jump-attacks
-                            if(hold(arrow)){actions.push_back(delay(sample(GLIDE_RUN_UP)));}
+                            if(hold(arrow)){actions.push_back(delay(timed(GLIDE_RUN_UP)));}
                             turnInAir=false;
                         }else if(!glide)stopWalking();   // done returning: let go
                         else if(glide){
                             if(moving&&outwards(arrow==pattern->right,false))moving=false;   // that move would carry you over the line
-                            if(moving){if(hold(arrow))actions.push_back(delay(sample(GLIDE_RUN_UP)));turnInAir=false;}
+                            if(moving){if(hold(arrow))actions.push_back(delay(timed(GLIDE_RUN_UP)));turnInAir=false;}
                             else{stopWalking();airTurn=turnInAir;turnInAir=false;}
                         }
-                        uint32_t toAttack=sample(pattern->jumpToAttack);
+                        uint32_t toAttack=timed(pattern->jumpToAttack);
                         actions.push_back(edge(true,jump.keycode,jump.mods));
                         if(airTurn){uint32_t first=toAttack/3;actions.push_back(delay(first));actions.push_back(edge(true,arrow.keycode,arrow.mods));toAttack-=first;}
                         for(const Step& step:{delay(toAttack),
-                            edge(true,attack.keycode,attack.mods),delay(sample(pattern->attackToJumpUp)),
-                            edge(false,jump.keycode,jump.mods),delay(sample(pattern->jumpUpToAttackUp)),
+                            edge(true,attack.keycode,attack.mods),delay(timed(pattern->attackToJumpUp)),
+                            edge(false,jump.keycode,jump.mods),delay(timed(pattern->jumpUpToAttackUp)),
                             edge(false,attack.keycode,attack.mods)})actions.push_back(step);
                         if(airTurn)actions.push_back(edge(false,arrow.keycode,arrow.mods));
                         uint32_t left=gap;bool tapped=false;
                         for(size_t k=0;k<potionTaps.size();++k){
                             DynamicKey key=dynamicKeycode(potionCode(k));
                             while(potionTaps[k]){
-                                uint32_t hold=sample(pattern->potions[k].hold),after=sample(POTION_TAP_GAP);
+                                uint32_t hold=timed(pattern->potions[k].hold),after=timed(POTION_TAP_GAP);
                                 if(tapped&&hold+after>left)break;   // no room: after the next attack
                                 actions.push_back(edge(true,key.keycode,key.mods));actions.push_back(delay(hold));
                                 actions.push_back(edge(false,key.keycode,key.mods));actions.push_back(delay(after));
@@ -844,6 +892,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(stop)break;
                         use(pattern->skills[index],skillScope+"/"+pattern->skills[index].id);
                     }
+                    if(!stop&&(pattern->breakChancePermille||rests))takeBreak();
                     // No direction tap after the last set: it would only nudge the character.
                     if(stop||set+1==sets)break;
                     // Live facing (map edge, mobs) wins; otherwise the turn chance.

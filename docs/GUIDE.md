@@ -521,7 +521,16 @@ Everything goes in `kabuto-bars.json` (gitignored). If something reads wrong,
 raise its `tolerance` there, or check Windows display scaling. `--dry-run`
 prints readings without sending.
 
-**Sliding minimaps** are fine. Many games keep your dot in the middle and slide
+**Maps you haven't taught** still get told apart (2.0): the script makes a
+stand-in name from the pixels of the map's name (`unnamed-680edc`), the same
+every time for the same map, so each map keeps its own Set home. Teaching a
+map (F9) is still what makes its mobs count.
+
+**Sliding minimaps** are only followed where the game has one. MapleStory's
+shows the whole map, so there your dot is your map position and nothing is
+counted (2.0: a slide that wasn't there used to shift saved homes). For a game
+whose minimap does scroll, put `"sliding_minimap": true` in `kabuto-bars.json`.
+Such games keep your dot in the middle and slide
 the minimap under it as you walk, until you near the map's edge, where the
 minimap stops and the dot moves instead. The script lines each reading up with
 the last one (up to a quarter of the minimap per reading) and adds up how far
@@ -991,6 +1000,28 @@ Its timing ranges are that run's spread. Smooth keeps roughly the middle half
 of each, and Flip turns after nearly every 1–3 attacks. The recording's short
 delays fall on ~15 ms steps; that is the PC timer used for recording, not your
 hands, so the presets don't copy it.
+
+**Natural rhythm** (2.0) is what keeps a long session from looking the same
+from minute to minute. New patterns have it on; patterns saved before 2.0
+load with all of it off and play exactly as they did. None of it needs the PC
+screen reader.
+
+| Setting | New patterns | What it does |
+| --- | --- | --- |
+| Timing peak | 35% | Where most timings land inside their range. 50% is the middle (the older behaviour); lower leans quick with a longer slow tail |
+| Hesitation | 3% of attacks | The pause after an attack is 1.5–3 times as long |
+| Different every play | 8% | Each play moves every timing range, as a whole, up to this much quicker or slower |
+| Short break | 6% after a set, 0.7–2.5 s | Stops for a moment, nothing held |
+| Rest | every 6–14 min, 8–30 s | A longer stop; 0–0 minutes = off |
+
+With the screen reader running, a short break doesn't start while HP reads
+under 40% (one still owed 15 s later is forgotten), and a rest waits until no
+mob is in reach and HP isn't low, then ends as soon as a mob comes into reach;
+cut short before half of it, the remainder is taken at the next quiet moment.
+Potions are still drunk by the bars during both. The rest timer carries on
+over the repeats of a toggle button, and not playing for half a minute counts
+as having rested. In the JSON: `"peak"`, `"hesitation"`, `"wobble"`,
+`"break_chance"`, `"break_ms"`, `"rest_every_ms"`, `"rest_ms"`.
 
 **Tempo drift** handles what independent random draws can't. In the recording,
 the gap after each attack wandered: a slow gap tended to follow a slow one

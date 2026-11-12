@@ -14,6 +14,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   const networkRequests=[];let pinRequired=false,loggedIn=false;
   let liveState=null,patternState=null,noticeState=null,pinnedState=null;const statsRequests=[],noticeRequests=[],homeRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
+  // The pattern editor opens compact (a setting's explanation shows while you're on it); these
+  // checks click choices and ↺ Default buttons all over it, so they run with Explain switched on.
+  await page.addInitScript(()=>{try{if(localStorage.getItem('kabutoExplain')===null)localStorage.setItem('kabutoExplain','1');}catch(e){}});
   const html=fs.readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
   const config=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/macros.json'),'utf8'));
   const handler=async route=>{
@@ -213,6 +216,19 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('80');
   await page.getByRole('button',{name:'Default for Skill 1 chance',exact:true}).click();
   assert.equal(await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).inputValue(),'10');
+  // 2.0's editor: section chips jump to a section (opening it), and with Explain off (how it
+  // opens on a new phone) a setting's choices and default only show while you're on that setting.
+  {const nav=page.locator('#dynamicNav button');
+   assert.deepEqual(await nav.allTextContents(),['Basics','Keys','Rhythm','Timing','Home','Screen','Potions','Skills','ⓘ Explain']);
+   const timing=page.locator('#dynamicDialog > details[data-nav="Timing"]'),wasOpen=await timing.evaluate(d=>d.open);
+   await timing.evaluate(d=>{d.open=false;});await nav.nth(3).click();assert(await timing.evaluate(d=>d.open));
+   if(!wasOpen)await timing.evaluate(d=>{d.open=false;});
+   const explain=page.locator('#dynamicNav .explain'),points=page.locator('#dynamicMain .setting[data-key="turn_chance"] .setting-points');
+   assert.equal(await explain.getAttribute('aria-pressed'),'true');assert(await points.isVisible());
+   await explain.click();assert.equal(await explain.getAttribute('aria-pressed'),'false');assert(!(await points.isVisible()));
+   await page.locator('#dynamicMain .setting[data-key="turn_chance"] input[type=number]').focus();assert(await points.isVisible());   // on it: explained
+   await explain.click();assert(await points.isVisible());
+   await page.locator('#dynamicDialog').evaluate(d=>d.scrollTo(0,0));}
   if(process.env.SHOT)await page.locator('#dynamicDialog').screenshot({path:process.env.SHOT});
   // Presets change movement/rhythm and keep skills.
   await page.getByLabel('Skill 1 chance after each set (%)',{exact:true}).fill('35');

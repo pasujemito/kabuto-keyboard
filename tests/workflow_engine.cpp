@@ -271,6 +271,47 @@ int main() {
             for(size_t i=0;i+1<altDowns.size();++i)assert(altDowns[i+1]-ctrlUps[i]==(high?874U:433U));
         }
     }
+    // A rhythm that never settles: hesitation, per-play wobble, short breaks and rests.
+    {
+        DynamicPattern q=p;q.sets={1,1};q.attacksPerSet={2,2};q.skills.clear();q.potions.clear();
+        Step step=dynamic;
+        // The gaps between one attack's Ctrl up and the next one's Alt down.
+        auto gaps=[&]{std::vector<uint32_t> out,ctrlUps,altDowns;uint8_t mods=0;
+            for(auto e:hidEvents)if(e.key==0&&e.mods!=mods){if(e.mods==4&&!mods)altDowns.push_back(e.at);if(!e.mods&&mods==1)ctrlUps.push_back(e.at);mods=e.mods;}
+            for(size_t i=0;i+1<altDowns.size();++i)out.push_back(altDowns[i+1]-ctrlUps[i]);
+            return out;};
+        auto longest=[&]{auto g=gaps();return g.empty()?0U:*std::max_element(g.begin(),g.end());};
+        liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS+1;   // no screen reader: everything works on its own
+        // Off (a pattern from before 2.0): the plain 510 ms gap.
+        step.setPattern(q);hidEvents.clear();run(engine,{step});assert(gaps()==std::vector<uint32_t>{510});
+        // Hesitation: the gap stretched at least 1.5 times.
+        q.hesitationPermille=1000;step.setPattern(q);hidEvents.clear();run(engine,{step});assert(gaps()==std::vector<uint32_t>{765});
+        // Wobble: this play's ranges moved as a whole (the lowest draw: 30% quicker).
+        q.hesitationPermille=0;q.wobblePermille=300;step.setPattern(q);hidEvents.clear();run(engine,{step});assert(gaps()==std::vector<uint32_t>{357});
+        // A short break after a set: nothing held, then on with the next set.
+        q.wobblePermille=0;q.sets={2,2};q.attacksPerSet={1,1};q.turnChancePermille=0;q.breakChancePermille=1000;q.breakMs={2000,2000};
+        step.setPattern(q);hidEvents.clear();bool sawBreak=false,heldInBreak=false;
+        testDelayHook=[&]{if(patternViewSnapshot().action==SMART_BREAK){sawBreak=true;heldInBreak=heldInBreak||!held.empty()||heldMods;}};
+        uint32_t began=millis();run(engine,{step});testDelayHook={};
+        assert(sawBreak&&!heldInBreak&&longest()>=2510&&millis()-began>=4000&&held.empty()&&!heldMods);
+        // A couple of seconds: mobs about don't stop it, low HP on the bars does.
+        hidEvents.clear();testDelayHook=[&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT);};
+        run(engine,{step});testDelayHook={};assert(longest()>=2510);
+        hidEvents.clear();testDelayHook=[&]{liveStatsUpdate(300,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT);};
+        run(engine,{step});testDelayHook={};assert(longest()<1500);
+        // A rest every 30 s for 5 s: taken on the timer alone, never with a mob in reach.
+        q.breakChancePermille=0;q.sets={60,60};q.restEvery={30000,30000};q.restMs={5000,5000};step.setPattern(q);
+        liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS+1;engine.dynamicSkillTimers_.clear();
+        hidEvents.clear();began=millis();run(engine,{step});
+        {auto g=gaps();assert(std::count_if(g.begin(),g.end(),[](uint32_t v){return v>=5000;})==1&&millis()-began>=45000);}
+        hidEvents.clear();testDelayHook=[&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT);};
+        run(engine,{step});testDelayHook={};assert(longest()<1500);
+        // Still owed when the mobs are gone: taken at the next set's end, in the next play too.
+        liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ);hidEvents.clear();
+        testDelayHook=[&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ);};
+        q.sets={3,3};step.setPattern(q);run(engine,{step});testDelayHook={};assert(longest()>=5000);
+        liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS+1;engine.dynamicSkillTimers_.clear();
+    }
     // Independent skills, repeat counts, and a cooldown retained over Stop/Start.
     p.sets={3,3};p.attacksPerSet={1,1};
     DynamicSkill c;c.id="skill-c";c.keycode=6;c.chancePermille=1000;c.cooldown={1000000,1000000};

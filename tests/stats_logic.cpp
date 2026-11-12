@@ -223,5 +223,23 @@ int main(){
     {SmartInput in;in.fresh=true;in.mobs=MOB_READ;in.seenRight=1;in.nearRight=150;in.approach=true;in.havePos=in.haveHome=true;in.home=500;in.range=100;
      in.pos=580;assert(smartDecide(in)==SMART_WAIT);                       // 3/4 by default: no walking out
      in.inside=90;assert(smartDecide(in)==SMART_APPROACH_RIGHT);}          // a narrower band: walks on
+    // Breaks and rests: on their own without mob readings; with them, only when no mob is in reach.
+    {
+        assert(breakSafe(false,-1)&&breakSafe(true,-1)&&breakSafe(true,400)&&!breakSafe(true,399)&&breakSafe(false,100));   // only a fresh, low HP bar says no
+        assert(restSafe(false,-1,0)&&restSafe(true,800,MOB_READ)&&!restSafe(true,800,MOB_READ|MOB_LEFT)&&!restSafe(true,300,MOB_READ));
+        assert(restSafe(false,800,MOB_READ|MOB_RIGHT));   // a stale reading says nothing
+        assert(restOver(true,MOB_READ|MOB_RIGHT)&&!restOver(true,MOB_READ)&&!restOver(false,MOB_READ|MOB_LEFT));
+        Breaks b;assert(b.take(true,true,0)==BREAK_NONE);
+        b.oweShort(2000,1000);b.oweShort(9000,1100);   // one at a time
+        assert(b.take(false,false,1200)==BREAK_NONE&&b.take(true,false,1300)==BREAK_SHORT&&b.length==2000&&b.take(true,true,1400)==BREAK_NONE);
+        b.oweShort(2000,5000);assert(b.take(false,false,5000+BREAK_OWED_MS-1)==BREAK_NONE&&b.shortMs);
+        assert(b.take(true,true,5000+BREAK_OWED_MS)==BREAK_NONE);   // owed too long: forgotten
+        b.oweRest(20000);
+        assert(b.take(true,false,300000)==BREAK_NONE&&b.restMs==20000);   // a mob in reach: the rest stays owed
+        b.oweShort(1500,300000);
+        assert(b.take(true,true,300001)==BREAK_REST&&b.length==20000&&!b.shortMs&&b.take(true,true,300002)==BREAK_NONE);   // it covers the short one
+        b.cut(4000);assert(b.take(true,true,0)==BREAK_REST&&b.length==16000);   // cut early: the remainder is owed
+        b.cut(9000);assert(b.take(true,true,0)==BREAK_NONE);                    // past half: that was the rest
+    }
     std::cout<<"stats logic tests passed\n";
 }

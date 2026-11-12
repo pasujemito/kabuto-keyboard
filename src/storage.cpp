@@ -105,6 +105,15 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
     // "glide": the share of sets in which the arrow stays held through the
     // jump-attacks (fluid movement; turns made in the air). 0 / missing: off.
     if (!chance(o["glide"],p.glidePermille)) return false;
+    // A rhythm that never settles (2.0; all missing in older patterns, which play as before).
+    // "peak": where in a timing range most draws land (missing: the middle). "hesitation":
+    // share of gaps stretched (up to 50%). "wobble": per-play shift of the timing ranges (up
+    // to 30%). "break_chance" + "break_ms": a short break after a set. "rest_every_ms"
+    // (0-0 = off, else at least 30 s) + "rest_ms": a longer rest every so often.
+    if (!chance(o["peak"],p.peakPermille) || !chance(o["hesitation"],p.hesitationPermille) || p.hesitationPermille>500 ||
+        !chance(o["wobble"],p.wobblePermille) || p.wobblePermille>300 || !chance(o["break_chance"],p.breakChancePermille) ||
+        !range(o["break_ms"],p.breakMs,100,60000) || !range(o["rest_every_ms"],p.restEvery,0,86400000) ||
+        (p.restEvery.max && p.restEvery.min<30000) || !range(o["rest_ms"],p.restMs,1000,600000)) return false;
     // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
     // keys keep the defaults, so older patterns play exactly as before.
     auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
@@ -487,6 +496,9 @@ static void stepToJson(const Step& s, JsonObject o) {
             d["edge_margin"]=p->edgeMarginPermille/1000.0;d["stuck_after_ms"]=p->stuckAfterMs;d["face_mobs"]=p->faceMobs;
             d["smart"]=p->smart;d["home_range"]=p->homeRangePermille/1000.0;d["auto_pause"]=p->autoPausePermille/1000.0;d["approach"]=p->approach;d["attack"]=p->attacking;
             range(d,"walk_hold",p->walkHold);d["glide"]=p->glidePermille/1000.0;
+            d["peak"]=p->peakPermille/1000.0;d["hesitation"]=p->hesitationPermille/1000.0;d["wobble"]=p->wobblePermille/1000.0;
+            d["break_chance"]=p->breakChancePermille/1000.0;range(d,"break_ms",p->breakMs);
+            range(d,"rest_every_ms",p->restEvery);range(d,"rest_ms",p->restMs);
             if(p->charKeys){d["char_keys"]=true;}
             if(p->charPotions){d["char_potions"]=true;}
             if(p->charSkills){d["char_skills"]=true;}

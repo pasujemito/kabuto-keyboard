@@ -89,6 +89,10 @@ CONFIG = "kabuto-bars.json"   # in the current folder (gitignored)
 # minimap's corners, not your dot. The game is kept in the setup file.
 GAMES = {
     "maplestory": {"label": "MapleStory", "icon": "\U0001F341",
+                   # Its minimap shows the whole map and never slides: your dot is your map position.
+                   # (Following a slide that isn't there let one misjudged view shift every position
+                   # from then on, saved homes included.)
+                   "whole_map": True,
                    "bars": {"hp": [248, 10, 0], "mana": [0, 120, 248], "xp": [206, 243, 0]},
                    "dot": [255, 221, 68],
                    # Where its bars are: the status bar is centred along the bottom of the screen, so
@@ -1528,6 +1532,9 @@ class Screen:
         self.sprites_dir, self.shapes = sprites_dir, {}
         self.sct, self.config, self.state = sct, config, GameState()
         self.minimap = MinimapTracker(threshold=mm.get("map_mismatch", 0.6))
+        # A sliding minimap is only followed where the game has one ("sliding_minimap" in the
+        # setup file says so either way); otherwise the dot is the map position, always the same.
+        self.slides = bool(config.get("sliding_minimap", not (GAMES.get(config.get("game")) or {}).get("whole_map")))
         area, maps = config.get("map_name"), config.get("maps", {})
         usual = {n: m for n, m in maps.items() if not m.get("name_area")}
         self.maps = MapReader(usual, area.get("light", 170)) if area and maps else None
@@ -1768,8 +1775,11 @@ class Screen:
             raw = grab(self.sct, mm["x1"], mm["y1"], w, h)
             dot = find_dot(raw, w, h, mm["dot"], mm.get("tolerance", 40), top=mm.get("header", 0))
             if dot:                      # a login or loading screen isn't the map
-                self.minimap.update(raw, w, h)
-                world = self.minimap.world(dot, w, h)
+                if self.slides:
+                    self.minimap.update(raw, w, h)
+                    world = self.minimap.world(dot, w, h)
+                else:
+                    world = (round(dot[0] * 10), round(dot[1] * 10))
                 dot_y = dot[1] * (h - 1) / 100.0   # minimap px: is it still? (Ground)
         self.find_you(dot_y)   # after the minimap: jumping, the field of view stays on your platform
         found = self.mobs(name)
@@ -4067,6 +4077,15 @@ def selftest():
     r = screen.read()
     assert r["hp"] == 75.0 and r["mana"] == 30.0 and r["state"] == "ok" and r["mobs"] == "L", r
     assert r["wx"] == round(r["x"] * 10) and r["wy"] == round(r["y"] * 10), r   # no slide yet: map position = dot
+    # MapleStory's minimap shows the whole map: a slide is never counted (even one a changed
+    # view would suggest), so a saved home means the same spot after any restart.
+    fresh = lambda **more: Screen(fake, json.loads(json.dumps(dict(config, **more))))
+    assert screen.slides and not fresh(game="maplestory").slides
+    assert fresh(game="maplestory", sliding_minimap=True).slides and not fresh(sliding_minimap=False).slides
+    whole = fresh(sliding_minimap=False)
+    whole.minimap.ox = 40
+    r2 = whole.read()
+    assert r2["wx"] == round(r2["x"] * 10) and r2["wy"] == round(r2["y"] * 10), r2
     assert abs(r["x"] - 26.4) < 2 and abs(r["y"] - 52.0) < 4, r
     paint(fake.px, 800, 100, 580, 250, 584, grey)            # HP gone: dead once it has stayed 2 s
     clock = [100.0]

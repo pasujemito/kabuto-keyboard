@@ -519,9 +519,13 @@
     <div class="dynamic-main" id="dynamicKeys"></div>
     <p class="hint">Jump and attack can be Alt, Ctrl, Shift or any key. Skills and potions can't use these four keys.</p>
   </details>
+  <details open class="pattern-only"><summary>Natural rhythm: breaks, rests and variation</summary>
+    <p class="hint">What keeps a long session from looking the same from minute to minute. All of it works without the PC screen reader; with it, breaks and rests wait until no mob is in reach.</p>
+    <div class="dynamic-main" id="dynamicFeel"></div>
+  </details>
   <details class="pattern-only"><summary>Timing ranges (milliseconds)</summary><div class="dynamic-timings" id="dynamicTimings"></div></details>
   <details open class="pattern-only"><summary>Home</summary>
-    <p class="hint">Home is set by itself each time you press the button. The boundary below decides whether it's used.</p>
+    <p class="hint">Home is only ever set by a Set home button (on the pad, or 🏠 Set home here on the dashboard), one per map. The boundary below decides how far from it the character may go.</p>
     <div class="dynamic-main" id="dynamicHome"></div>
   </details>
   <details class="pattern-only"><summary>Screen awareness</summary>
@@ -936,11 +940,11 @@ const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_j
 // its middle half; Flip turns after nearly every 1-3 attacks.
 const DYNAMIC_PRESETS={
   natural:{label:'Natural',hint:'Fitted to recorded play: full timing spread, the attack rhythm drifts slower/faster like a person, usually turns after a set.',
-    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,195],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.85,tempo_drift:.15}},
+    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,195],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.85,tempo_drift:.15,peak:.35,hesitation:.03,wobble:.08,break_chance:.06,break_ms:[700,2500],rest_every_ms:[360000,840000],rest_ms:[8000,30000]}},
   smooth:{label:'Smooth',hint:'Steady rhythm: the middle of the recorded timings, medium sets, little drift, turns after every set.',
-    values:{jump_to_attack:[75,105],attack_to_jump_up:[60,90],jump_up_to_attack_up:[40,65],combo_gap:[580,680],dir_hold:[100,150],dir_after:[120,230],attacks_per_set:[4,7],sets:[8,12],turn_chance:1,tempo_drift:.05}},
+    values:{jump_to_attack:[75,105],attack_to_jump_up:[60,90],jump_up_to_attack_up:[40,65],combo_gap:[580,680],dir_hold:[100,150],dir_after:[120,230],attacks_per_set:[4,7],sets:[8,12],turn_chance:1,tempo_drift:.05,peak:.5,hesitation:0,wobble:.03,break_chance:.02,break_ms:[800,2000],rest_every_ms:[600000,1200000],rest_ms:[8000,20000]}},
   flip:{label:'Flip',hint:'Turns often: 1–3 attacks per set and nearly always turns, with more sets so a play lasts about as long.',
-    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,700],dir_hold:[85,150],dir_after:[60,200],attacks_per_set:[1,3],sets:[20,30],turn_chance:.95,tempo_drift:.1}},
+    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,700],dir_hold:[85,150],dir_after:[60,200],attacks_per_set:[1,3],sets:[20,30],turn_chance:.95,tempo_drift:.1,peak:.35,hesitation:.02,wobble:.08,break_chance:.03,break_ms:[700,2500],rest_every_ms:[360000,840000],rest_ms:[8000,30000]}},
 };
 // Movement keys: a modifier (Alt/Ctrl/Shift...) or any key name from the device.
 const DYNAMIC_MODIFIERS=['ALT','CTRL','SHIFT','GUI','RCTRL','RSHIFT','RALT','RGUI'];
@@ -957,6 +961,8 @@ function normalizeDynamicPattern(p){
   if(!p||typeof p!=='object')return p;
   for(const [key,old] of [['attacks_per_set','combos_per_side'],['sets','sides']]){if(p[key]===undefined&&p[old]!==undefined)p[key]=p[old];delete p[old];}
   if(p.tempo_drift===undefined)p.tempo_drift=0; // presets from before drift existed
+  // Saved before 2.0: timings peak in the middle, no hesitation, wobble, breaks or rests.
+  for(const [k,v] of [['peak',.5],['hesitation',0],['wobble',0],['break_chance',0],['break_ms',[700,2500]],['rest_every_ms',[0,0]],['rest_ms',[8000,30000]]])if(p[k]===undefined)p[k]=v;
   // Older patterns: the original keys, and HP/Mana present but off.
   if(!p.keys||typeof p.keys!=='object')p.keys={};
   for(const [slot,name] of Object.entries(DYNAMIC_DEFAULT_KEYS))if(!p.keys[slot])p.keys[slot]=name;
@@ -1022,6 +1028,13 @@ function validateDynamicPattern(p){
     for(const v of [x.bar_max,x.per_tap])if(!Number.isInteger(v)||v<0||v>10000000)throw new Error(label+' amounts: enter whole numbers from 0 to 10,000,000.');
     if(!x.bar_max!==!x.per_tap||x.per_tap>x.bar_max)throw new Error(label+' amounts: set both the bar total and per tap (no more than the total), or both 0.');
   }
+  chance(p.peak,'Timing peak');chance(p.break_chance,'Short break chance');
+  if(typeof p.hesitation!=='number'||!(p.hesitation>=0&&p.hesitation<=.5))throw new Error('Hesitation: enter a percentage from 0 to 50.');
+  if(typeof p.wobble!=='number'||!(p.wobble>=0&&p.wobble<=.3))throw new Error('Wobble: enter a percentage from 0 to 30.');
+  try{range(p.break_ms,'',100,60000);}catch(e){throw new Error('Short break: enter an ordered range from 0.1 to 60 seconds.');}
+  try{range(p.rest_every_ms,'',0,86400000);}catch(e){throw new Error('Rest every: enter an ordered range in minutes (0–0 = off).');}
+  if(p.rest_every_ms[1]&&p.rest_every_ms[0]<30000)throw new Error('Rest every: at least half a minute, or 0–0 for off.');
+  try{range(p.rest_ms,'',1000,600000);}catch(e){throw new Error('Rest length: enter an ordered range from 1 to 600 seconds.');}
   chance(p.turn_chance,'Turn chance');if(typeof p.tempo_drift!=='number'||!(p.tempo_drift>=0&&p.tempo_drift<=.3))throw new Error('Tempo drift: enter a percentage from 0 to 30.');if(typeof p.shuffle_skills!=='boolean')throw new Error('Choose a skill-order setting.');
   if(!Array.isArray(p.skills)||p.skills.length>8)throw new Error('Use at most 8 skills.');
   const ids=new Set();
@@ -1106,6 +1119,18 @@ const HELP={
     points:[['0%','always faces the same way'],['20%','occasionally flips sides'],['50%','flips about every other run'],['100%','flips after every run (with 1 attack per run: after every attack)']]},
   tempo_drift:{title:'Rhythm drift (%)',what:'Lets the pause between attacks slowly get a bit longer or shorter, like a person who speeds up and slows down. The attacks themselves don\'t change.',
     points:[['0%','the same pause every time (robotic)'],['15%','natural (recommended)'],['30%','very uneven']]},
+  peak:{title:'Timing peak (% of each range)',what:'Where most timings land inside their Min–Max. People are usually quick with the odd slow one, so a peak below the middle looks more natural than a tidy average.',
+    points:[['50%','the middle: as many slow as quick (how older patterns play)'],['35%','mostly quick, a longer slow tail (recommended)'],['20%','nearly always quick, rarely slow']]},
+  hesitation:{title:'Hesitation (% of attacks)',what:'Now and then the pause after an attack is 1.5–3 times as long, like a moment\'s thought.',
+    points:[['0%','never'],['3%','about one attack in 30 (recommended)'],['10%','often']]},
+  wobble:{title:'Different every play (%)',what:'Each button press (and each repeat of a toggle) shifts all the timings a little quicker or slower, so no two plays have the same average.',
+    points:[['0%','every play uses exactly the ranges below'],['8%','each play up to 8% quicker or slower (recommended)'],['30%','very different from play to play']]},
+  break_chance:{title:'Short break (% chance after a run)',what:'After a run of attacks it sometimes just stops for a moment, nothing held. With the screen reader it waits until no mob is in reach.',
+    points:[['0%','never'],['6%','every 15–20 runs (recommended)'],['20%','about every fifth run']]},
+  break_ms:{title:'Short break: how long (seconds)',what:'How long a short break lasts. Each one picks a time between Min and Max.'},
+  rest_every_ms:{title:'Rest every (minutes)',what:'A longer stop every so often, the way a person leans back. The timer carries on over repeats of a toggle; not playing for half a minute counts as a rest. With the screen reader it waits until no mob is in reach, and ends when one comes (the remainder is taken later).',
+    points:[['0–0','off'],['6–14','a rest every 6 to 14 minutes (recommended)'],['20–40','rarely']]},
+  rest_ms:{title:'Rest: how long (seconds)',what:'How long a rest lasts. Potions are still drunk by the bars meanwhile.'},
   glide:{title:'Move while attacking (% of runs)',what:'Holds the arrow while it jump-attacks, so the character drifts sideways through the air instead of jumping on the spot.',
     points:[['0%','off: attacks on the spot, turns with a short tap (a small step)'],['50%','half the runs on the move'],['100%','always on the move']]},
   jump_to_attack:{title:'Jump → attack (ms)',what:'Time from pressing jump to pressing attack.',points:[['shorter','attacks early in the jump'],['longer','attacks near the top of the jump']]},
@@ -1155,8 +1180,10 @@ function unusedReasons(p){
   if(!live)for(const k of ['edge_margin','stuck_after_ms','smart','auto_pause','approach','home_range','walk_hold','potion.below','potion.bar_max','potion.per_tap','potion.backup_keys'])
     r[k]='Not in use right now: no readings from the PC screen reader (run screen_stats.py with the pad on the USB cable).';
   if(!p.smart)for(const k of ['auto_pause','approach'])r[k]=r[k]||'Not used: Smart is off.';
-  if(!p.attack)for(const k of ['attacks_per_set','sets','turn_chance','tempo_drift','glide','jump_to_attack','attack_to_jump_up','jump_up_to_attack_up','combo_gap','dir_hold','dir_after',
+  if(!p.attack)for(const k of ['attacks_per_set','sets','turn_chance','tempo_drift','peak','hesitation','wobble','break_chance','break_ms','rest_every_ms','rest_ms','glide','jump_to_attack','attack_to_jump_up','jump_up_to_attack_up','combo_gap','dir_hold','dir_after',
     'edge_margin','stuck_after_ms','smart','auto_pause','approach','walk_hold','home_range','jump','attack','left','right'])r[k]='Not used: Attack is off (support only: potions and skills).';
+  if(!(p.break_chance>0))r.break_ms=r.break_ms||'Not used: Short break is 0%.';
+  if(!(p.rest_every_ms&&p.rest_every_ms[1]>0))r.rest_ms=r.rest_ms||'Not used: Rest every is 0–0 (off).';
   if(p.glide>0)for(const k of ['dir_hold','dir_after'])r[k]='Not used: turns happen in the air while Move while attacking is above 0%.';
   if(!(p.home_range>0)&&!(p.smart&&p.approach))r.walk_hold=r.walk_hold||'Not used: nothing walks (Distance from home is 0%, and Walk to mobs is off or Smart is off).';
   return r;
@@ -1267,6 +1294,16 @@ function renderDynamicFields(){
   add(main,dynamicNumber('Turn around after a set (%)',p.turn_chance*100,0,100,.1,n=>p.turn_chance=n/100),'turn_chance','Turn around after a set',pct(d('turn_chance')),()=>p.turn_chance=d('turn_chance'));
   add(main,dynamicNumber('Tempo drift (%)',p.tempo_drift*100,0,30,1,n=>p.tempo_drift=n/100),'tempo_drift','Tempo drift',pct(d('tempo_drift')),()=>p.tempo_drift=d('tempo_drift'));
   add(main,dynamicNumber('Move while attacking (%)',Math.round(p.glide*1000)/10,0,100,1,n=>p.glide=n/100,'Move while attacking (% of sets) · 0 = off'),'glide','Move while attacking',pct(d('glide')),()=>p.glide=d('glide'));
+  // A rhythm that never settles: its own block under the main settings.
+  const feel=$('#dynamicFeel');feel.replaceChildren();
+  const mins=r=>r[1]?(r[0]/60000)+'–'+(r[1]/60000)+' min':'off',sec=r=>(r[0]/1000)+'–'+(r[1]/1000)+' s';
+  add(feel,dynamicNumber('Timing peak (%)',Math.round(p.peak*1000)/10,0,100,1,n=>p.peak=n/100),'peak','Timing peak',pct(d('peak')),()=>p.peak=d('peak'));
+  add(feel,dynamicNumber('Hesitation (%)',Math.round(p.hesitation*1000)/10,0,50,.5,n=>p.hesitation=n/100),'hesitation','Hesitation',pct(d('hesitation')),()=>p.hesitation=d('hesitation'));
+  add(feel,dynamicNumber('Different every play (%)',Math.round(p.wobble*1000)/10,0,30,1,n=>p.wobble=n/100),'wobble','Different every play',pct(d('wobble')),()=>p.wobble=d('wobble'));
+  add(feel,dynamicNumber('Short break (% after a set)',Math.round(p.break_chance*1000)/10,0,100,.5,n=>p.break_chance=n/100),'break_chance','Short break',pct(d('break_chance')),()=>p.break_chance=d('break_chance'));
+  add(feel,dynamicRange('Short break length (seconds)',p.break_ms,100,60000,1000),'break_ms','Short break length',sec(d('break_ms')),()=>p.break_ms=copy(d('break_ms')));
+  add(feel,dynamicRange('Rest every (minutes)',p.rest_every_ms,0,86400000,60000),'rest_every_ms','Rest every',mins(d('rest_every_ms')),()=>p.rest_every_ms=copy(d('rest_every_ms')));
+  add(feel,dynamicRange('Rest length (seconds)',p.rest_ms,1000,600000,1000),'rest_ms','Rest length',sec(d('rest_ms')),()=>p.rest_ms=copy(d('rest_ms')));
   const timings=$('#dynamicTimings');timings.replaceChildren();
   DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>add(timings,dynamicRange(label+' (ms)',p[key],min,max),key,label,ms(d(key)),()=>p[key]=copy(d(key))));
   refreshUnused();
@@ -1446,13 +1483,19 @@ function applyDynamicPattern(){
 // this preview starts with no prior skill cooldown history.
 function generateDynamicSample(p,rng=Math.random){
   validateDynamicPattern(p);
-  const r=range=>{const u=Math.max(0,Math.min(1,rng())),span=range[1]-range[0];return Math.round(u<.5?range[0]+span*Math.sqrt(u/2):range[1]-span*Math.sqrt((1-u)/2));};
+  // The device's sampler: counts and waits peak in the middle, timings at the pattern's peak.
+  const tri=(range,m)=>{const u=Math.max(0,Math.min(1,rng())),span=range[1]-range[0];return Math.round(u<m?range[0]+span*Math.sqrt(u*m):range[1]-span*Math.sqrt((1-u)*(1-m)));};
+  const r=range=>tri(range,.5),t=range=>tri(range,p.peak);
   const steps=[],due=new Map();let at=0;
+  // This play's wobble: each timing range moved as a whole, as on the device.
+  if(p.wobble>0){p=JSON.parse(JSON.stringify(p));const w=Math.round(p.wobble*1000);
+    for(const key of ['jump_to_attack','attack_to_jump_up','jump_up_to_attack_up','combo_gap','dir_hold','dir_after']){const f=1000+Math.min(2*w,Math.floor(rng()*(2*w+1)))-w;p[key]=p[key].map(v=>Math.min(90000,Math.floor(v*f/1000)));}}
+  let restAt=p.rest_every_ms[1]?r(p.rest_every_ms):Infinity;
   // Same tempo drift as the device: a mean-reverting walk in permille, within +/-drift.
   const drift=Math.round(p.tempo_drift*1000),half=Math.trunc(drift/2),int=n=>Math.min(n-1,Math.floor(rng()*n));
   let tempo=drift?int(2*drift+1)-drift:0;
   const add=step=>{if(steps.length>=12000)throw new Error('This example exceeds 12000 steps. Reduce the sets or attacks per set for the preview; live playback is streamed.');steps.push(step);};
-  const delay=range=>{const ms=r(range);add({type:'delay',ms});at+=ms;};
+  const delay=range=>{const ms=t(range);add({type:'delay',ms});at+=ms;};
   const k=p.keys,press=(down,name)=>add(DYNAMIC_MODIFIERS.includes(name)?{type:down?'down':'up',mods:[name.toLowerCase()]}:{type:down?'down':'up',key:name});
   const tap=(name,hold,after)=>{press(true,name);delay(hold);press(false,name);delay(after);};
   let left=rng()<.5;const sets=r(p.sets);tap(left?k.left:k.right,p.dir_hold,p.dir_after);
@@ -1460,7 +1503,8 @@ function generateDynamicSample(p,rng=Math.random){
     const units=r(p.attacks_per_set);
     for(let unit=0;unit<units;unit++){
       if(drift)tempo=Math.max(-drift,Math.min(drift,Math.trunc(tempo*9/10)+int(2*half+1)-half));
-      const gap=Math.floor(r(p.combo_gap)*(1000+tempo)/1000);
+      let gap=Math.floor(t(p.combo_gap)*(1000+tempo)/1000);
+      if(p.hesitation>0&&rng()<p.hesitation)gap=Math.floor(gap*t([1500,3000])/1000);
       press(true,k.jump);delay(p.jump_to_attack);press(true,k.attack);delay(p.attack_to_jump_up);press(false,k.jump);delay(p.jump_up_to_attack_up);press(false,k.attack);add({type:'delay',ms:gap});at+=gap;
     }
     for(const x of p.potions){
@@ -1470,6 +1514,10 @@ function generateDynamicSample(p,rng=Math.random){
     const skills=p.skills.filter(s=>s.enabled&&(!due.has(s.id)||at>=due.get(s.id))&&rng()<s.chance);
     if(p.shuffle_skills)for(let i=skills.length;i>1;i--){const j=Math.min(i-1,Math.floor(rng()*i));[skills[i-1],skills[j]]=[skills[j],skills[i-1]];}
     for(const s of skills){const repeats=r(s.repeats);for(let n=0;n<repeats;n++)tap(s.key,s.hold,s.after);due.set(s.id,at+r(s.cooldown_ms));}
+    // A short break at its chance, a rest when its timer is up (a rest covers the break).
+    let pause=p.break_chance>0&&rng()<p.break_chance?t(p.break_ms):0;
+    if(at>=restAt){pause=t(p.rest_ms);restAt=at+r(p.rest_every_ms);}
+    if(pause){add({type:'delay',ms:pause});at+=pause;}
     if(set+1===sets)break; // no direction tap after the last set
     if(rng()<p.turn_chance)left=!left;tap(left?k.left:k.right,p.dir_hold,p.dir_after);
   }
@@ -2310,7 +2358,7 @@ async function pollMacroLog(){
 }
 /* Live bars from the PC screen reader, sent in tenths of a percent (-1: not read). */
 // What a playing dynamic pattern is doing, as /api/status reports it.
-const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Back into the home zone',approach:'🚶 Walking to mobs',
+const PATTERN_ACTIONS={attack:'⚔ Attacking',wait:'⏳ Waiting for mobs',pause:'⏸ Auto-pause · waiting for respawn',home:'🏠 Back into the home zone',approach:'🚶 Walking to mobs',break:'☕ Taking a break',
   noreadings:'⚠ No readings from the PC: not attacking',support:'🧪 Support only: potions & skills',nodetector:'⚠ No mob detection on this map: not attacking'};
 function runningLabel(){
   const k=cfg?.layers[status.activeLayer]?.keys[status.runningKey];if(!k)return 'Button '+(status.runningKey+1);

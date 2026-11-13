@@ -1023,6 +1023,20 @@ over the repeats of a toggle button, and not playing for half a minute counts
 as having rested. In the JSON: `"peak"`, `"hesitation"`, `"wobble"`,
 `"break_chance"`, `"break_ms"`, `"rest_every_ms"`, `"rest_ms"`.
 
+**Smarter with the screen reader** (2.1; off in patterns saved before):
+
+| Setting | New patterns | What it does |
+| --- | --- | --- |
+| End a run when its mobs are dead | on | A set also ends when no mob is in reach (Smart off: after 0–2 more attacks) |
+| Reaction time | 180–450 ms | After standing and waiting, the time between a mob coming into reach and attacking it |
+| Drink below … up to | HP 50–62%, Mana 30–42% | The threshold is picked afresh after each drink |
+| Turn at map edges … up to | 12–18% | The margin is picked afresh after each set |
+| Stop after | 45–90 min | Stops by itself after playing that long; 0–0 = never |
+
+Standing and waiting for mobs as long as a rest lasts counts as the rest. In
+the JSON: `"mob_sets"`, `"reaction_ms"`, `"below_to"` (in a potion),
+`"edge_margin_to"`, `"session_ms"`.
+
 **Tempo drift** handles what independent random draws can't. In the recording,
 the gap after each attack wandered: a slow gap tended to follow a slow one
 (lag-1 correlation 0.34), and the average went from ~590 ms to ~700 ms over the

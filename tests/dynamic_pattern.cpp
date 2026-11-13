@@ -29,6 +29,9 @@ int main(){
      DynamicPattern w;w.wobblePermille=0;wobblePattern(w,[](int32_t){return 0;});assert(w.comboGap.min==510);   // off: untouched
      w.wobblePermille=100;wobblePattern(w,[](int32_t n){return n-1;});assert(w.comboGap.min==561&&w.comboGap.max==836&&w.jumpToAttack.max==132);
      assert(w.attacksPerSet.min==2&&w.sets.max==12);}   // counts never wobble
+    // Thresholds that aren't the same every time (2.1): from..to, or always `from` when `to` is 0 or lower.
+    assert(drawBetween(50,62,[](int32_t){return 0;})==50&&drawBetween(50,62,[](int32_t n){return n-1;})==62);
+    assert(drawBetween(50,0,[](int32_t n){return n-1;})==50&&drawBetween(120,100,[](int32_t n){return n-1;})==120&&drawBetween(7,7,[](int32_t){return 0;})==7);
     // Tempo drift reverts toward 1.0x and never leaves +/-drift.
     assert(tempoDriftStep(100,150,0)==90&&tempoDriftStep(-100,150,0)==-90);
     assert(tempoDriftStep(150,150,75)==150&&tempoDriftStep(-150,150,-75)==-150);

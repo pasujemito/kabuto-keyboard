@@ -14,7 +14,7 @@
 #define KABUTO_STR(x)      KABUTO_STR_(x)
 #define FIRMWARE_VERSION   KABUTO_STR(KABUTO_VERSION)
 #else
-#define FIRMWARE_VERSION   "2.0.0"
+#define FIRMWARE_VERSION   "2.1.0"
 #endif
 
 // --- Key matrix -----------------------------------------------------------

@@ -305,6 +305,11 @@ inline bool mobInReach(bool fresh, uint8_t mobs) { return fresh && (mobs & MOB_R
 inline bool breakSafe(bool fresh, int hp) { return !(fresh && hp >= 0 && hp < BREAK_MIN_HP); }
 inline bool restSafe(bool fresh, int hp, uint8_t mobs) { return breakSafe(fresh, hp) && !mobInReach(fresh, mobs); }
 inline bool restOver(bool fresh, uint8_t mobs) { return mobInReach(fresh, mobs); }
+// Mob-driven sets: a set is over when the readings say no mob is in reach (they're dead, or
+// gone). Without mob readings nothing is known, so the set's own count decides.
+inline bool mobSetOver(bool fresh, uint8_t mobs) { return fresh && (mobs & MOB_READ) && !(mobs & (MOB_LEFT | MOB_RIGHT)); }
+// Session cap: playing since `startedMs` for `lengthMs` (0: no cap).
+inline bool sessionOver(uint32_t lengthMs, uint32_t startedMs, uint32_t nowMs) { return lengthMs && (uint32_t)(nowMs - startedMs) >= lengthMs; }
 struct Breaks {
     uint32_t shortMs = 0, shortAt = 0;   // a short break owed: how long, and since when
     uint32_t restMs = 0;                 // a rest owed: how long (0: none)

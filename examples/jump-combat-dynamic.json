@@ -56,6 +56,15 @@
           8000,
           30000
         ],
+        "mob_sets": true,
+        "reaction_ms": [
+          180,
+          450
+        ],
+        "session_ms": [
+          2700000,
+          5400000
+        ],
         "shuffle_skills": true,
         "keys": {
           "jump": "ALT",

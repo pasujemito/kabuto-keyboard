@@ -836,6 +836,34 @@ int main() {
          toolKeysTake(keys,sizeof(keys));assert(!keys[0]);
          engine.cfg_.layers[0].keys[0].steps.clear();engine.cfg_.layers[0].keys[1].steps.clear();engine.cfg_.workflows.pop_back();
          homePinsLoad(nullptr,0);homePinsTakeDirty();}
+        // Smarter with the screen reader (2.1).
+        {DynamicPattern g=p;g.sets={1,1};g.attacksPerSet={6,6};g.skills.clear();g.potions.clear();g.smart=false;g.homeRangePermille=0;g.edgeMarginPermille=0;g.stuckAfterMs=0;g.glidePermille=0;
+         // Mob-driven sets: with its mobs dead the set ends (Smart off: the lowest draw is no extra attack).
+         g.mobSets=true;aware.setPattern(g);
+         play([&]{seen(MOB_READ,0,0,-1,-1);});assert(attacks()==1);
+         play([&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1);});assert(attacks()==6);            // mobs about: the full count
+         play([&]{liveStatsUpdate(-1,-1,-1);});
+         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;play([]{});assert(attacks()==6);   // no readings: the count decides
+         g.mobSets=false;aware.setPattern(g);play([&]{seen(MOB_READ,0,0,-1,-1);});assert(attacks()==6);   // off (before 2.1)
+         // Reaction time: after standing and waiting, the first attack comes that long after the mob.
+         g.smart=true;g.sets={1,1};g.attacksPerSet={1,1};
+         auto firstAttackAfterMob=[&]{uint32_t began=millis(),mobAt=0,attackAt=0;
+             play([&]{bool mob=millis()-began>=2000;if(mob&&!mobAt)mobAt=millis();seen(mob?MOB_READ|MOB_LEFT:MOB_READ,mob?1:0,0,mob?40:-1,-1);
+                      });
+             for(auto e:hidEvents)if(!attackAt&&e.down&&e.key==0&&e.mods==5)attackAt=e.at;
+             return attackAt-mobAt;};
+         g.reaction={0,0};aware.setPattern(g);uint32_t quick=firstAttackAfterMob();
+         g.reaction={400,400};aware.setPattern(g);uint32_t slow=firstAttackAfterMob();
+         assert(slow>=400&&slow>=quick+350&&slow<quick+600);
+         // Session cap: played this long, it stops by itself; pressed again, a new session starts.
+         g.smart=false;g.reaction={0,0};g.sets={100,100};g.session={60000,60000};aware.setPattern(g);engine.dynamicSkillTimers_.clear();
+         for(int round=0;round<2;++round){uint32_t began=millis();play([&]{seen(MOB_READ|MOB_LEFT,1,0,40,-1);});
+             assert(millis()-began>=60000&&millis()-began<62000&&engine.stopFlag_&&held.empty()&&!heldMods);engine.stopFlag_=false;}
+         // A long wait for mobs counts as the rest: its timer starts again.
+         g.session={0,0};g.smart=true;g.sets={1,1};g.attacksPerSet={1,1};g.restEvery={30000,30000};g.restMs={5000,5000};aware.setPattern(g);engine.dynamicSkillTimers_.clear();
+         {uint32_t began=millis();play([&]{bool mob=millis()-began>=20000;seen(mob?MOB_READ|MOB_LEFT:MOB_READ,mob?1:0,0,mob?40:-1,-1);});
+          auto rest=engine.dynamicSkillTimers_.find(g.id+"/rest");assert(rest!=engine.dynamicSkillTimers_.end()&&rest->second.lastRun-began>=20000);}
+         engine.dynamicSkillTimers_.clear();engine.stopFlag_=false;}
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS;   // leave no fresh data for later tests
     }
     // Cancellation at each hold phase leaves no Ctrl/Alt/arrow/skill input down.

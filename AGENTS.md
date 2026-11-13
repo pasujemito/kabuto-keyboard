@@ -24,7 +24,7 @@ firmware updates from this repo's GitHub releases.
 | `src/access_logic.h` | PIN rules, login lockout, cookie parsing (pure) |
 | `src/update_logic.h` | version/payload/rollback rules (pure) |
 | `src/live_stats.*` | latest readings from the PC (bars, game state incl. the test popup, minimap x/y and map position, mob sides/counts/distances, map name) and what a playing pattern is doing (dashboard) |
-| `src/stats_logic.h` | XP rate, live potions, stop reasons, notifications, edge/mob facing, stuck, smart decisions, auto-pause, breaks and rests (pure) |
+| `src/stats_logic.h` | XP rate, live potions, stop reasons, notifications, edge/mob facing, stuck, smart decisions, auto-pause, breaks and rests, mob-driven sets, session cap (pure) |
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
@@ -84,7 +84,8 @@ deliberately and explain it in plain words (see tests/README.md).
   gone: don't add Wi-Fi traffic per reading), only when they change something
   (`worth_sending`) plus a 2 s heartbeat,
   parsed by `statsField` / `parseStatsForm` (`stats_logic.h`). The other way,
-  `tool` steps (the pad's setup buttons) queue the script's keys in `ToolKeys`
+  `tool` steps (the pad's setup buttons) and the page's `/api/tool` (Teach this
+  map, Settings' screen reader keys) queue the script's keys in `ToolKeys`
   (`stats_logic.h`); it collects them with `KABUTO keys`. Each reading's
   answer (`KABUTO ok keys=...&home=...`) carries the pad buttons pressed since (so the script
   only polls for them while readings aren't flowing) and the playing

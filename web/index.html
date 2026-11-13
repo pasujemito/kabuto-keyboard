@@ -64,12 +64,15 @@
   @media (min-width:1000px){
     main{grid-template-columns:minmax(300px,1.15fr) minmax(260px,1fr) minmax(280px,1fr)}
     .panel{display:block!important;min-width:0}
+    #panelSettings{display:none!important;position:fixed;top:53px;right:0;bottom:0;width:min(440px,100vw);z-index:25;background:var(--bg);border-left:1px solid var(--edge);box-shadow:-12px 0 30px rgba(0,0,0,.45)}
+    #panelSettings.show{display:block!important}
   }
   @media (max-width:999px){
     main{grid-template-rows:1fr;height:calc(100% - 53px - 48px)}
     .panel{grid-column:1;grid-row:1;display:none}
     .panel.show{display:block}
     .tabbar{display:flex}
+    #settingsBtn,.set-close{display:none}
     #panelKeys{border-right:0}
   }
 
@@ -303,7 +306,30 @@
   #dynamicDialog.compact .setting:focus-within .setting-default{display:flex}
   #dynamicDialog.compact .setting:focus-within .setting-help{display:block}
   #dynamicDialog.compact .setting:focus-within{outline:1px solid var(--edge);outline-offset:6px;border-radius:6px}
-  .new-row{margin-bottom:8px}.more-row{margin-bottom:4px}
+  .new-row{margin-bottom:8px}
+  /* Pills above the pads: small, out of the buttons' way. */
+  .pad-pills{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px;scrollbar-width:none}
+  .pad-pills::-webkit-scrollbar{display:none}
+  .pill{flex:none;background:var(--panel);border:1px solid var(--edge);color:var(--muted);padding:6px 11px;border-radius:16px;font-size:12px;white-space:nowrap}
+  .pill:hover{color:var(--ink);border-color:var(--faint)}
+  .pill:disabled{opacity:.45}
+  /* Below the pads, and never taller than a few lines: the list scrolls inside itself. */
+  #notices{max-height:132px;overflow:auto}
+  .badge{position:relative}
+  .badge::after{content:"";position:absolute;top:4px;right:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--amber)}
+  .btn.badge::after{top:-3px;right:-3px}
+  .set-card{border:1px solid var(--edge);border-radius:10px;background:var(--panel);padding:12px;margin:10px 0}
+  .set-card h3{margin:0 0 6px;font-size:13px}
+  .about-head{display:flex;align-items:baseline;gap:10px}
+  .about-name{font-family:var(--mono);font-weight:600;font-size:16px}.about-name b{color:var(--amber)}
+  .about-ver{font-family:var(--mono);color:var(--amber);font-size:14px}
+  .whats-new{margin:8px 0;font-size:12px;color:var(--muted)}
+  .whats-new summary{cursor:pointer;color:var(--ink);font-weight:600}
+  .whats-new ul{margin:8px 0 0;padding-left:18px;display:grid;gap:5px}
+  .whats-new b{color:var(--ink);font-weight:600}
+  .tool-keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:6px;margin-top:8px}
+  .tool-keys .btn{text-align:left;white-space:normal}
+  .tool-keys .btn small{display:block;color:var(--faint);font-family:var(--mono);font-size:10px}
   /* On a phone (where the pad is mostly set up) the pattern editor takes the whole screen,
      with thumb-sized chips and Apply always in reach at the bottom. */
   @media (max-width:700px){
@@ -406,6 +432,7 @@
   <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
   <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 12h1M8 8v8M12 5v14M16 9v6M20 11v2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
 </svg>
 <header>
@@ -414,6 +441,7 @@
   <div class="hdr-actions">
     <button class="btn ibtn danger" id="stopBtn" aria-label="Stop" title="Stop playback and release all keys"><svg class="ic" aria-hidden="true"><use href="#i-stop"/></svg></button>
     <button class="btn ibtn" id="configJson" aria-label="Export JSON" title="Export the full configuration as JSON"><svg class="ic" aria-hidden="true"><use href="#i-export"/></svg></button>
+    <button class="btn ibtn" id="settingsBtn" aria-label="Settings" title="Version, updates, Wi-Fi, storage and the PC screen reader's keys"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></button>
     <button class="btn ibtn primary" id="saveBtn" aria-label="Save" title="Save to device"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg></button>
   </div>
 </header>
@@ -421,9 +449,6 @@
 
 <main>
   <section class="panel show" id="panelKeys">
-    <!-- What's happening now comes first: on a phone it's what you look at while a pattern plays. -->
-    <div class="notices" id="notices" aria-label="Notifications" aria-live="polite" hidden></div>
-    <div class="live-stats" id="liveStats" aria-label="Live stats" hidden></div>
     <div class="keyshead">
       <h2>Layers</h2>
       <div class="layer-tools">
@@ -439,7 +464,15 @@
         <button class="on" data-g="run" title="Tap a button to play it on the host"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
       </div>
     </div>
+    <div class="pad-pills" aria-label="Pad shortcuts">
+      <button class="pill" id="newSetHome" title="Puts a Set home button on the selected (empty) button: pressed, home is where you stand, without stopping what's playing">＋ 🏠 Set home</button>
+      <button class="pill" id="newSetupLayer" title="Adds a layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">＋ 🍁 Setup layer</button>
+      <button class="pill" id="teachMap" title="Opens the map list on your PC (the screen reader's F9), to teach it the map you're on">🗺 Teach this map</button>
+    </div>
     <div class="grid" id="grid"></div>
+    <!-- It's a macro pad: the buttons come first. What's happening now sits below them and never pushes them down. -->
+    <div class="live-stats" id="liveStats" aria-label="Live stats" hidden></div>
+    <div class="notices" id="notices" aria-label="Notifications" aria-live="polite" hidden></div>
     <details class="monitor"><summary>Device activity</summary><div id="monitor">
       <div class="monitor-head">
         <h2>Macro execution log</h2>
@@ -461,25 +494,45 @@
   <section class="panel" id="panelRecordings">
     <h2>Recordings</h2>
     <div class="recording-actions new-row"><button class="btn primary withic" id="newRecording"><svg class="ic" aria-hidden="true"><use href="#i-record"/></svg>New recording</button><button class="btn withic" id="newDynamic" title="A pattern the pad makes up afresh every time it plays"><svg class="ic" aria-hidden="true"><use href="#i-shuffle"/></svg>Dynamic pattern</button><button class="btn withic" id="importRecording"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg>Import JSON</button></div>
-    <div class="recording-actions more-row"><span class="hint">Pad buttons:</span><button class="btn sm" id="newSetHome" title="A button that makes home where you stand, without stopping what's playing">🏠 Set home button</button><button class="btn sm" id="newSetupLayer" title="A layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">🍁 Setup layer</button></div>
-    <div class="device-card" aria-label="Device">
-    <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
-    <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
-    <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
-    </div>
     <details class="storage-box" id="charactersBox" open><summary id="charactersSummary">Characters</summary><div class="storage" id="characters" aria-label="Characters"></div></details>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
+  </section>
+  <section class="panel" id="panelSettings" aria-label="Settings">
+    <div class="keyshead"><h2>Settings</h2><button class="btn sm set-close" id="settingsClose">Close</button></div>
+    <div class="set-card about">
+      <div class="about-head"><span class="about-name"><b>■</b> Kabuto</span><span class="about-ver" id="aboutVersion">v…</span></div>
+      <p class="hint" id="aboutLine">ESP32-S3 Bluetooth macro pad</p>
+      <details class="whats-new" open><summary>What's new in 2.1</summary><ul id="whatsNew">
+        <li><b>Buttons first</b>: the pads are at the top; what's happening now and notifications sit below and never push them down</li>
+        <li><b>Settings</b>: version, updates, Wi-Fi, storage and the PC screen reader's keys in one place</li>
+        <li><b>Teach this map</b> from the page, and a button with one pattern opens that pattern when you edit it</li>
+        <li><b>Smarter with the screen reader</b>: a run ends when its mobs are dead, a reaction time before attacking, drink and turn-back points that vary, and waiting for mobs counts as a rest</li>
+        <li><b>Stop after</b>: a pattern can stop by itself after 45–90 minutes</li>
+      </ul></details>
+      <a class="hint" id="aboutChangelog" target="_blank" rel="noopener" hidden>Full changelog on GitHub ↗</a>
+    </div>
+    <div class="device-card" aria-label="Device">
+    <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
+    <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
+    <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
+    </div>
+    <div class="set-card" aria-label="PC screen reader">
+      <h3>PC screen reader</h3>
+      <p class="hint">Its keys, pressed from here: setup and teaching need no keyboard and no layer on the pad. They reach the script over the USB cable while it runs.</p>
+      <div class="tool-keys" id="toolKeys"></div>
+    </div>
   </section>
   <section class="panel" id="panelEdit">
     <div id="editor"><div class="empty-state">Loading device…</div></div>
   </section>
 </main>
 
-<nav class="tabbar">
+<nav class="tabbar" aria-label="Sections">
   <button id="tabKeys" class="on" onclick="showTab('keys')"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg>Buttons</button>
   <button id="tabRecordings" onclick="showTab('recordings')"><svg class="ic" aria-hidden="true"><use href="#i-wave"/></svg>Recordings</button>
   <button id="tabEdit" onclick="showTab('edit')"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>Assign</button>
+  <button id="tabSettings" onclick="showTab('settings')"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>Settings</button>
 </nav>
 
 <!-- recorder sheet -->
@@ -712,6 +765,8 @@ function renderUpdates(){
   box.replaceChildren();
   const u=updateInfo,releases=u?.releases||[],newest=releases.find(r=>r.newer);
   summary.textContent=newest?`Update available: v${newest.version}`:'Updates';
+  $('#tabSettings').classList.toggle('badge',!!newest);$('#settingsBtn').classList.toggle('badge',!!newest);   // a dot: there's an update
+  if(u&&u.repo){const link=$('#aboutChangelog');link.href='https://github.com/'+u.repo+'/blob/main/CHANGELOG.md';link.hidden=false;}
   $('#updateBox').classList.toggle('warn',!!newest);
   const note=text=>{const n=el('div','hint');n.textContent=text;return n;};
   const check=$('#updateCheck');
@@ -826,7 +881,8 @@ function renderStorage(){
 }
 async function loadAll(){
   meta=await getJson("/api/meta");
-  $("#fw").textContent=" v"+meta.firmware;
+  $("#fw").textContent=" v"+meta.firmware;$("#aboutVersion").textContent="v"+meta.firmware;
+  $("#aboutLine").textContent=`ESP32-S3 Bluetooth macro pad · ${meta.keyCount} buttons · up to ${meta.maxLayers} layers`;
   cfg=await getJson("/api/config");
   $("#loadError").hidden=true;
   normalize();
@@ -841,13 +897,15 @@ async function loadAll(){
 }
 
 /* tabs (mobile) */
+// On a phone one panel shows at a time. On a wide screen the three main ones sit side by
+// side and Settings slides over them (the header's button, or its Close).
 function showTab(t){
-  $("#panelKeys").classList.toggle("show",t==="keys");
-  $("#panelRecordings").classList.toggle("show",t==="recordings");
-  $("#tabRecordings").classList.toggle("on",t==="recordings");
-  $("#panelEdit").classList.toggle("show",t==="edit");
-  $("#tabKeys").classList.toggle("on",t==="keys");
-  $("#tabEdit").classList.toggle("on",t==="edit");
+  const wide=window.innerWidth>=1000;
+  if(wide&&t!=="settings"){$("#panelSettings").classList.remove("show");$("#tabSettings").classList.remove("on");}
+  if(wide&&t==="settings"){const on=$("#panelSettings").classList.toggle("show");$("#tabSettings").classList.toggle("on",on);return;}
+  for(const [name,panel,tab] of [["keys","#panelKeys","#tabKeys"],["recordings","#panelRecordings","#tabRecordings"],["edit","#panelEdit","#tabEdit"],["settings","#panelSettings","#tabSettings"]]){
+    $(panel).classList.toggle("show",t===name);$(tab).classList.toggle("on",t===name);
+  }
 }
 
 /* layers */
@@ -954,6 +1012,10 @@ function selectButton(layer,key){
   selLayer=layer;selKey=key;selectedWorkflow=null;
   if(layerChanged){renderLayers();postLayer(layer);}
   renderGrid();renderEditor();renderRecordings();if(window.innerWidth<1000)showTab('edit');
+  // A button with just one dynamic pattern: that's what you came to edit, so it opens at once
+  // (Close leaves you on the button's own settings).
+  const a=assignmentFor(cfg.layers[layer].keys[key]),only=a.recognized&&a.ids.length===1?cfg.workflows.find(w=>w.id===a.ids[0]):null;
+  if(only&&isDynamicRecording(only)&&!$('#dynamicDialog').open)openDynamicEditor(only.id);
 }
 async function runPress(i){
   if(!status.connected){toast("Run needs a paired host",true);return;}
@@ -988,15 +1050,17 @@ const DYNAMIC_KEY_SLOTS=[['jump','Jump'],['attack','Attack'],['left','Turn left'
 const DYNAMIC_DEFAULT_KEYS={jump:'ALT',attack:'CTRL',left:'LEFT',right:'RIGHT'};
 const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
-  return {id,enabled,key:id==='hp'?'C':'V',backup_keys:[],below:id==='hp'?50:30,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
+  return {id,enabled,key:id==='hp'?'C':'V',backup_keys:[],below:id==='hp'?50:30,below_to:id==='hp'?62:42,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,attack:true,char_keys:!!activeCharacter(),char_potions:!!activeCharacter(),char_skills:!!activeCharacter(),skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,edge_margin_to:.18,mob_sets:true,reaction_ms:[180,450],session_ms:[2700000,5400000],stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,attack:true,char_keys:!!activeCharacter(),char_potions:!!activeCharacter(),char_skills:!!activeCharacter(),skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
   if(!p||typeof p!=='object')return p;
   for(const [key,old] of [['attacks_per_set','combos_per_side'],['sets','sides']]){if(p[key]===undefined&&p[old]!==undefined)p[key]=p[old];delete p[old];}
   if(p.tempo_drift===undefined)p.tempo_drift=0; // presets from before drift existed
+  // Saved before 2.1: sets end on their count, no reaction time, a fixed edge margin, no session cap.
+  for(const [k,v] of [['mob_sets',false],['reaction_ms',[0,0]],['edge_margin_to',0],['session_ms',[0,0]]])if(p[k]===undefined)p[k]=v;
   // Saved before 2.0: timings peak in the middle, no hesitation, wobble, breaks or rests.
   for(const [k,v] of [['peak',.5],['hesitation',0],['wobble',0],['break_chance',0],['break_ms',[700,2500]],['rest_every_ms',[0,0]],['rest_ms',[8000,30000]]])if(p[k]===undefined)p[k]=v;
   // Older patterns: the original keys, and HP/Mana present but off.
@@ -1004,7 +1068,7 @@ function normalizeDynamicPattern(p){
   for(const [slot,name] of Object.entries(DYNAMIC_DEFAULT_KEYS))if(!p.keys[slot])p.keys[slot]=name;
   if(!Array.isArray(p.potions))p.potions=[];
   p.potions=['hp','mana'].map(id=>p.potions.find(x=>x?.id===id)||defaultPotion(id,false));
-  for(const x of p.potions){if(!Array.isArray(x.backup_keys))x.backup_keys=[];x.backup_keys=x.backup_keys.map(b=>typeof b==='string'?{key:b,per_tap:0}:b);if(x.below===undefined)x.below=0;if(x.bar_max===undefined)x.bar_max=0;if(x.per_tap===undefined)x.per_tap=0;}   // saved before live bars / amounts
+  for(const x of p.potions){if(!Array.isArray(x.backup_keys))x.backup_keys=[];x.backup_keys=x.backup_keys.map(b=>typeof b==='string'?{key:b,per_tap:0}:b);if(x.below===undefined)x.below=0;if(x.below_to===undefined)x.below_to=0;if(x.bar_max===undefined)x.bar_max=0;if(x.per_tap===undefined)x.per_tap=0;}   // saved before live bars / amounts
   // Saved before screen awareness: all off.
   if(p.edge_margin===undefined)p.edge_margin=0;
   if(p.stuck_after_ms===undefined)p.stuck_after_ms=0;
@@ -1039,6 +1103,11 @@ function validateDynamicPattern(p){
   const movement=new Set([k.jump,k.attack,k.left,k.right]);
   const tapKey=(name,label)=>{if(!name||!meta.keys.includes(name))throw new Error(label+': choose a key.');if(movement.has(name))throw new Error(label+" can't use a movement key.");};
   if(typeof p.edge_margin!=='number'||!(p.edge_margin>=0&&p.edge_margin<=.4))throw new Error('Turn at map edges: enter a percentage from 0 to 40.');
+  if(typeof p.edge_margin_to!=='number'||!(p.edge_margin_to>=0&&p.edge_margin_to<=.4)||(p.edge_margin_to&&p.edge_margin_to<p.edge_margin))throw new Error('Turn at map edges, up to: enter 0 (always the first number) or a percentage from it to 40.');
+  if(typeof p.mob_sets!=='boolean')throw new Error('Choose whether a run ends when its mobs are dead.');
+  try{range(p.reaction_ms,'',0,5000);}catch(e){throw new Error('Reaction time: enter an ordered range from 0 to 5000 ms.');}
+  try{range(p.session_ms,'',0,86400000);}catch(e){throw new Error('Stop after: enter an ordered range in minutes (0–0 = never).');}
+  if(p.session_ms[1]&&p.session_ms[0]<60000)throw new Error('Stop after: at least a minute, or 0–0 for never.');
   if(!Number.isInteger(p.stuck_after_ms)||(p.stuck_after_ms&&(p.stuck_after_ms<3000||p.stuck_after_ms>600000)))throw new Error('Stuck after: enter 0 (off) or 3 to 600 seconds.');
   if(typeof p.face_mobs!=='boolean')throw new Error('Choose whether to face mobs.');
   if(typeof p.smart!=='boolean')throw new Error('Choose whether to use smart mode.');
@@ -1059,7 +1128,8 @@ function validateDynamicPattern(p){
       if(!Number.isInteger(b.per_tap)||b.per_tap<0||b.per_tap>10000000)throw new Error(label+' backup key '+(i+1)+' per tap: enter a whole number, 0 = same as the main key.');
       if(b.per_tap&&(!x.bar_max||b.per_tap>x.bar_max))throw new Error(label+' backup key '+(i+1)+' per tap: set the bar total first, and no more than it.');});
     if(new Set([x.key,...x.backup_keys.map(b=>b.key)]).size!==x.backup_keys.length+1)throw new Error(label+' backup keys: each must be a different key.');
-    if(!Number.isInteger(x.below)||x.below<0||x.below>100)throw new Error(label+' drink below: enter a percentage from 0 to 100.');range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
+    if(!Number.isInteger(x.below)||x.below<0||x.below>100)throw new Error(label+' drink below: enter a percentage from 0 to 100.');
+    if(!Number.isInteger(x.below_to)||x.below_to<0||x.below_to>100||(x.below_to&&x.below_to<x.below))throw new Error(label+' drink below, up to: enter 0 (always the first number) or a percentage from it to 100.');range(x.hold,label+' hold',1,90000);range(x.after,label+' gap',0,90000);
     try{range(x.every_ms,'',0,86400000);}catch(e){throw new Error(label+' every: enter an ordered range from 0 to 86400 seconds.');}
     for(const v of [x.bar_max,x.per_tap])if(!Number.isInteger(v)||v<0||v>10000000)throw new Error(label+' amounts: enter whole numbers from 0 to 10,000,000.');
     if(!x.bar_max!==!x.per_tap||x.per_tap>x.bar_max)throw new Error(label+' amounts: set both the bar total and per tap (no more than the total), or both 0.');
@@ -1179,6 +1249,16 @@ const HELP={
   left:{title:'Left key',what:'Turns and walks left.'},right:{title:'Right key',what:'Turns and walks right.'},
   edge_margin:{title:'Turn back before the map edge (% of map width)',what:'How far from each side of the map it turns back, in % of the map\'s width.',
     points:[['0%','off: it can walk right to the edge'],['10%','turns 10% from each edge: uses the middle 80% of the map'],['20%','uses the middle 60%'],['40%','uses only the middle 20%']]},
+  edge_margin_to:{title:'…or anywhere up to (% of map width)',what:'With a second number, it turns back somewhere between the two, picked afresh after each run, so it never turns at exactly the same spot.',
+    points:[['0%','always at the first number'],['18%','with 12% above: somewhere from 12% to 18%']]},
+  mob_sets:{title:'End a run when its mobs are dead',what:'A run of attacks normally lasts its count. With this on it also ends as soon as no mob is in reach, so skills, breaks and turning happen when a fight is over, as a player\'s would.',
+    points:[['on','ends with the last mob in reach (with Smart off, after 0–2 more attacks)'],['off','always plays the full count']]},
+  reaction_ms:{title:'Reaction time (ms)',what:'After standing and waiting, how long it takes to start attacking once a mob is in reach. Nobody reacts the same instant.',
+    points:[['0–0','attacks at once'],['180–450','a person\'s reaction (recommended)']]},
+  session_ms:{title:'Stop after (minutes)',what:'Stops by itself after playing this long without a real pause (half a minute not playing starts the count again). The log says so; press the button to go on.',
+    points:[['0–0','never stops by itself'],['45–90','stops after 45 to 90 minutes (recommended)']]},
+  'potion.below_to':{title:'…or anywhere up to (%)',what:'With a second number, it drinks somewhere between the two, picked afresh after each drink, so it never drinks at exactly the same point.',
+    points:[['0%','always at the first number'],['62%','with 50% above: somewhere from 50% to 62%']]},
   stuck_after_ms:{title:'Stuck check (seconds)',what:'If your place on the map hasn\'t changed for this long, it turns around. Still stuck after the same time again, it stops.',
     points:[['0','off'],['10 s','reacts quickly'],['60 s','very patient']]},
   smart:{title:'Smart: attack only when a mob is near',what:'Uses the screen reader to see mobs.',
@@ -1213,10 +1293,10 @@ const HELP={
 // What isn't used right now, and why: shown greyed out with the reason.
 function unusedReasons(p){
   const r={},live=!!(status&&status.live&&status.live.fresh);
-  if(!live)for(const k of ['edge_margin','stuck_after_ms','smart','auto_pause','approach','home_range','walk_hold','potion.below','potion.bar_max','potion.per_tap','potion.backup_keys'])
+  if(!live)for(const k of ['edge_margin_to','mob_sets','reaction_ms','potion.below_to','edge_margin','stuck_after_ms','smart','auto_pause','approach','home_range','walk_hold','potion.below','potion.bar_max','potion.per_tap','potion.backup_keys'])
     r[k]='Not in use right now: no readings from the PC screen reader (run screen_stats.py with the pad on the USB cable).';
-  if(!p.smart)for(const k of ['auto_pause','approach'])r[k]=r[k]||'Not used: Smart is off.';
-  if(!p.attack)for(const k of ['attacks_per_set','sets','turn_chance','tempo_drift','peak','hesitation','wobble','break_chance','break_ms','rest_every_ms','rest_ms','glide','jump_to_attack','attack_to_jump_up','jump_up_to_attack_up','combo_gap','dir_hold','dir_after',
+  if(!p.smart)for(const k of ['auto_pause','approach','reaction_ms'])r[k]=r[k]||'Not used: Smart is off.';
+  if(!p.attack)for(const k of ['attacks_per_set','sets','turn_chance','tempo_drift','peak','hesitation','wobble','break_chance','break_ms','rest_every_ms','rest_ms','session_ms','edge_margin_to','mob_sets','reaction_ms','glide','jump_to_attack','attack_to_jump_up','jump_up_to_attack_up','combo_gap','dir_hold','dir_after',
     'edge_margin','stuck_after_ms','smart','auto_pause','approach','walk_hold','home_range','jump','attack','left','right'])r[k]='Not used: Attack is off (support only: potions and skills).';
   if(!(p.break_chance>0))r.break_ms=r.break_ms||'Not used: Short break is 0%.';
   if(!(p.rest_every_ms&&p.rest_every_ms[1]>0))r.rest_ms=r.rest_ms||'Not used: Rest every is 0–0 (off).';
@@ -1275,11 +1355,15 @@ function renderDynamicAware(){
   const add=(node,key,label,text,reset)=>box.appendChild(helped(node,key,label,text,()=>{reset();redo();}));
   add(dynamicNumber('Turn at map edges (%)',Math.round(p.edge_margin*1000)/10,0,40,1,n=>p.edge_margin=n/100,'Turn at map edges (%) · 0 = off'),
       'edge_margin','Turn at map edges',pct(d('edge_margin')),()=>p.edge_margin=d('edge_margin'));
+  add(dynamicNumber('Turn at map edges, up to (%)',Math.round(p.edge_margin_to*1000)/10,0,40,1,n=>p.edge_margin_to=n/100,'…or anywhere up to (%) · 0 = always the first'),
+      'edge_margin_to','Turn at map edges, up to',pct(d('edge_margin_to')),()=>p.edge_margin_to=d('edge_margin_to'));
   add(dynamicNumber('Stuck after (seconds)',p.stuck_after_ms/1000,0,600,1,n=>p.stuck_after_ms=Number.isFinite(n)?Math.round(n*1000):NaN,'Stuck after (s) · 0 = off'),
       'stuck_after_ms','Stuck after',d('stuck_after_ms')/1000+' s',()=>p.stuck_after_ms=d('stuck_after_ms'));
   add(dynamicCheck('Smart mode','Smart: attack only when a mob is in reach',p.smart,v=>p.smart=v),'smart','Smart mode',onOff(d('smart')),()=>p.smart=d('smart'));
   add(dynamicNumber('Auto-pause (%)',Math.round(p.auto_pause*1000)/10,0,90,1,n=>p.auto_pause=n/100,'Auto-pause below (% of most mobs seen) · 0 = off'),
       'auto_pause','Auto-pause',pct(d('auto_pause')),()=>p.auto_pause=d('auto_pause'));
+  add(dynamicCheck('Mob-driven sets','End a run when its mobs are dead',p.mob_sets,v=>p.mob_sets=v),'mob_sets','Mob-driven sets',onOff(d('mob_sets')),()=>p.mob_sets=d('mob_sets'));
+  add(dynamicRange('Reaction time (ms)',p.reaction_ms,0,5000),'reaction_ms','Reaction time',ms(d('reaction_ms')),()=>p.reaction_ms=copy(d('reaction_ms')));
   add(dynamicCheck('Walk to mobs','Walk to mobs you can see but not reach',p.approach,v=>p.approach=v),'approach','Walk to mobs',onOff(d('approach')),()=>p.approach=d('approach'));
   add(dynamicRange('Walking: hop every (ms)',p.walk_hold,50,5000),'walk_hold','Walking: hop every',ms(d('walk_hold')),()=>p.walk_hold=copy(d('walk_hold')));
   refreshUnused();
@@ -1311,6 +1395,7 @@ function renderDynamicPotions(){
     }
     add(backups,'backup_keys','backup keys','none',()=>potion.backup_keys=[]);
     add(dynamicNumber(label+' drink below (%)',potion.below,0,100,1,n=>potion.below=Number.isFinite(n)?Math.round(n):NaN,label+' drink below (%) · 0 = timer only'),'below','drink below',def.below+'%',()=>potion.below=def.below);
+    add(dynamicNumber(label+' drink below, up to (%)',potion.below_to,0,100,1,n=>potion.below_to=Number.isFinite(n)?Math.round(n):NaN,label+' …or anywhere up to (%) · 0 = always the first'),'below_to','drink below, up to',def.below_to+'%',()=>potion.below_to=def.below_to);
     add(dynamicNumber(label+' bar total',potion.bar_max,0,10000000,1,n=>potion.bar_max=Number.isFinite(n)?Math.round(n):NaN,label+' bar total (e.g. 5000) · 0 = off'),'bar_max','bar total',String(def.bar_max),()=>potion.bar_max=def.bar_max);
     add(dynamicNumber(label+' per tap',potion.per_tap,0,10000000,1,n=>potion.per_tap=Number.isFinite(n)?Math.round(n):NaN,label+' restored per tap (e.g. 800)'),'per_tap','per tap',String(def.per_tap),()=>potion.per_tap=def.per_tap);
     add(dynamicRange(label+' every (seconds)',potion.every_ms,0,86400000,1000),'every_ms','every',secs(def.every_ms),()=>potion.every_ms=copy(def.every_ms));
@@ -1340,6 +1425,7 @@ function renderDynamicFields(){
   add(feel,dynamicRange('Short break length (seconds)',p.break_ms,100,60000,1000),'break_ms','Short break length',sec(d('break_ms')),()=>p.break_ms=copy(d('break_ms')));
   add(feel,dynamicRange('Rest every (minutes)',p.rest_every_ms,0,86400000,60000),'rest_every_ms','Rest every',mins(d('rest_every_ms')),()=>p.rest_every_ms=copy(d('rest_every_ms')));
   add(feel,dynamicRange('Rest length (seconds)',p.rest_ms,1000,600000,1000),'rest_ms','Rest length',sec(d('rest_ms')),()=>p.rest_ms=copy(d('rest_ms')));
+  add(feel,dynamicRange('Stop after (minutes)',p.session_ms,0,86400000,60000),'session_ms','Stop after',mins(d('session_ms')),()=>p.session_ms=copy(d('session_ms')));
   const timings=$('#dynamicTimings');timings.replaceChildren();
   DYNAMIC_RANGES.slice(0,6).forEach(([key,label,min,max])=>add(timings,dynamicRange(label+' (ms)',p[key],min,max),key,label,ms(d(key)),()=>p[key]=copy(d(key))));
   refreshUnused();
@@ -2594,6 +2680,19 @@ $("#pinDialog").addEventListener("cancel",event=>event.preventDefault());
 $("#newDynamic").onclick=()=>openDynamicEditor();
 $("#newSetHome").onclick=()=>{try{addSetHomeButton();}catch(e){toast(e.message,true);}};
 $("#newSetupLayer").onclick=()=>{try{addSetupLayer();}catch(e){toast(e.message,true);}};
+// The PC screen reader's keys from the page ("Teach this map" is its F9): queued on the pad, which
+// hands them to the script with its next answer.
+async function sendToolKey(key,done){
+  if(!(status.live&&status.live.fresh)){toast('The PC screen reader isn\'t sending readings: run screen_stats.py with the pad on the USB cable',true);return;}
+  try{await api('/api/tool?key='+encodeURIComponent(key),{method:'POST'});toast(done);}catch(e){toast(e.message||'The pad didn\'t take that',true);}
+}
+$("#teachMap").onclick=()=>sendToolKey('map','Map list opened on your PC: pick the map there');
+for(const [key,[label,pc]] of Object.entries(TOOL_KEYS)){
+  if(key==='home')continue;   // Set home is the pad's own
+  const b=el('button','btn sm');b.type='button';b.innerHTML=esc(label)+'<small>'+esc(pc)+' on the PC</small>';b.setAttribute('aria-label','Screen reader: '+label);
+  b.onclick=()=>sendToolKey(key,label+' sent to the PC');$('#toolKeys').appendChild(b);
+}
+$("#settingsBtn").onclick=()=>showTab('settings');$("#settingsClose").onclick=()=>showTab('settings');
 for(const [name,preset] of Object.entries(DYNAMIC_PRESETS)){const b=el('button','btn sm');b.type='button';b.textContent=preset.label;b.onclick=()=>applyDynamicPreset(name);$('#dynamicPresets').appendChild(b);}
 $("#dynamicName").oninput=()=>dynamicDirty=true;
 $("#dynamicClose").onclick=closeDynamicEditor;

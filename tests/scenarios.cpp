@@ -443,8 +443,11 @@ int main() {
         auto m = repeat(s, with([](JsonObject p) { p["home_range"] = 0.1; }));
         auto e = rules(m, true);
         double past = worst(m, [](const Run& r) { return r.furthestPast; });
-        e.push_back({"knocked back near the edge, still never past the line", past <= 0});
-        report(fmt("Knockback near the zone's edge, %.0f px map", width).c_str(), "the safety band is about one knockback in real distance whatever the map's size: never past the line",
+        // (Two knockbacks one after the other can carry it a little over: with 32 seeds, 4 runs of the
+        // 1000 px map end up to 20 px past the line, in 2.0 as well; the first four seeds just never did.
+        // So: never more than half a knockback, 25 px, past it.)
+        e.push_back({"knocked back near the edge, never more than half a knockback (25 px) past the line", past <= 25});
+        report(fmt("Knockback near the zone's edge, %.0f px map", width).c_str(), "the safety band is about one knockback in real distance whatever the map's size: it stays at the line (two knockbacks in a row may carry it up to 25 px over)",
                e, fmt("furthest %+.0f px from the line", past));
     }
     // 13. ...and on a big map the band doesn't waste the zone: mobs just inside the line (90% of

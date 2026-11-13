@@ -229,6 +229,9 @@ int main(){
         assert(restSafe(false,-1,0)&&restSafe(true,800,MOB_READ)&&!restSafe(true,800,MOB_READ|MOB_LEFT)&&!restSafe(true,300,MOB_READ));
         assert(restSafe(false,800,MOB_READ|MOB_RIGHT));   // a stale reading says nothing
         assert(restOver(true,MOB_READ|MOB_RIGHT)&&!restOver(true,MOB_READ)&&!restOver(false,MOB_READ|MOB_LEFT));
+        // Mob-driven sets and the session cap (2.1).
+        assert(mobSetOver(true,MOB_READ)&&!mobSetOver(true,MOB_READ|MOB_RIGHT)&&!mobSetOver(false,MOB_READ)&&!mobSetOver(true,0));   // no detector, no verdict
+        assert(!sessionOver(0,0,99999999)&&!sessionOver(60000,1000,60999)&&sessionOver(60000,1000,61000)&&sessionOver(60000,0xFFFFFF00u,60000));   // over the clock's wrap too
         Breaks b;assert(b.take(true,true,0)==BREAK_NONE);
         b.oweShort(2000,1000);b.oweShort(9000,1100);   // one at a time
         assert(b.take(false,false,1200)==BREAK_NONE&&b.take(true,false,1300)==BREAK_SHORT&&b.length==2000&&b.take(true,true,1400)==BREAK_NONE);

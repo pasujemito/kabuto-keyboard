@@ -117,6 +117,14 @@ int main(){
     {const DynamicPattern* q=roundtrip.layers[0].keys[0].steps[0].pattern();
      assert(q->peakPermille==350&&q->hesitationPermille==30&&q->wobblePermille==80&&q->breakChancePermille==60&&q->breakMs.min==700&&q->breakMs.max==2500);
      assert(q->restEvery.min==360000&&q->restEvery.max==840000&&q->restMs.min==8000&&q->restMs.max==30000);}
+    // 2.1: missing in older patterns (off); round-trips.
+    {const DynamicPattern* old=roundtrip.layers[0].keys[0].steps[0].pattern();
+     assert(old->mobSets==false&&!old->reaction.max&&!old->edgeMarginToPermille&&!old->session.max);}
+    String smarter(R"({"layers":[{"keys":[{"steps":[{"type":"dynamic","pattern":{"id":"d","edge_margin":0.12,"edge_margin_to":0.18,"mob_sets":true,"reaction_ms":[180,450],"session_ms":[2700000,5400000],"potions":[{"id":"hp","key":"C","below":50,"below_to":62}],"skills":[]}}]}]}]})");
+    assert(saveRawJson(smarter,err));assert(loadConfig(cfg));assert(saveConfig(cfg));assert(loadConfig(roundtrip));
+    {const DynamicPattern* q=roundtrip.layers[0].keys[0].steps[0].pattern();
+     assert(q->mobSets&&q->reaction.min==180&&q->reaction.max==450&&q->edgeMarginPermille==120&&q->edgeMarginToPermille==180&&q->session.min==2700000&&q->session.max==5400000);
+     assert(q->potions.size()==1&&q->potions[0].belowPercent==50&&q->potions[0].belowTo==62);}
     // Screen reader keys on the pad: "tool" steps keep their key; unknown keys are refused.
     String tools(R"J({"layers":[{"keys":[{"steps":[{"type":"call","workflow":"m"}]}]}],"workflows":[{"id":"m","name":"Mark (F8)","steps":[{"type":"tool","key":"mark"}]},{"id":"h","steps":[{"type":"tool","key":"hide"}]}]})J");
     assert(saveRawJson(tools,err));assert(loadConfig(cfg));
@@ -175,6 +183,11 @@ int main(){
       R"({"id":"p","walk_hold":[300,6000],"skills":[]})",
       R"({"id":"p","glide":1.5,"skills":[]})",
       R"({"id":"p","glide":true,"skills":[]})",
+      R"({"id":"p","mob_sets":"yes","skills":[]})",
+      R"({"id":"p","reaction_ms":[100,6000],"skills":[]})",
+      R"({"id":"p","edge_margin":0.2,"edge_margin_to":0.1,"skills":[]})",
+      R"({"id":"p","session_ms":[30000,90000],"skills":[]})",
+      R"({"id":"p","potions":[{"id":"hp","key":"C","below":50,"below_to":40}],"skills":[]})",
       R"({"id":"p","peak":1.2,"skills":[]})",
       R"({"id":"p","hesitation":0.6,"skills":[]})",
       R"({"id":"p","wobble":0.31,"skills":[]})",

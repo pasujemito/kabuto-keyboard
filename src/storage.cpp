@@ -114,6 +114,16 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
         !chance(o["wobble"],p.wobblePermille) || p.wobblePermille>300 || !chance(o["break_chance"],p.breakChancePermille) ||
         !range(o["break_ms"],p.breakMs,100,60000) || !range(o["rest_every_ms"],p.restEvery,0,86400000) ||
         (p.restEvery.max && p.restEvery.min<30000) || !range(o["rest_ms"],p.restMs,1000,600000)) return false;
+    // Smarter with the screen reader (2.1; all missing in older patterns). "mob_sets": a set
+    // ends when no mob is in reach. "reaction_ms": after waiting, the time between seeing a
+    // mob and attacking it (up to 5 s). "edge_margin_to": the edge margin is drawn from
+    // edge_margin..this (0: fixed). "session_ms": stop after playing this long (0-0 = never,
+    // else at least a minute).
+    if (!o["mob_sets"].isNull() && !o["mob_sets"].is<bool>()) return false;
+    p.mobSets = o["mob_sets"] | false;
+    if (!range(o["reaction_ms"],p.reaction,0,5000) || !chance(o["edge_margin_to"],p.edgeMarginToPermille) || p.edgeMarginToPermille>400 ||
+        (p.edgeMarginToPermille && p.edgeMarginToPermille<p.edgeMarginPermille) ||
+        !range(o["session_ms"],p.session,0,86400000) || (p.session.max && p.session.min<60000)) return false;
     // Movement keys: a modifier name ("ALT") or a key name ("SPACE"). Missing
     // keys keep the defaults, so older patterns play exactly as before.
     auto movementKey = [](JsonVariantConst v, DynamicKey& out) {
@@ -143,6 +153,10 @@ static bool parseDynamic(JsonObjectConst o, DynamicPattern& p) {
             // "below": drink when the live bar is under this % (0 = timer only).
             if (!s["below"].isNull() && (!s["below"].is<uint32_t>() || s["below"].as<uint32_t>() > 100)) return false;
             skill.belowPercent = s["below"] | 0U;
+            // "below_to": the threshold is drawn from below..below_to after each drink (0 / missing: always below).
+            if (!s["below_to"].isNull() && (!s["below_to"].is<uint32_t>() || s["below_to"].as<uint32_t>() > 100)) return false;
+            skill.belowTo = s["below_to"] | 0U;
+            if (skill.belowTo && skill.belowTo < skill.belowPercent) return false;
             // "bar_max"/"per_tap": the bar's real total and what one tap restores,
             // both set or both 0 (taps range only).
             for (const char* k : {"bar_max", "per_tap"})
@@ -475,7 +489,7 @@ static void kitToJson(JsonObject d, DynamicKey jump, DynamicKey attack, DynamicK
     JsonObject keys=d["keys"].to<JsonObject>();
     keys["jump"]=keyName(jump);keys["attack"]=keyName(attack);keys["left"]=keyName(left);keys["right"]=keyName(right);
     JsonArray potions=d["potions"].to<JsonArray>();
-    for(const auto& potion:potionList){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;
+    for(const auto& potion:potionList){JsonObject k=potions.add<JsonObject>();k["id"]=potion.id;k["key"]=keyNameFromCode(potion.keycode);k["enabled"]=potion.enabled;k["below"]=potion.belowPercent;if(potion.belowTo)k["below_to"]=potion.belowTo;k["bar_max"]=potion.barMax;k["per_tap"]=potion.perTap;
         if(!potion.backupKeys.empty()){JsonArray b=k["backup_keys"].to<JsonArray>();
             for(size_t i=0;i<potion.backupKeys.size();++i){JsonObject e=b.add<JsonObject>();e["key"]=keyNameFromCode(potion.backupKeys[i]);e["per_tap"]=i<potion.backupPerTap.size()?potion.backupPerTap[i]:0;}}range(k,"every_ms",potion.cooldown);range(k,"repeats",potion.repeats);range(k,"hold",potion.hold);range(k,"after",potion.after);}
     JsonArray skills=d["skills"].to<JsonArray>();
@@ -499,6 +513,7 @@ static void stepToJson(const Step& s, JsonObject o) {
             d["peak"]=p->peakPermille/1000.0;d["hesitation"]=p->hesitationPermille/1000.0;d["wobble"]=p->wobblePermille/1000.0;
             d["break_chance"]=p->breakChancePermille/1000.0;range(d,"break_ms",p->breakMs);
             range(d,"rest_every_ms",p->restEvery);range(d,"rest_ms",p->restMs);
+            d["mob_sets"]=p->mobSets;range(d,"reaction_ms",p->reaction);d["edge_margin_to"]=p->edgeMarginToPermille/1000.0;range(d,"session_ms",p->session);
             if(p->charKeys){d["char_keys"]=true;}
             if(p->charPotions){d["char_potions"]=true;}
             if(p->charSkills){d["char_skills"]=true;}

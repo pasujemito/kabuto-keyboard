@@ -64,6 +64,7 @@
    "key": "C",
    "backup_keys": [],
    "below": 50,
+   "below_to": 62,
    "bar_max": 0,
    "per_tap": 0,
    "every_ms": [
@@ -89,6 +90,7 @@
    "key": "V",
    "backup_keys": [],
    "below": 30,
+   "below_to": 42,
    "bar_max": 0,
    "per_tap": 0,
    "every_ms": [
@@ -110,6 +112,16 @@
   }
  ],
  "edge_margin": 0.12,
+ "edge_margin_to": 0.18,
+ "mob_sets": true,
+ "reaction_ms": [
+  180,
+  450
+ ],
+ "session_ms": [
+  2700000,
+  5400000
+ ],
  "stuck_after_ms": 20000,
  "face_mobs": true,
  "smart": true,

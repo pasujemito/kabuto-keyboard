@@ -328,6 +328,14 @@ void webServerBegin() {
         if (homePin()) sendJson(req, 200, "{\"ok\":true}");
         else sendJson(req, 409, "{\"ok\":false,\"error\":\"No position from the PC screen reader yet\"}");
     });
+    // One of the PC screen reader's keys, pressed on the page (as a "tool" button on the pad
+    // would): queued for the script, which collects it over USB. Nothing is typed.
+    api("/api/tool", HTTP_POST, [](AsyncWebServerRequest* req) {
+        uint8_t key = req->hasParam("key") ? toolKeyFromName(req->getParam("key")->value().c_str()) : TOOL_NONE;
+        if (key == TOOL_NONE || key == TOOL_HOME) { sendJson(req, 400, "{\"ok\":false,\"error\":\"unknown key\"}"); return; }
+        toolKeyPush(key);
+        sendJson(req, 200, "{\"ok\":true}");
+    });
     api("/api/home/clear", HTTP_POST, [](AsyncWebServerRequest* req) {
         homeUnpin();
         sendJson(req, 200, "{\"ok\":true}");

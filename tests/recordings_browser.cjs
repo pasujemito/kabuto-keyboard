@@ -12,7 +12,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // Home Wi-Fi and PIN mocks; pinRequired acts like a page opened over the home network.
   const networkState={ssid:'HomeNet',stay:false,connected:false,ip:'',address:'http://kabuto.local',error:'',pinSet:false,viaHotspot:true,uptimeS:11100,heapFree:150000,heapLargest:70000};
   const networkRequests=[];let pinRequired=false,loggedIn=false;
-  let liveState=null,patternState=null,noticeState=null,pinnedState=null;const statsRequests=[],noticeRequests=[],homeRequests=[];   // live bars, as the status poll reports them
+  let liveState=null,patternState=null,noticeState=null,pinnedState=null;const statsRequests=[],noticeRequests=[],homeRequests=[],toolRequests=[];   // live bars, as the status poll reports them
   page.on('pageerror',e=>errors.push(e.message));
   // The pattern editor opens compact (a setting's explanation shows while you're on it); these
   // checks click choices and ↺ Default buttons all over it, so they run with Explain switched on.
@@ -31,6 +31,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    if(url.pathname==='/api/network'&&route.request().method()==='POST'){networkRequests.push(route.request().postData());return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/stats/reset'){statsRequests.push(url.pathname);return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/home/set'){homeRequests.push(url.pathname);pinnedState={home:liveState.wx??liveState.x,onMap:liveState.wx!==undefined,map:liveState.map};return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/tool'){toolRequests.push(url.searchParams.get('key'));return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/home/clear'){homeRequests.push(url.pathname);pinnedState=null;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/notices/clear'){noticeRequests.push(url.pathname);noticeState=null;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/status')return route.fulfill({contentType:'application/json',body:JSON.stringify({connected:false,bonds:0,lastKeyDown:-1,keyDownCount:0,keyMask:0,...(liveState?{live:liveState}:{}),...(patternState?{pattern:patternState}:{}),...(noticeState?{notices:noticeState}:{}),...(pinnedState?{pinnedHome:pinnedState}:{})})});
@@ -325,7 +326,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('#charactersSummary').textContent(),'Characters · Warrior');
   await page.locator('#tabKeys').click();
   // Updates: a newer release is announced; installing needs a confirmation.
-  await page.locator('#tabRecordings').click();
+  await page.locator('#tabSettings').click();   // 2.1: updates, Wi-Fi and storage live under Settings
+  assert(await page.locator('#tabSettings').evaluate(e=>e.classList.contains('badge')));   // a dot on the tab: there's an update
+  assert.equal(await page.locator('#aboutVersion').textContent(),'vtest');
+  assert.match(await page.locator('#whatsNew').textContent(),/Buttons first/);
+  assert.equal(await page.locator('#aboutChangelog').getAttribute('href'),'https://github.com/owner/kabuto/blob/main/CHANGELOG.md');
   assert.equal(await page.locator('#updateSummary').textContent(),'Update available: v1.15.0');
   await page.locator('#updateSummary').click();
   assert.equal(await page.getByRole('button',{name:'Install v1.14.0'}).count(),0); // installed one has no button
@@ -455,7 +460,29 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.match(await page.locator('#liveStats').textContent(),/stopped 12 s ago; potions use their timers/);
   assert.equal(await page.locator('#liveStats .live-row').count(),1);   // unread bars aren't shown
   liveState=null;await page.waitForFunction(()=>document.querySelector('#liveStats').hidden);
-  await page.locator('#tabRecordings').click();
+  await page.locator('#tabKeys').click();
+  // 2.1: it's a macro pad, so the buttons come first: what's happening now (and notifications,
+  // which grow) sits below them; the pad pills sit just above them.
+  assert(await page.evaluate(()=>{const g=document.querySelector('#grid'),after=e=>!!(g.compareDocumentPosition(document.querySelector(e))&4);
+    return after('#liveStats')&&after('#notices')&&!after('.pad-pills');}));
+  // "Teach this map" presses the screen reader's F9 from the page; without readings it says why not.
+  await page.evaluate(()=>{status.live=null;document.querySelector('#teachMap').click();});
+  await page.locator('#toast.show.err').waitFor();assert.deepEqual(toolRequests,[]);
+  await page.evaluate(()=>{status.live={fresh:true};document.querySelector('#teachMap').click();});
+  await page.waitForFunction(()=>/Map list opened on your PC/.test(document.querySelector('#toast').textContent));
+  assert.deepEqual(toolRequests,['map']);
+  // The rest of its keys are in Settings (no layer on the pad needed).
+  assert.deepEqual(await page.locator('#toolKeys button').evaluateAll(bs=>bs.map(b=>b.getAttribute('aria-label'))),
+    ['Mark','Skip','Which map','Outlines','Hide layer','Looser','Stricter','Map area'].map(n=>'Screen reader: '+n));
+  // A button with just one dynamic pattern: choosing it in Edit opens that pattern at once.
+  {const opened=await page.evaluate(()=>{const p=defaultDynamicPattern();cfg.workflows.push({id:'direct-pattern',name:'Direct',kind:'nano',recording:true,steps:[{type:'dynamic',pattern:p}]});
+     const i=cfg.layers[0].keys.findIndex(k=>!k.steps.length);if(i<0)return null;
+     cfg.layers[0].keys[i].steps=[{type:'call',workflow:'direct-pattern'}];selectButton(0,i);
+     const open=document.querySelector('#dynamicDialog').open,name=document.querySelector('#dynamicName').value;
+     dynamicDirty=false;closeDynamicEditor();cfg.layers[0].keys[i].steps=[];cfg.workflows=cfg.workflows.filter(w=>w.id!=='direct-pattern');renderGrid();renderRecordings();renderEditor();
+     return [open,name];});
+   if(opened)assert.deepEqual(opened,[true,'Direct']);
+   await page.locator('#tabKeys').click();}
   // The screen reader's keys as pad buttons: one Setup layer with a way back,
   // and a free button on the current layer to get in.
   const layersBefore=await page.evaluate(()=>cfg.layers.length);
@@ -487,6 +514,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    const current=await page.evaluate(()=>{const q=defaultDynamicPattern();q.id='default';q.char_keys=q.char_potions=q.char_skills=false;return q;});
    assert.deepEqual(current,fixture,'the editor\'s default pattern changed: update tests/fixtures/default_pattern.json (and check the scenarios)');}
   // Home Wi-Fi: typing survives a status refresh; a blank password keeps the saved one.
+  await page.locator('#tabSettings').click();
   await page.locator('#networkSummary').click();
   assert.match(await page.locator('#networkStatus').textContent(),/Saved: HomeNet\. Joined only to check for updates/);
   // The pad's health; memory too broken up for updates says so.

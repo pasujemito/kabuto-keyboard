@@ -456,6 +456,18 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // Timings lean towards the pattern's peak (counts and waits between uses stay symmetric).
                 const uint16_t peak=pattern->peakPermille;
                 auto timed=[peak](DynamicRange range){return triangularSample(range,(uint32_t)random(1000001L),peak);};
+                auto whole=[](int32_t n){return (int32_t)random((long)n);};
+                // Kept between plays (with the skill waits): when this pattern last played, its rest
+                // timer and its session. Not playing for REST_IDLE_MS is a real pause: it counts as
+                // a rest and starts a new session.
+                const bool rests=pattern->restEvery.max>0,capped=pattern->session.max>0;
+                const std::string restKey=pattern->id+"/rest",playedKey=pattern->id+"/played",sessionKey=pattern->id+"/session";
+                {auto played=dynamicSkillTimers_.find(playedKey);
+                 bool idle=played==dynamicSkillTimers_.end()||(uint32_t)(millis()-played->second.lastRun)>=REST_IDLE_MS;
+                 if(rests&&(idle||!dynamicSkillTimers_.count(restKey)))dynamicSkillTimers_[restKey]={millis(),sample(pattern->restEvery)};
+                 if(capped&&(idle||!dynamicSkillTimers_.count(sessionKey)))dynamicSkillTimers_[sessionKey]={millis(),sample(pattern->session)};
+                 dynamicSkillTimers_[playedKey]={millis(),0};}
+                auto markPlayed=[&]{dynamicSkillTimers_[playedKey]={millis(),0};};
                 auto delay=[](uint32_t ms){Step step;step.type=StepType::DELAY;step.value=ms;step.maxValue=ms;return step;};
                 auto edge=[](bool down,uint8_t key,uint8_t mods){Step step;step.type=down?StepType::KEY_DOWN:StepType::KEY_UP;step.keycode=key;step.modifiers=mods;return step;};
                 auto tap=[&](DynamicKey key,DynamicRange hold,DynamicRange after){
@@ -493,11 +505,15 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     LiveStats live=liveStatsSnapshot();value=potion.id=="hp"?live.hp:live.mana;
                     return liveDecides(potion.belowPercent,live.fresh&&value>=0);
                 };
+                // "Drink below" can be a range: the threshold in use is drawn afresh after each drink.
+                std::vector<uint8_t> drinkBelow(pattern->potions.size());
+                auto drawBelow=[&](size_t k){const DynamicSkill& p=pattern->potions[k];drinkBelow[k]=(uint8_t)drawBetween(p.belowPercent,p.belowTo,whole);};
+                for(size_t k=0;k<drinkBelow.size();++k)drawBelow(k);
                 auto potionDue=[&](const DynamicSkill& potion){
                     int value;std::string key=potionKey(potion);
                     if(!potionLive(potion,value))return due(potion,key);
                     auto timer=dynamicSkillTimers_.find(key);bool drunk=timer!=dynamicSkillTimers_.end();
-                    return potion.enabled&&liveWantsPotion(potion.belowPercent,value,drunk,drunk?(uint32_t)(millis()-timer->second.lastRun):0);
+                    return potion.enabled&&liveWantsPotion(drinkBelow[&potion-&pattern->potions[0]],value,drunk,drunk?(uint32_t)(millis()-timer->second.lastRun):0);
                 };
                 // Backup keys: each potion's key in use, moved on when the bar shows it ran out.
                 std::vector<PotionKeys> potionKeys(pattern->potions.size());
@@ -507,7 +523,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 auto potionPerTap=[&](size_t k){const DynamicSkill& p=pattern->potions[k];uint8_t a=potionKeys[k].active;
                     return a&&a<=p.backupPerTap.size()&&p.backupPerTap[a-1]?p.backupPerTap[a-1]:p.perTap;};
                 auto potionBar=[&](size_t k,int& value){LiveStats live=liveStatsSnapshot();value=pattern->potions[k].id=="hp"?live.hp:live.mana;return live.fresh;};
-                auto potionDrank=[&](size_t k){int value;bool fresh=potionBar(k,value);potionKeys[k].drank(fresh,value,millis());};
+                auto potionDrank=[&](size_t k){int value;bool fresh=potionBar(k,value);potionKeys[k].drank(fresh,value,millis());drawBelow(k);};
                 auto potionCheck=[&]{
                     for(size_t k=0;k<potionKeys.size();++k){
                         int value;bool fresh=potionBar(k,value);
@@ -527,6 +543,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // Between attacks: stop on a death or login screen,
                 // turn for map edges and mobs, and turn (then stop) when stuck.
                 StuckWatch stuck;
+                // The map-edge margin in use: with a range, drawn afresh after each set.
+                uint16_t edgeNow=(uint16_t)drawBetween(pattern->edgeMarginPermille,pattern->edgeMarginToPermille,whole);
                 // Home comes only from the Set home button (one per map, see below): never from
                 // pressing the pattern's button or arriving on a map. No Set home on this map: no
                 // home zone, as with a range of 0 (the map's edge margin still holds).
@@ -655,7 +673,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     if(!live.fresh)return nullptr;
                     int pos=0;bool havePos=livePos(live,pos);
                     if(update)airDrift.update(right?1:-1,havePos,pos,millis());
-                    int ahead=onFoot?airDrift.lag():airDrift.ahead(),margin=pattern->edgeMarginPermille;
+                    int ahead=onFoot?airDrift.lag():airDrift.ahead(),margin=edgeNow;
                     if(margin&&live.x>=0&&((!right&&live.x-ahead<margin)||(right&&live.x+ahead>1000-margin)))return "map edge: stopped moving towards it";
                     if(pattern->homeRangePermille&&haveHome&&!homeOff&&mapSeen.empty()&&havePos&&homeOnMap==(live.wx!=LIVE_NO_POS)){
                         int off=pos-home,limit=inner();
@@ -680,6 +698,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         "smart: auto-pause, waiting for respawn","smart: walking to mobs","smart: walking to mobs",
                         "smart: no readings from the PC, not attacking","smart: no mob detection on this map (teach it with F9), not attacking"};
                     int doing=-1;uint32_t walkStarted=0;   // the action under way (either way counts as one)
+                    uint32_t stoodSince=0;bool stood=false;   // standing and waiting (for mobs, or the respawn): since when
                     while(!stop){
                         LiveStats live=liveStatsSnapshot();
                         if(stopReason(live))return;
@@ -693,7 +712,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         homing=act==SMART_WALK_LEFT||act==SMART_WALK_RIGHT;
                         bool toMobs=act==SMART_APPROACH_LEFT||act==SMART_APPROACH_RIGHT;
                         int kind=act==SMART_WALK_RIGHT?(int)SMART_WALK_LEFT:act==SMART_APPROACH_RIGHT?(int)SMART_APPROACH_LEFT:(int)act;
-                        if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();}
+                        if(kind!=doing){logStep(s,pc,millis(),0,true,labels[act]);doing=kind;walkStarted=millis();
+                            bool standing=act==SMART_WAIT||act==SMART_PAUSE;if(standing&&!stood)stoodSince=millis();stood=standing;}
                         if(homing&&millis()-walkStarted>10000){logStep(s,pc,millis(),0,true,"can't get home: home kept, trying again in 20 s");homeOff=true;homeOffAt=millis();homing=false;doing=-1;continue;}
                         if(toMobs&&millis()-walkStarted>6000){logStep(s,pc,millis(),0,true,"smart: can't reach those mobs");approachOff=true;approachOffAt=millis();doing=-1;continue;}
                         bool blocked=false;if(toMobs){onFoot=true;blocked=outwards(act==SMART_APPROACH_RIGHT,false)!=nullptr;onFoot=false;}   // walking: each hop is checked on its own
@@ -707,6 +727,12 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         else{stopWalking();potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                              std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
                     }
+                    // Stood waiting as long as a rest lasts: that was the rest (its timer starts again).
+                    if(stood&&rests&&(uint32_t)(millis()-stoodSince)>=pattern->restMs.min){
+                        dynamicSkillTimers_[restKey]={millis(),sample(pattern->restEvery)};logStep(s,pc,millis(),0,true,"that wait counts as a rest");}
+                    // Nobody attacks the instant a mob shows up: after standing and waiting, a reaction time first.
+                    if(stood&&!stop&&pattern->reaction.max){std::vector<Step> react{delay(timed(pattern->reaction))};executeSteps(react,stop,state,depth+1);}
+                    if(doing>=0)markPlayed();
                     // Gliding, a walk runs straight on into attacking (the arrow stays held).
                     if(glide&&!walking.empty()&&!stop)moving=true;else stopWalking();
                     homing=false;
@@ -724,7 +750,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                      if(returning&&!was)logStep(s,pc,millis(),0,true,"past the home zone: fighting the way back");}
                     // The home zone's edge first (face inwards), then map edges and mobs.
                     int want=homeFacing(true,havePos,pos,haveHome&&mapSeen.empty()&&homeOnMap==(live.wx!=LIVE_NO_POS),home,pattern->homeRangePermille,inner());
-                    if(!want)want=liveFacing(true,live.x,pattern->edgeMarginPermille,true,live.mobs);
+                    if(!want)want=liveFacing(true,live.x,edgeNow,true,live.mobs);
                     if(want&&(want<0)!=facingLeft){facingLeft=want<0;turn();}
                     publish(SMART_ATTACK);
                     if(pattern->stuckAfterMs){
@@ -799,20 +825,12 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // readings neither starts on low HP; a rest also waits until no mob is in reach, and ends when one comes.
                 // Potions are still drunk by the bars meanwhile.
                 Breaks breaks;
-                const bool rests=pattern->restEvery.max>0;
-                const std::string restKey=pattern->id+"/rest",playedKey=pattern->id+"/played";
-                if(rests){
-                    auto played=dynamicSkillTimers_.find(playedKey);
-                    if(played==dynamicSkillTimers_.end()||(uint32_t)(millis()-played->second.lastRun)>=REST_IDLE_MS||!dynamicSkillTimers_.count(restKey))
-                        dynamicSkillTimers_[restKey]={millis(),sample(pattern->restEvery)};
-                }
                 auto takeBreak=[&]{
                     uint32_t now=millis();
                     if(pattern->breakChancePermille&&(uint32_t)random(1000L)<pattern->breakChancePermille)breaks.oweShort(timed(pattern->breakMs),now);
                     if(rests){
                         DynamicSkillTimer& rest=dynamicSkillTimers_[restKey];
                         if((uint32_t)(now-rest.lastRun)>=rest.wait){breaks.oweRest(timed(pattern->restMs));rest={now,sample(pattern->restEvery)};}
-                        dynamicSkillTimers_[playedKey]={now,0};
                     }
                     LiveStats live=liveStatsSnapshot();
                     uint8_t kind=breaks.take(breakSafe(live.fresh,live.hp),restSafe(live.fresh,live.hp,live.mobs),now);
@@ -830,7 +848,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     }
                     updateLogDuration(id,millis()-now,true);
                     if(cut){breaks.cut((uint32_t)(millis()-now));logStep(s,pc,millis(),0,true,"rest cut short: a mob came close");}
-                    if(rests)dynamicSkillTimers_[playedKey]={millis(),0};
+                    markPlayed();
                     stuck=StuckWatch();   // standing still on purpose isn't stuck
                 };
                 for(uint32_t set=0;set<sets&&!stop;++set){
@@ -839,7 +857,14 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     char label[64];std::snprintf(label,sizeof(label),"set %lu/%lu: %lu attacks",(unsigned long)(set+1),(unsigned long)sets,(unsigned long)count);
                     uint32_t setLog=logStep(entry,pc,started,0,false,label);
                     if(glide&&set==0)moving=moving||(uint32_t)random(1000L)<pattern->glidePermille;   // later sets: decided at the turn
+                    bool mobsDone=false;   // this set ended because its mobs were dead
+                    int overkill=-1;   // mob-driven sets: attacks still to make once no mob is in reach (-1: mobs about)
                     for(uint32_t unit=0;unit<count&&!stop;++unit){
+                        // The set's mobs are dead: it ends here (Smart: at once, it never attacks the air; else
+                        // after 0-2 more attacks, as a player's hands carry on a moment).
+                        if(pattern->mobSets&&unit>0){LiveStats seen=liveStatsSnapshot();
+                            if(!mobSetOver(seen.fresh,seen.mobs))overkill=-1;
+                            else{if(overkill<0)overkill=pattern->smart?0:(int)sample(DynamicRange{0,2});if(overkill--<=0){mobsDone=true;break;}}}
                         if(screenCheck())break;
                         decidePotions();
                         if(drift)tempo=tempoDriftStep(tempo,drift,(int32_t)random(2L*(drift/2)+1)-drift/2);
@@ -892,6 +917,12 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(stop)break;
                         use(pattern->skills[index],skillScope+"/"+pattern->skills[index].id);
                     }
+                    markPlayed();
+                    // The session cap: played this long without a real pause, it stops by itself.
+                    if(capped&&!stop){DynamicSkillTimer session=dynamicSkillTimers_[sessionKey];
+                        if(sessionOver(session.wait,session.lastRun,millis())){
+                            char label[80];std::snprintf(label,sizeof(label),"stopped: session over after %lu min (press the button to go on)",(unsigned long)((millis()-session.lastRun)/60000));
+                            logStep(s,pc,millis(),0,true,label);dynamicSkillTimers_.erase(sessionKey);stop=true;break;}}
                     if(!stop&&(pattern->breakChancePermille||rests))takeBreak();
                     // No direction tap after the last set: it would only nudge the character.
                     if(stop||set+1==sets)break;
@@ -899,13 +930,15 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     LiveStats live=liveStatsSnapshot();
                     int livePlace=0;bool havePlace=livePos(live,livePlace);
                     int want=homeFacing(live.fresh,havePlace,livePlace,haveHome&&mapSeen.empty()&&homeOnMap==(live.wx!=LIVE_NO_POS),home,pattern->homeRangePermille,inner());
-                    if(!want)want=liveFacing(live.fresh,live.x,pattern->edgeMarginPermille,true,live.mobs);
+                    if(!want)want=liveFacing(live.fresh,live.x,edgeNow,true,live.mobs);
+                    edgeNow=(uint16_t)drawBetween(pattern->edgeMarginPermille,pattern->edgeMarginToPermille,whole);
                     bool wasLeft=facingLeft;
                     if(want)facingLeft=want<0;
+                    else if(mobsDone){}   // its mobs are dead: no reason to turn; the next mob in reach decides
                     else if(random(1000L)<pattern->turnChancePermille&&!outwards(facingLeft,false))facingLeft=!facingLeft;   // not to face a line it's about to cross
                     publish(SMART_ATTACK);
                     if(returning){if(facingLeft!=wasLeft)hold(facing());}   // carrying on homewards: no tap
-                    else if(!glide){if(facingLeft!=wasLeft||!outwards(!facingLeft,false))tap(facing(),pattern->directionHold,pattern->directionAfter);}   // a tap is a small step: none outwards near the line
+                    else if(!glide){if(facingLeft!=wasLeft||(!mobsDone&&!outwards(!facingLeft,false)))tap(facing(),pattern->directionHold,pattern->directionAfter);}   // a tap is a small step: none outwards near the line, none with nothing to face
                     else{
                         moving=(uint32_t)random(1000L)<pattern->glidePermille;   // the next set: on the move or standing
                         if(!moving)stopWalking();

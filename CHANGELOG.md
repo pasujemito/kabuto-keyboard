@@ -3,6 +3,54 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 2.1.0
+
+New settings are off in saved patterns (they play as before) and on in new
+ones. The PC script is unchanged since 2.0.0.
+
+- 🎛 **Buttons first**: it's a macro pad, so the pads are at the top of the
+  Buttons tab again. What's happening now (bars, mobs, home) sits below them,
+  notifications below that in a box that scrolls inside itself (it used to
+  grow and push the buttons down)
+- 💊 **Pills above the pads**: **＋ 🏠 Set home** and **＋ 🍁 Setup layer**
+  moved here from Recordings, and a new **🗺 Teach this map** opens the
+  screen reader's map list on your PC (its F9), so teaching no longer needs
+  the keyboard or a button on the pad
+- ⚙ **Settings** (a fourth tab; on a PC, the header's button): the version,
+  what's new, a link to the full changelog, Updates, Home Wi-Fi, Storage, and
+  the **PC screen reader's keys** as on-screen buttons (Mark, Skip, Which map,
+  Outlines, Hide layer, Looser, Stricter, Map area), so setup needs no layer
+  on the pad. A dot on the tab says there's an update
+- ✏ **Straight to the pattern**: in Edit, choosing a button that has just one
+  dynamic pattern opens that pattern at once; Close leaves you on the
+  button's own settings
+- 🧠 **Smarter with the screen reader** (in each pattern, under Screen
+  awareness, HP & Mana and Natural rhythm):
+  - **End a run when its mobs are dead**: a run of attacks also ends when no
+    mob is in reach, so skills, breaks and turning happen when a fight is
+    over. With Smart off it makes 0–2 more attacks first. It no longer turns
+    around or steps at random when there's nothing to face
+  - **Reaction time** (180–450 ms): after standing and waiting, that long
+    between a mob coming into reach and the first attack
+  - **Drink below … up to** (HP 50–62%, Mana 30–42%) and **Turn at map
+    edges … up to** (12–18%): the point is picked afresh after each drink or
+    run, so it's never exactly the same
+  - **Waiting counts as a rest**: standing and waiting for mobs as long as a
+    rest lasts starts the rest timer again, so it doesn't rest right after
+  - **Stop after** (45–90 min): the pattern stops by itself after playing
+    that long without a real pause (half a minute not playing starts the
+    count again). The log says "stopped: session over"; press the button to
+    go on
+  - In the simulated map this all costs about a tenth of the kills per
+    minute (11.2 against 12.7 over 12 runs): the pauses are the point
+- 🧪 Scenarios: "Knockback near the zone's edge" allowed nothing past the
+  line, which only held for the four seeds it ran: over 32 seeds, 4 runs of
+  the 1000 px map end up to 20 px past it after two knockbacks in a row, in
+  2.0 as well. It now allows half a knockback (25 px)
+- Not in this release: classes with their skills for characters, and
+  recognising an untaught map by itself (the pad can't tell which map in
+  `map.json` an unnamed one is; Teach this map is the one-tap way)
+
 ## 2.0.0
 
 A major release because you asked for one: nothing saved breaks. Patterns,

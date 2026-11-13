@@ -27,6 +27,7 @@ struct DynamicSkill {
     DynamicRange after{880,1130};
     DynamicRange cooldown{0,0}; // wait after each use; a fresh draw every time
     uint8_t belowPercent = 0;   // potions: with live bars, drink below this % (0 = timer only)
+    uint8_t belowTo = 0;        // potions: ...or anywhere from belowPercent up to this %, drawn afresh after each drink (0 = always belowPercent)
     uint32_t barMax = 0, perTap = 0;   // potions: the bar's real total and what one tap restores (0 = taps range)
     std::vector<uint8_t> backupKeys;   // potions: more keys of the same kind, used in turn when one runs out (up to 3)
     std::vector<uint32_t> backupPerTap;   // what each backup restores per tap (0: the same as perTap)
@@ -66,6 +67,11 @@ struct DynamicPattern {
     DynamicRange breakMs{700,2500};
     DynamicRange restEvery{0,0};         // a longer rest this often (ms; 0-0 = off), lasting restMs
     DynamicRange restMs{8000,30000};
+    // Smarter with the screen reader (2.1; off in patterns saved before).
+    bool mobSets = false;                // a set ends when its mobs are dead (no mob in reach), not only on its count
+    DynamicRange reaction{0,0};          // after waiting, this long between seeing a mob in reach and attacking it
+    uint16_t edgeMarginToPermille = 0;   // the edge margin is drawn from edgeMargin..this after each set (0 = always edgeMargin)
+    DynamicRange session{0,0};           // stop by itself after playing this long without a real pause (ms; 0-0 = never)
     // Defaults match patterns saved before keys were configurable.
     DynamicKey jump = dynamicModifier(0x04);     // KM_LALT
     DynamicKey attack = dynamicModifier(0x01);   // KM_LCTRL
@@ -136,6 +142,12 @@ inline uint32_t triangularSample(DynamicRange range, uint32_t draw, uint16_t pea
     const double value = u < m ? range.min + span * std::sqrt(u * m)
                                : range.max - span * std::sqrt((1.0-u) * (1.0-m));
     return static_cast<uint32_t>(std::lround(value));
+}
+
+// A threshold that isn't the same every time: from..to (to 0 or below from: always from).
+// `draw(n)` returns a whole number in [0, n).
+template <typename Draw> inline uint32_t drawBetween(uint32_t from, uint32_t to, Draw draw) {
+    return to > from ? from + (uint32_t)draw((int32_t)(to - from + 1)) : from;
 }
 
 // A hesitation: the gap after an attack, this many times as long (permille).

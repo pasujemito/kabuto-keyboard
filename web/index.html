@@ -64,12 +64,15 @@
   @media (min-width:1000px){
     main{grid-template-columns:minmax(300px,1.15fr) minmax(260px,1fr) minmax(280px,1fr)}
     .panel{display:block!important;min-width:0}
+    #panelSettings{display:none!important;position:fixed;top:53px;right:0;bottom:0;width:min(440px,100vw);z-index:25;background:var(--bg);border-left:1px solid var(--edge);box-shadow:-12px 0 30px rgba(0,0,0,.45)}
+    #panelSettings.show{display:block!important}
   }
   @media (max-width:999px){
     main{grid-template-rows:1fr;height:calc(100% - 53px - 48px)}
     .panel{grid-column:1;grid-row:1;display:none}
     .panel.show{display:block}
     .tabbar{display:flex}
+    #settingsBtn,.set-close{display:none}
     #panelKeys{border-right:0}
   }
 
@@ -303,7 +306,30 @@
   #dynamicDialog.compact .setting:focus-within .setting-default{display:flex}
   #dynamicDialog.compact .setting:focus-within .setting-help{display:block}
   #dynamicDialog.compact .setting:focus-within{outline:1px solid var(--edge);outline-offset:6px;border-radius:6px}
-  .new-row{margin-bottom:8px}.more-row{margin-bottom:4px}
+  .new-row{margin-bottom:8px}
+  /* Pills above the pads: small, out of the buttons' way. */
+  .pad-pills{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px;scrollbar-width:none}
+  .pad-pills::-webkit-scrollbar{display:none}
+  .pill{flex:none;background:var(--panel);border:1px solid var(--edge);color:var(--muted);padding:6px 11px;border-radius:16px;font-size:12px;white-space:nowrap}
+  .pill:hover{color:var(--ink);border-color:var(--faint)}
+  .pill:disabled{opacity:.45}
+  /* Below the pads, and never taller than a few lines: the list scrolls inside itself. */
+  #notices{max-height:132px;overflow:auto}
+  .badge{position:relative}
+  .badge::after{content:"";position:absolute;top:4px;right:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--amber)}
+  .btn.badge::after{top:-3px;right:-3px}
+  .set-card{border:1px solid var(--edge);border-radius:10px;background:var(--panel);padding:12px;margin:10px 0}
+  .set-card h3{margin:0 0 6px;font-size:13px}
+  .about-head{display:flex;align-items:baseline;gap:10px}
+  .about-name{font-family:var(--mono);font-weight:600;font-size:16px}.about-name b{color:var(--amber)}
+  .about-ver{font-family:var(--mono);color:var(--amber);font-size:14px}
+  .whats-new{margin:8px 0;font-size:12px;color:var(--muted)}
+  .whats-new summary{cursor:pointer;color:var(--ink);font-weight:600}
+  .whats-new ul{margin:8px 0 0;padding-left:18px;display:grid;gap:5px}
+  .whats-new b{color:var(--ink);font-weight:600}
+  .tool-keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:6px;margin-top:8px}
+  .tool-keys .btn{text-align:left;white-space:normal}
+  .tool-keys .btn small{display:block;color:var(--faint);font-family:var(--mono);font-size:10px}
   /* On a phone (where the pad is mostly set up) the pattern editor takes the whole screen,
      with thumb-sized chips and Apply always in reach at the bottom. */
   @media (max-width:700px){
@@ -406,6 +432,7 @@
   <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
   <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 12h1M8 8v8M12 5v14M16 9v6M20 11v2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
 </svg>
 <header>
@@ -414,6 +441,7 @@
   <div class="hdr-actions">
     <button class="btn ibtn danger" id="stopBtn" aria-label="Stop" title="Stop playback and release all keys"><svg class="ic" aria-hidden="true"><use href="#i-stop"/></svg></button>
     <button class="btn ibtn" id="configJson" aria-label="Export JSON" title="Export the full configuration as JSON"><svg class="ic" aria-hidden="true"><use href="#i-export"/></svg></button>
+    <button class="btn ibtn" id="settingsBtn" aria-label="Settings" title="Version, updates, Wi-Fi, storage and the PC screen reader's keys"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></button>
     <button class="btn ibtn primary" id="saveBtn" aria-label="Save" title="Save to device"><svg class="ic" aria-hidden="true"><use href="#i-save"/></svg></button>
   </div>
 </header>
@@ -421,9 +449,6 @@
 
 <main>
   <section class="panel show" id="panelKeys">
-    <!-- What's happening now comes first: on a phone it's what you look at while a pattern plays. -->
-    <div class="notices" id="notices" aria-label="Notifications" aria-live="polite" hidden></div>
-    <div class="live-stats" id="liveStats" aria-label="Live stats" hidden></div>
     <div class="keyshead">
       <h2>Layers</h2>
       <div class="layer-tools">
@@ -439,7 +464,15 @@
         <button class="on" data-g="run" title="Tap a button to play it on the host"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play</span></button>
       </div>
     </div>
+    <div class="pad-pills" aria-label="Pad shortcuts">
+      <button class="pill" id="newSetHome" title="Puts a Set home button on the selected (empty) button: pressed, home is where you stand, without stopping what's playing">＋ 🏠 Set home</button>
+      <button class="pill" id="newSetupLayer" title="Adds a layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">＋ 🍁 Setup layer</button>
+      <button class="pill" id="teachMap" title="Opens the map list on your PC (the screen reader's F9), to teach it the map you're on">🗺 Teach this map</button>
+    </div>
     <div class="grid" id="grid"></div>
+    <!-- It's a macro pad: the buttons come first. What's happening now sits below them and never pushes them down. -->
+    <div class="live-stats" id="liveStats" aria-label="Live stats" hidden></div>
+    <div class="notices" id="notices" aria-label="Notifications" aria-live="polite" hidden></div>
     <details class="monitor"><summary>Device activity</summary><div id="monitor">
       <div class="monitor-head">
         <h2>Macro execution log</h2>
@@ -461,25 +494,41 @@
   <section class="panel" id="panelRecordings">
     <h2>Recordings</h2>
     <div class="recording-actions new-row"><button class="btn primary withic" id="newRecording"><svg class="ic" aria-hidden="true"><use href="#i-record"/></svg>New recording</button><button class="btn withic" id="newDynamic" title="A pattern the pad makes up afresh every time it plays"><svg class="ic" aria-hidden="true"><use href="#i-shuffle"/></svg>Dynamic pattern</button><button class="btn withic" id="importRecording"><svg class="ic" aria-hidden="true"><use href="#i-import"/></svg>Import JSON</button></div>
-    <div class="recording-actions more-row"><span class="hint">Pad buttons:</span><button class="btn sm" id="newSetHome" title="A button that makes home where you stand, without stopping what's playing">🏠 Set home button</button><button class="btn sm" id="newSetupLayer" title="A layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">🍁 Setup layer</button></div>
-    <div class="device-card" aria-label="Device">
-    <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
-    <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
-    <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
-    </div>
     <details class="storage-box" id="charactersBox" open><summary id="charactersSummary">Characters</summary><div class="storage" id="characters" aria-label="Characters"></div></details>
     <input type="file" id="recordingFile" accept=".json,application/json" hidden>
     <div id="recordings"></div>
+  </section>
+  <section class="panel" id="panelSettings" aria-label="Settings">
+    <div class="keyshead"><h2>Settings</h2><button class="btn sm set-close" id="settingsClose">Close</button></div>
+    <div class="set-card about">
+      <div class="about-head"><span class="about-name"><b>■</b> Kabuto</span><span class="about-ver" id="aboutVersion">v…</span></div>
+      <p class="hint" id="aboutLine">ESP32-S3 Bluetooth macro pad</p>
+      <details class="whats-new" open><summary>What's new in 2.1</summary><ul id="whatsNew">
+        <li><b>Buttons first</b>: the pads are at the top; what's happening now and notifications sit below and never push them down</li>
+      </ul></details>
+      <a class="hint" id="aboutChangelog" target="_blank" rel="noopener" hidden>Full changelog on GitHub ↗</a>
+    </div>
+    <div class="device-card" aria-label="Device">
+    <details class="storage-box" id="updateBox"><summary id="updateSummary">Updates</summary><div class="storage" id="updatePanel" aria-label="Updates"><div id="updateStatus"></div></div></details>
+    <details class="storage-box" id="networkBox"><summary id="networkSummary">Home Wi-Fi</summary><div class="storage" id="networkPanel" aria-label="Home Wi-Fi"><div id="networkStatus"></div></div></details>
+    <details class="storage-box" id="storageBox"><summary id="storageSummary">Storage</summary><div class="storage" id="storage" aria-label="Storage"></div></details>
+    </div>
+    <div class="set-card" aria-label="PC screen reader">
+      <h3>PC screen reader</h3>
+      <p class="hint">Its keys, pressed from here: setup and teaching need no keyboard and no layer on the pad. They reach the script over the USB cable while it runs.</p>
+      <div class="tool-keys" id="toolKeys"></div>
+    </div>
   </section>
   <section class="panel" id="panelEdit">
     <div id="editor"><div class="empty-state">Loading device…</div></div>
   </section>
 </main>
 
-<nav class="tabbar">
+<nav class="tabbar" aria-label="Sections">
   <button id="tabKeys" class="on" onclick="showTab('keys')"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg>Buttons</button>
   <button id="tabRecordings" onclick="showTab('recordings')"><svg class="ic" aria-hidden="true"><use href="#i-wave"/></svg>Recordings</button>
   <button id="tabEdit" onclick="showTab('edit')"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>Assign</button>
+  <button id="tabSettings" onclick="showTab('settings')"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>Settings</button>
 </nav>
 
 <!-- recorder sheet -->
@@ -712,6 +761,8 @@ function renderUpdates(){
   box.replaceChildren();
   const u=updateInfo,releases=u?.releases||[],newest=releases.find(r=>r.newer);
   summary.textContent=newest?`Update available: v${newest.version}`:'Updates';
+  $('#tabSettings').classList.toggle('badge',!!newest);$('#settingsBtn').classList.toggle('badge',!!newest);   // a dot: there's an update
+  if(u&&u.repo){const link=$('#aboutChangelog');link.href='https://github.com/'+u.repo+'/blob/main/CHANGELOG.md';link.hidden=false;}
   $('#updateBox').classList.toggle('warn',!!newest);
   const note=text=>{const n=el('div','hint');n.textContent=text;return n;};
   const check=$('#updateCheck');
@@ -826,7 +877,8 @@ function renderStorage(){
 }
 async function loadAll(){
   meta=await getJson("/api/meta");
-  $("#fw").textContent=" v"+meta.firmware;
+  $("#fw").textContent=" v"+meta.firmware;$("#aboutVersion").textContent="v"+meta.firmware;
+  $("#aboutLine").textContent=`ESP32-S3 Bluetooth macro pad · ${meta.keyCount} buttons · up to ${meta.maxLayers} layers`;
   cfg=await getJson("/api/config");
   $("#loadError").hidden=true;
   normalize();
@@ -841,13 +893,15 @@ async function loadAll(){
 }
 
 /* tabs (mobile) */
+// On a phone one panel shows at a time. On a wide screen the three main ones sit side by
+// side and Settings slides over them (the header's button, or its Close).
 function showTab(t){
-  $("#panelKeys").classList.toggle("show",t==="keys");
-  $("#panelRecordings").classList.toggle("show",t==="recordings");
-  $("#tabRecordings").classList.toggle("on",t==="recordings");
-  $("#panelEdit").classList.toggle("show",t==="edit");
-  $("#tabKeys").classList.toggle("on",t==="keys");
-  $("#tabEdit").classList.toggle("on",t==="edit");
+  const wide=window.innerWidth>=1000;
+  if(wide&&t!=="settings"){$("#panelSettings").classList.remove("show");$("#tabSettings").classList.remove("on");}
+  if(wide&&t==="settings"){const on=$("#panelSettings").classList.toggle("show");$("#tabSettings").classList.toggle("on",on);return;}
+  for(const [name,panel,tab] of [["keys","#panelKeys","#tabKeys"],["recordings","#panelRecordings","#tabRecordings"],["edit","#panelEdit","#tabEdit"],["settings","#panelSettings","#tabSettings"]]){
+    $(panel).classList.toggle("show",t===name);$(tab).classList.toggle("on",t===name);
+  }
 }
 
 /* layers */
@@ -954,6 +1008,10 @@ function selectButton(layer,key){
   selLayer=layer;selKey=key;selectedWorkflow=null;
   if(layerChanged){renderLayers();postLayer(layer);}
   renderGrid();renderEditor();renderRecordings();if(window.innerWidth<1000)showTab('edit');
+  // A button with just one dynamic pattern: that's what you came to edit, so it opens at once
+  // (Close leaves you on the button's own settings).
+  const a=assignmentFor(cfg.layers[layer].keys[key]),only=a.recognized&&a.ids.length===1?cfg.workflows.find(w=>w.id===a.ids[0]):null;
+  if(only&&isDynamicRecording(only)&&!$('#dynamicDialog').open)openDynamicEditor(only.id);
 }
 async function runPress(i){
   if(!status.connected){toast("Run needs a paired host",true);return;}
@@ -2594,6 +2652,19 @@ $("#pinDialog").addEventListener("cancel",event=>event.preventDefault());
 $("#newDynamic").onclick=()=>openDynamicEditor();
 $("#newSetHome").onclick=()=>{try{addSetHomeButton();}catch(e){toast(e.message,true);}};
 $("#newSetupLayer").onclick=()=>{try{addSetupLayer();}catch(e){toast(e.message,true);}};
+// The PC screen reader's keys from the page ("Teach this map" is its F9): queued on the pad, which
+// hands them to the script with its next answer.
+async function sendToolKey(key,done){
+  if(!(status.live&&status.live.fresh)){toast('The PC screen reader isn\'t sending readings: run screen_stats.py with the pad on the USB cable',true);return;}
+  try{await api('/api/tool?key='+encodeURIComponent(key),{method:'POST'});toast(done);}catch(e){toast(e.message||'The pad didn\'t take that',true);}
+}
+$("#teachMap").onclick=()=>sendToolKey('map','Map list opened on your PC: pick the map there');
+for(const [key,[label,pc]] of Object.entries(TOOL_KEYS)){
+  if(key==='home')continue;   // Set home is the pad's own
+  const b=el('button','btn sm');b.type='button';b.innerHTML=esc(label)+'<small>'+esc(pc)+' on the PC</small>';b.setAttribute('aria-label','Screen reader: '+label);
+  b.onclick=()=>sendToolKey(key,label+' sent to the PC');$('#toolKeys').appendChild(b);
+}
+$("#settingsBtn").onclick=()=>showTab('settings');$("#settingsClose").onclick=()=>showTab('settings');
 for(const [name,preset] of Object.entries(DYNAMIC_PRESETS)){const b=el('button','btn sm');b.type='button';b.textContent=preset.label;b.onclick=()=>applyDynamicPreset(name);$('#dynamicPresets').appendChild(b);}
 $("#dynamicName").oninput=()=>dynamicDirty=true;
 $("#dynamicClose").onclick=closeDynamicEditor;

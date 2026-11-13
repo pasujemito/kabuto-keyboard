@@ -1147,6 +1147,8 @@ void MacroEngine::taskTrampoline(void* arg) {
     MacroEngine* self = static_cast<MacroEngine*>(arg);
     self->running_ = true;
     self->runMacro(self->activeBinding_);
+    {uint32_t left = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);   // the least this run ever had left
+     if (!self->stackLow_ || left < self->stackLow_) self->stackLow_ = left;}
     self->running_ = false;
     self->runningKey_ = -1;
     TaskHandle_t t = self->task_;
@@ -1169,7 +1171,7 @@ void MacroEngine::startMacroTask(int keyIndex, bool oneShot) {
     macroRunId_++;
     macroPass_     = 0;
     runningKey_    = keyIndex;
-    if (xTaskCreatePinnedToCore(taskTrampoline, "macro", 16384, this, 2, &task_, 1) != pdPASS) {
+    if (xTaskCreatePinnedToCore(taskTrampoline, "macro", ENGINE_STACK_BYTES, this, 2, &task_, 1) != pdPASS) {
         task_ = nullptr;
         runningKey_ = -1;
     }

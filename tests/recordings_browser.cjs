@@ -522,6 +522,13 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   networkState.heapLargest=30000;await page.evaluate(()=>refreshNetwork());
   await page.waitForFunction(()=>document.querySelector('#padHealth').classList.contains('warn'));
   assert.match(await page.locator('#padHealth').textContent(),/29 KB in one piece\. Low: restart the pad/);
+  // A restart that wasn't you plugging it in is said out loud (it explains keys left down), with the tab in red.
+  assert.equal(await page.locator('#padReset').count(),0);
+  networkState.reset='crash';
+  await page.waitForFunction(()=>document.querySelector('#padReset'));
+  assert.match(await page.locator('#padReset').textContent(),/The pad restarted by itself after a crash, 3 h 5 min ago/);
+  assert(await page.locator('#tabSettings').evaluate(e=>e.classList.contains('alert')));
+  networkState.reset='power';await page.waitForFunction(()=>!document.querySelector('#padReset'));
   networkState.heapLargest=70000;await page.evaluate(()=>refreshNetwork());
   await page.getByLabel('Home Wi-Fi name').fill('OtherNet');
   await page.evaluate(()=>refreshNetwork());await page.waitForTimeout(100);

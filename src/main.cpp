@@ -208,6 +208,7 @@ void loop() {
     matrixScan();
     configButtonPoll();
     usbStatsPoll();
+    Keyboard.poll(!Macros.isRunning());   // a host that just connected: nothing is held
     statusLedUpdate();
     delay(1000 / MATRIX_SCAN_HZ);
 }

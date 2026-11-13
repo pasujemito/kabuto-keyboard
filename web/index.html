@@ -315,6 +315,7 @@
   .pill:disabled{opacity:.45}
   /* Below the pads, and never taller than a few lines: the list scrolls inside itself. */
   #notices{max-height:132px;overflow:auto}
+  .tabbar button.alert{color:var(--stop)}
   .badge{position:relative}
   .badge::after{content:"";position:absolute;top:4px;right:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--amber)}
   .btn.badge::after{top:-3px;right:-3px}
@@ -818,6 +819,10 @@ function renderNetwork(){
     const up=n.uptimeS<3600?Math.round(n.uptimeS/60)+' min':Math.floor(n.uptimeS/3600)+' h '+Math.floor(n.uptimeS%3600/60)+' min',kb=b=>Math.round(b/1024)+' KB';
     const low=n.heapLargest<45000,h=note(`Pad: up ${up} · memory ${kb(n.heapFree)} free, ${kb(n.heapLargest)} in one piece`+(n.rssi!==undefined?` · Wi-Fi ${n.rssi} dBm`+(n.rssi<-75?' (weak)':''):'')+(low?'. Low: restart the pad (unplug it a moment) before updating.':''));
     h.id='padHealth';if(low)h.classList.add('warn');box.append(h);
+    // A start that wasn't you plugging it in: say so, it explains keys left down or a pattern that stopped.
+    const why={crash:'The pad restarted by itself after a crash',watchdog:'The pad restarted by itself (it had stopped responding)',brownout:'The pad restarted because its power dipped: try another USB port or cable'}[n.reset];
+    if(why){const r=note(`⚠ ${why}, ${up} ago. Anything playing stopped; when it reconnects it tells the PC no key is held.`);r.id='padReset';r.classList.add('warn');box.append(r);}
+    $('#tabSettings').classList.toggle('alert',!!why);
   }
   if(!$('#networkForm'))panel.appendChild(buildNetworkForm());
   const form=$('#networkForm');
@@ -867,6 +872,8 @@ function renderStorage(){
     rows.push(["Config size",pending,storage.maxConfig,`${fmtBytes(pending)} of ${fmtBytes(storage.maxConfig)}`,"Largest config the device accepts on Save"]);
     rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem: recordings and patterns"]);
     rows.push(["Device memory",storage.heapSize-storage.heapFree,storage.heapSize,`${fmtBytes(storage.heapFree)} free`,`Largest free block ${fmtBytes(storage.heapLargest)}`]);
+    // The playing task's stack: the least it ever had left. Running out crashes the pad mid-press.
+    if(storage.engineStack&&storage.engineStackFree)rows.push(["Playback stack",storage.engineStack-storage.engineStackFree,storage.engineStack,`${fmtBytes(storage.engineStackFree)} never used`,"The least stack the playing task has had left since the pad started"]);
   }
   // Collapsed summary; opens itself when something is nearly full.
   const tight=rows.some(([,used,max])=>max&&used/max>=.8);

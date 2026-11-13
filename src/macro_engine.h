@@ -176,6 +176,13 @@ public:
     // Stop whatever macro is running.
     void stopAll();
     bool isRunning() const { return running_; }
+    // The macro task's stack: its size, and the least ever left free while playing (bytes; 0
+    // until something has played). The dynamic pattern's step function is big and nests (a
+    // button's recording, the pattern, its key presses, and once more when an arrow is let go of
+    // at the home zone's or the map's edge); 2.0 and 2.1 grew it past what 16 KB could hold
+    // there, which crashed the pad with the arrow still down.
+    static const uint32_t ENGINE_STACK_BYTES = 32768;
+    uint32_t engineStackFree() const { return stackLow_; }
     int  runningKey() const { return runningKey_; }
     uint32_t elapsedMs() const { return running_ ? millis() - macroStartedAt_ : 0; }
     size_t copyLog(MacroLogEntry* entries, size_t capacity) const;
@@ -223,6 +230,7 @@ private:
     int    layer_      = 0;
 
     volatile bool running_    = false;
+    volatile uint32_t stackLow_ = 0;
     volatile bool stopFlag_   = false;
     volatile bool oneShot_    = false;   // run a single pass regardless of trigger
     volatile int  runningKey_ = -1;

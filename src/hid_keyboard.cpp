@@ -55,6 +55,7 @@ class HidServerCallbacks : public NimBLEServerCallbacks {
 public:
     void onConnect(NimBLEServer* s, ble_gap_conn_desc* desc) override {
         Keyboard.connected_ = true;
+        Keyboard.connectedAt_ = millis(); Keyboard.releasesOwed_ = 2;
         // Keep advertising off while connected; request a secure link.
         NimBLEDevice::startSecurity(desc->conn_handle);
     }
@@ -121,6 +122,16 @@ void HidKeyboard::releaseKey(uint8_t keycode) {
 void HidKeyboard::releaseModifiers(uint8_t mask) {
     modifiers_ &= ~mask;
     sendKeyReport();
+}
+
+// After a connect: "no key is down", 1.5 s and 4 s in (once the host has subscribed and the
+// link is encrypted; a report sent before that is lost). Not while something is playing.
+void HidKeyboard::poll(bool idle) {
+    if (!connected_ || !releasesOwed_) return;
+    uint32_t due = releasesOwed_ == 2 ? 1500 : 4000;
+    if ((uint32_t)(millis() - connectedAt_) < due) return;
+    --releasesOwed_;
+    if (idle) releaseAll();
 }
 
 void HidKeyboard::releaseAll() {

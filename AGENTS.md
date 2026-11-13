@@ -60,6 +60,13 @@ deliberately and explain it in plain words (see tests/README.md).
 
 - Match the surrounding code: the engine and UI are dense one-liners, the
   tools are plain readable Python.
+- `executeSteps` (`macro_engine.cpp`) is recursive and its frame holds every
+  local of the dynamic pattern case (about 3.3 KB in 2.1.0); it nests four deep
+  when an arrow is let go of mid-delay. The macro task has
+  `ENGINE_STACK_BYTES` (32 KB). After adding locals or lambdas there, build
+  with `PLATFORMIO_BUILD_FLAGS=-fstack-usage` and read
+  `.pio/build/*/src/macro_engine.cpp.su`: runMacro + 4 × executeSteps must
+  stay under half the stack.
 - Put decisions in pure headers (`*_logic.h`, `dynamic_pattern.h`) so host
   tests can cover them.
 - Config is validated twice, on the device (`storage.cpp`) and in the UI

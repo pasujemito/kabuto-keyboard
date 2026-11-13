@@ -3,6 +3,29 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 2.1.1
+
+- 🛑 **A key could stay held after the pad crashed** (2.0.0 and 2.1.0): the
+  pattern code grew in those releases, and with it the stack each step of a
+  pattern needs: 2.4 KB in 1.19.7, 3.0 KB in 2.0.0, 3.3 KB in 2.1.0. Steps
+  nest: the button's recording, the pattern, its key presses, and once more
+  when an arrow is let go of at the home zone's or the map's edge. Four deep
+  that's about 12 KB in 1.19.7 and 15.6 KB in 2.1.0, before the Bluetooth
+  send and the log, on a 16 KB stack: it ran out at the very moment it was
+  letting go of the arrow, the pad restarted, and the PC was left with the
+  arrow down (walking on until the game disconnected), with nothing on the
+  pad answering meanwhile. Worked out from the build's own stack figures,
+  not reproduced on a pad. Now:
+  - the playing task has **32 KB** of stack
+  - **after every Bluetooth connect the pad tells the PC that no key is
+    held** (1.5 s and 4 s in, unless something is playing), so whatever
+    restarts it, a key can't stay down for longer than the reconnect
+  - **Settings → Home Wi-Fi** says when the pad restarted by itself (a
+    crash, a hang, a power dip) and how long ago, with the Settings tab in
+    red; **Storage** shows "Playback stack": the least it has had left
+- If a key ever does stay down: tap that same key on your own keyboard,
+  which gives the game the release it's waiting for
+
 ## 2.1.0
 
 New settings are off in saved patterns (they play as before) and on in new

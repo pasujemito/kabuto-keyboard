@@ -180,5 +180,9 @@ PatternView patternViewSnapshot() {
 
 void homeReply(char* out, size_t size) {
     PatternView v = patternViewSnapshot();
-    homeReplyForm(out, size, v.active, v.haveHome, v.home, v.homeOnMap, v.homeRange);
+    if (v.active && v.haveHome) { homeReplyForm(out, size, true, true, v.home, v.homeOnMap, v.homeRange); return; }
+    // Nothing playing (or a pattern with no zone): this map's Set home all the same, so the
+    // PC's game layer shows where home is from the moment it's set, not only while playing.
+    PinnedHome pin = homePinnedHere();
+    homeReplyForm(out, size, pin.set, pin.set, pin.home, pin.onMap, 0);
 }

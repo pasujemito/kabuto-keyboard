@@ -1044,8 +1044,8 @@ const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_j
 // a recorded 57 s jump-attack run (timings ~min-max, gap drift ~15%); Smooth keeps
 // its middle half; Flip turns after nearly every 1-3 attacks.
 const DYNAMIC_PRESETS={
-  natural:{label:'Natural',hint:'Fitted to recorded play: full timing spread, the attack rhythm drifts slower/faster like a person, usually turns after a set.',
-    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,195],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.85,tempo_drift:.15,peak:.35,hesitation:.03,wobble:.08,break_chance:.06,break_ms:[700,2500],rest_every_ms:[360000,840000],rest_ms:[8000,30000]}},
+  natural:{label:'Natural',hint:'Fitted to your recorded play (79 jump-attacks): its timings, its long runs one way, its hesitations; the attack rhythm drifts slower/faster like a person, usually turns after a set.',
+    values:{jump_to_attack:[58,144],attack_to_jump_up:[40,148],jump_up_to_attack_up:[20,120],combo_gap:[440,730],dir_hold:[110,400],dir_after:[16,330],attacks_per_set:[8,15],sets:[8,12],turn_chance:.85,tempo_drift:.15,peak:.35,hesitation:.08,wobble:.08,break_chance:.06,break_ms:[700,2500],rest_every_ms:[360000,840000],rest_ms:[8000,30000]}},
   smooth:{label:'Smooth',hint:'Steady rhythm: the middle of the recorded timings, medium sets, little drift, turns after every set.',
     values:{jump_to_attack:[75,105],attack_to_jump_up:[60,90],jump_up_to_attack_up:[40,65],combo_gap:[580,680],dir_hold:[100,150],dir_after:[120,230],attacks_per_set:[4,7],sets:[8,12],turn_chance:1,tempo_drift:.05,peak:.5,hesitation:0,wobble:.03,break_chance:.02,break_ms:[800,2000],rest_every_ms:[600000,1200000],rest_ms:[8000,20000]}},
   flip:{label:'Flip',hint:'Turns often: 1–3 attacks per set and nearly always turns, with more sets so a play lasts about as long.',
@@ -1059,7 +1059,7 @@ const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
   return {id,enabled,key:id==='hp'?'C':'V',backup_keys:[],below:id==='hp'?50:30,below_to:id==='hp'?62:42,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,edge_margin_to:.18,mob_sets:true,reaction_ms:[180,450],session_ms:[2700000,5400000],stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,attack:true,char_keys:!!activeCharacter(),char_potions:!!activeCharacter(),char_skills:!!activeCharacter(),skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,edge_margin_to:.18,mob_sets:true,reaction_ms:[180,450],session_ms:[2700000,5400000],stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.15,attack:true,char_keys:!!activeCharacter(),char_potions:!!activeCharacter(),char_skills:!!activeCharacter(),skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -1225,7 +1225,7 @@ const HELP={
   attacking:{title:'Attack',what:'Whether this pattern fights at all.',
     points:[['on','jump-attacks, with all the settings below'],['off','support only: never jumps, attacks or moves; it just drinks potions and uses skills (checked about every second) until you press the button again, or you die, disconnect or get the test popup. Play by hand meanwhile']]},
   attacks_per_set:{title:'Attacks in a row before it may turn',what:'How many jump-attacks it does facing one way. Each run picks a number between Min and Max.',
-    points:[['1–3','turns very often'],['4–7','medium runs'],['8–10','long runs one way']]},
+    points:[['1–3','turns very often'],['4–7','medium runs'],['8–15','long runs one way, as in the recorded play']]},
   sets:{title:'Runs per button press',what:'How many runs of attacks one button press plays. Then it stops by itself.',
     points:[['5','a short play (about 15 s)'],['10','about half a minute'],['30','a long play (a few minutes)']]},
   turn_chance:{title:'How often it flips direction (%)',what:'After each run of attacks, the chance it turns to face the other side. Mobs and map edges decide first, when the screen reader sees them.',
@@ -1234,8 +1234,8 @@ const HELP={
     points:[['0%','the same pause every time (robotic)'],['15%','natural (recommended)'],['30%','very uneven']]},
   peak:{title:'Timing peak (% of each range)',what:'Where most timings land inside their Min–Max. People are usually quick with the odd slow one, so a peak below the middle looks more natural than a tidy average.',
     points:[['50%','the middle: as many slow as quick (how older patterns play)'],['35%','mostly quick, a longer slow tail (recommended)'],['20%','nearly always quick, rarely slow']]},
-  hesitation:{title:'Hesitation (% of attacks)',what:'Now and then the pause after an attack is 1.5–3 times as long, like a moment\'s thought.',
-    points:[['0%','never'],['3%','about one attack in 30 (recommended)'],['10%','often']]},
+  hesitation:{title:'Hesitation (% of attacks)',what:'Now and then the pause after an attack is 1.3–1.9 times as long, like a moment\'s thought.',
+    points:[['0%','never'],['8%','about one attack in 12, as in the recorded play (recommended)'],['10%','often']]},
   wobble:{title:'Different every play (%)',what:'Each button press (and each repeat of a toggle) shifts all the timings a little quicker or slower, so no two plays have the same average.',
     points:[['0%','every play uses exactly the ranges below'],['8%','each play up to 8% quicker or slower (recommended)'],['30%','very different from play to play']]},
   break_chance:{title:'Short break (% chance after a run)',what:'After a run of attacks it sometimes just stops for a moment, nothing held. With the screen reader it waits until no mob is in reach.',
@@ -1245,7 +1245,7 @@ const HELP={
     points:[['0–0','off'],['6–14','a rest every 6 to 14 minutes (recommended)'],['20–40','rarely']]},
   rest_ms:{title:'Rest: how long (seconds)',what:'How long a rest lasts. Potions are still drunk by the bars meanwhile.'},
   glide:{title:'Move while attacking (% of runs)',what:'Holds the arrow while it jump-attacks, so the character drifts sideways through the air instead of jumping on the spot.',
-    points:[['0%','off: attacks on the spot, turns with a short tap (a small step)'],['50%','half the runs on the move'],['100%','always on the move']]},
+    points:[['0%','off: attacks on the spot, turns with a short tap (a small step)'],['15%','now and then, as in the recorded play'],['50%','half the runs on the move'],['100%','always on the move']]},
   jump_to_attack:{title:'Jump → attack (ms)',what:'Time from pressing jump to pressing attack.',points:[['shorter','attacks early in the jump'],['longer','attacks near the top of the jump']]},
   attack_to_jump_up:{title:'Attack → let go of jump (ms)',what:'Time from pressing attack to letting go of jump.'},
   jump_up_to_attack_up:{title:'Let go of jump → let go of attack (ms)',what:'Time from letting go of jump to letting go of attack.'},
@@ -1651,7 +1651,7 @@ function generateDynamicSample(p,rng=Math.random){
     for(let unit=0;unit<units;unit++){
       if(drift)tempo=Math.max(-drift,Math.min(drift,Math.trunc(tempo*9/10)+int(2*half+1)-half));
       let gap=Math.floor(t(p.combo_gap)*(1000+tempo)/1000);
-      if(p.hesitation>0&&rng()<p.hesitation)gap=Math.floor(gap*t([1500,3000])/1000);
+      if(p.hesitation>0&&rng()<p.hesitation)gap=Math.floor(gap*t([1300,1900])/1000);
       press(true,k.jump);delay(p.jump_to_attack);press(true,k.attack);delay(p.attack_to_jump_up);press(false,k.jump);delay(p.jump_up_to_attack_up);press(false,k.attack);add({type:'delay',ms:gap});at+=gap;
     }
     for(const x of p.potions){

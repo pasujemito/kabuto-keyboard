@@ -194,7 +194,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).inputValue(),'600');
   await page.getByLabel('Smart mode',{exact:true}).uncheck();await page.getByRole('button',{name:'Default for Smart mode',exact:true}).click();
   assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
-  assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking \(% of runs\).*0%: off: attacks on the spot.*100%: always on the move.*Default: 60%/s);
+  assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking \(% of runs\).*0%: off: attacks on the spot.*100%: always on the move.*Default: 15%/s);
   assert.match(await page.locator('#dynamicMain').textContent(),/How often it flips direction \(%\).*0%: always faces the same way.*20%: occasionally flips sides/s);
   assert.match(await page.locator('#dynamicAware').textContent(),/10%: turns 10% from each edge: uses the middle 80% of the map/);
   // Attack off: support only. Everything about fighting greys out and says so; potions and skills don't.
@@ -241,7 +241,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'Smooth',exact:true}).click();
   assert.equal(await page.getByLabel('Gap after attack (ms) minimum',{exact:true}).inputValue(),'580');
   await page.getByRole('button',{name:'Natural',exact:true}).click();
-  assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'10');
+  assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'15');
   // Movement keys: Space jumps, X attacks; clashes are refused, and skills can't pick them.
   await page.locator('#dynamicKeysSummary').click();
   await page.getByLabel('Jump key',{exact:true}).selectOption('SPACE');await page.getByLabel('Attack key',{exact:true}).selectOption('SPACE');
@@ -524,11 +524,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.match(await page.locator('#padHealth').textContent(),/29 KB in one piece\. Low: restart the pad/);
   // A restart that wasn't you plugging it in is said out loud (it explains keys left down), with the tab in red.
   assert.equal(await page.locator('#padReset').count(),0);
-  networkState.reset='crash';
+  networkState.reset='crash';await page.evaluate(()=>refreshNetwork());
   await page.waitForFunction(()=>document.querySelector('#padReset'));
   assert.match(await page.locator('#padReset').textContent(),/The pad restarted by itself after a crash, 3 h 5 min ago/);
   assert(await page.locator('#tabSettings').evaluate(e=>e.classList.contains('alert')));
-  networkState.reset='power';await page.waitForFunction(()=>!document.querySelector('#padReset'));
+  networkState.reset='power';await page.evaluate(()=>refreshNetwork());await page.waitForFunction(()=>!document.querySelector('#padReset'));
   networkState.heapLargest=70000;await page.evaluate(()=>refreshNetwork());
   await page.getByLabel('Home Wi-Fi name').fill('OtherNet');
   await page.evaluate(()=>refreshNetwork());await page.waitForTimeout(100);

@@ -150,8 +150,9 @@ template <typename Draw> inline uint32_t drawBetween(uint32_t from, uint32_t to,
     return to > from ? from + (uint32_t)draw((int32_t)(to - from + 1)) : from;
 }
 
-// A hesitation: the gap after an attack, this many times as long (permille).
-const DynamicRange HESITATION{1500,3000};
+// A hesitation: the gap after an attack, this many times as long (permille). In the recorded
+// playthrough 9% of the gaps were 1.4-1.9 times the usual one.
+const DynamicRange HESITATION{1300,1900};
 inline uint32_t hesitate(uint32_t gap, uint32_t timesPermille) { return (uint32_t)((uint64_t)gap * timesPermille / 1000); }
 
 // Per-play wobble: a timing range moved as a whole by `offset` permille (within

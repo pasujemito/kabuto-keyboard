@@ -984,22 +984,33 @@ alone). New patterns start as Natural.
 
 | Setting | Natural | Smooth | Flip |
 | --- | --- | --- | --- |
-| Alt down → Ctrl down | 45–120 ms | 75–105 ms | 45–120 ms |
-| Ctrl down → Alt up | 30–120 ms | 60–90 ms | 30–120 ms |
-| Alt up → Ctrl up | 16–80 ms | 40–65 ms | 16–80 ms |
-| Gap after each attack | 510–760 ms | 580–680 ms | 510–700 ms |
-| Direction hold | 85–195 ms | 100–150 ms | 85–150 ms |
+| Alt down → Ctrl down | 58–144 ms | 75–105 ms | 45–120 ms |
+| Ctrl down → Alt up | 40–148 ms | 60–90 ms | 30–120 ms |
+| Alt up → Ctrl up | 20–120 ms | 40–65 ms | 16–80 ms |
+| Gap after each attack | 440–730 ms | 580–680 ms | 510–700 ms |
+| Direction hold | 110–400 ms | 100–150 ms | 85–150 ms |
 | Gap after direction | 16–330 ms | 120–230 ms | 60–200 ms |
-| Attacks per set | 2–10 | 4–7 | 1–3 |
+| Attacks per set | 8–15 | 4–7 | 1–3 |
 | Sets per play | 8–12 | 8–12 | 20–30 |
 | Turn around after a set | 85% | 100% | 95% |
 | Tempo drift | 15% | 5% | 10% |
 
-Natural is fitted to a recorded 57-second jump-attack run (62 jump-attacks).
-Its timing ranges are that run's spread. Smooth keeps roughly the middle half
-of each, and Flip turns after nearly every 1–3 attacks. The recording's short
-delays fall on ~15 ms steps; that is the PC timer used for recording, not your
-hands, so the presets don't copy it.
+Natural is fitted to the recorded playthrough shipped as "Sample gameplay"
+(98 s, 79 jump-attacks), refitted in 2.1.1 with the timing peak at 35%:
+
+| | The recording | What the pad draws |
+| --- | --- | --- |
+| Alt down → Ctrl down | mean 96 ms, 10–90%: 74–122 | mean 97, 74–122 |
+| Ctrl down → Alt up | mean 89 ms, 60–120 | mean 89, 60–120 |
+| Alt up → Ctrl up | mean 64 ms, 41–102 | mean 65, 39–95 |
+| Gap after an attack (the usual ones) | mean 574 ms, 493–656 | mean 570, 494–655 |
+| Gaps 1.4–1.9 times as long | 9% | Hesitation 8%, 1.3–1.9 times |
+| Attacks before turning the other way | 9–15 | 8–15 |
+| Attacks with an arrow held | 10 of 79 | Move while attacking 15% of sets |
+
+It also had two long stops (4.7 s and 7.3 s): too few to fit, so short breaks
+keep their own range. Smooth and Flip are still built on the older, quicker
+ranges.
 
 **Natural rhythm** (2.0) is what keeps a long session from looking the same
 from minute to minute. New patterns have it on; patterns saved before 2.0
@@ -1046,7 +1057,7 @@ correlation of 0.31 and similar slow/fast stretches. The press/release timings
 inside a jump-attack showed no drift in the recording (lag-1 ≈ 0), so they stay
 independent. Patterns saved before drift existed load with 0%.
 
-**Move while attacking** (fluid movement; 60% of sets for new patterns, 0 =
+**Move while attacking** (fluid movement; 15% of sets for new patterns, as in the recorded play, 0 =
 off, which older patterns load with): in that share of sets the arrow stays
 held through the jump-attacks, so you drift through the air attacking the way
 you face, as a player holding the arrow does, instead of jumping on the spot.

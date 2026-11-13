@@ -284,8 +284,8 @@ int main() {
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS+1;   // no screen reader: everything works on its own
         // Off (a pattern from before 2.0): the plain 510 ms gap.
         step.setPattern(q);hidEvents.clear();run(engine,{step});assert(gaps()==std::vector<uint32_t>{510});
-        // Hesitation: the gap stretched at least 1.5 times.
-        q.hesitationPermille=1000;step.setPattern(q);hidEvents.clear();run(engine,{step});assert(gaps()==std::vector<uint32_t>{765});
+        // Hesitation: the gap stretched at least 1.3 times.
+        q.hesitationPermille=1000;step.setPattern(q);hidEvents.clear();run(engine,{step});assert(gaps()==std::vector<uint32_t>{663});
         // Wobble: this play's ranges moved as a whole (the lowest draw: 30% quicker).
         q.hesitationPermille=0;q.wobblePermille=300;step.setPattern(q);hidEvents.clear();run(engine,{step});assert(gaps()==std::vector<uint32_t>{357});
         // A short break after a set: nothing held, then on with the next set.
@@ -767,7 +767,8 @@ int main() {
                   PatternView v=patternViewSnapshot();if(v.haveHome&&!v.homeOnMap)homeDot=v.home;if(v.haveHome&&v.homeOnMap)homeMap=v.home;
                   char form[48];homeReply(form,sizeof(form));if(v.haveHome&&v.homeOnMap)assert(std::string(form)=="home=1500&hm=1&hr=0");});
          assert(homeDot==420&&homeMap==1500);
-         char form[48];homeReply(form,sizeof(form));assert(!form[0]);homePinsLoad(nullptr,0);}   // nothing playing: no home to tell
+         char form[48];homeReply(form,sizeof(form));assert(std::string(form)=="home=420&hm=0&hr=0");   // nothing playing: this map's Set home all the same
+         homePinsLoad(nullptr,0);homeReply(form,sizeof(form));assert(!form[0]);}   // no Set home: no home to tell
         // Set home: one home per map, where you stood. On its map it's always home, whatever
         // spot a pattern starts from, press after press; pinned again while playing it's taken
         // up at once; another map's doesn't count (a map without one has no home), and
@@ -776,6 +777,10 @@ int main() {
          homePinsLoad(nullptr,0);homePinsTakeDirty();
          seen(MOB_READ|MOB_LEFT,1,0,40,-1,600,"Henesys");assert(homePin()&&homePinsTakeDirty()&&!homePinsTakeDirty());   // saved once
          PinnedHome pin=homePinned("Henesys");assert(pin.set&&pin.home==600&&pin.onMap&&std::string(pin.map)=="Henesys");
+         // Told to the PC at once, nothing playing: its game layer marks home from the moment it's set...
+         {char form[48];homeReply(form,sizeof(form));assert(std::string(form)=="home=600&hm=1&hr=0");
+          seen(MOB_READ,0,0,-1,-1,300,"Ellinia");homeReply(form,sizeof(form));assert(!form[0]);   // ...and only on its own map
+          seen(MOB_READ|MOB_LEFT,1,0,40,-1,600,"Henesys");}
          assert(!homePinned("Ellinia").set&&homePinnedHere().home==600);
          for(int start: {300,450,820}){   // new presses from anywhere: home stays put
              bool always=true;

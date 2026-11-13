@@ -23,6 +23,21 @@ and show up in the pad's **Updates** panel.
   - **Settings → Home Wi-Fi** says when the pad restarted by itself (a
     crash, a hang, a power dip) and how long ago, with the Settings tab in
     red; **Storage** shows "Playback stack": the least it has had left
+- 🏠 **Set home shows on the PC's overlay at once**: the pad only told the
+  screen reader where home was while a pattern was playing, so pressing Set
+  home showed nothing until you started one. Now every answer carries this
+  map's Set home, playing or not: the line appears within a couple of
+  seconds of pressing it and stays where it is
+- 🎯 **Natural refitted to your recorded playthrough** ("Sample gameplay",
+  98 s, 79 jump-attacks). Measured against it, the pad pressed quicker than
+  you (jump → attack 79 ms against your 96), turned after 2–10 attacks where
+  you do 9–15, and moved while attacking in 60% of runs where you had an
+  arrow down for 10 attacks of 79. New patterns and the Natural preset now
+  draw: jump → attack 58–144 ms, attack → jump up 40–148, jump up → attack
+  up 20–120, gap 440–730, 8–15 attacks per run, Move while attacking 15%,
+  hesitation 8% at 1.3–1.9 times (9% of your gaps were 1.4–1.9 times the
+  usual). The means now sit within 1–4 ms of yours (table in the guide).
+  Saved patterns don't change: pick **Start from → Natural** to take it up
 - If a key ever does stay down: tap that same key on your own keyboard,
   which gives the game the release it's waiting for
 

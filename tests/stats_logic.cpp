@@ -76,7 +76,8 @@ int main(){
     assert(smartAction(false,left,true,500,true,500,100,false)==SMART_NO_READINGS);   // a stale "mob in reach" isn't trusted either
     assert(smartAction(true,none,true,650,true,500,100,false)==SMART_WALK_LEFT&&smartAction(true,none,true,-200,true,-50,100,false)==SMART_WALK_RIGHT);
     assert(smartAction(true,left,true,650,true,500,100,false)==SMART_ATTACK&&smartAction(true,left,true,590,true,500,100,false)==SMART_ATTACK);   // outside with mobs: fights its way back
-    assert(smartAction(true,MOB_READ|MOB_RIGHT,true,650,true,500,100,false)==SMART_ATTACK);   // mobs only further out: still fights back (facing home)
+    assert(smartAction(true,MOB_READ|MOB_RIGHT,true,650,true,500,100,false)==SMART_WALK_LEFT);   // mobs only behind (further out): walks home, no attacking the air
+    assert(smartAction(true,MOB_READ|MOB_LEFT,true,350,true,500,100,false)==SMART_WALK_RIGHT&&smartAction(true,MOB_READ|MOB_RIGHT,true,350,true,500,100,false)==SMART_ATTACK);   // the other side too
     // Fighting the way back carries on until just inside (90%), as the walk does.
     assert(homeReturning(false,true,650,true,500,100)&&!homeReturning(false,true,595,true,500,100)&&homeReturning(true,true,595,true,500,100));
     assert(!homeReturning(true,true,590,true,500,100)&&!homeReturning(true,true,650,true,500,0)&&!homeReturning(true,false,650,true,500,100)&&!homeReturning(true,true,650,false,500,100));

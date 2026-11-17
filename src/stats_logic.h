@@ -208,12 +208,14 @@ struct DriftWatch {
 // Walking back in stops just inside the line (a tenth of the range in), so a
 // small slip past it is a short step back, not a walk home.
 inline int homeBack(uint16_t range) { return range - range / 10; }
-// Outside it with mobs in reach, it fights its way back instead: jump-attacks
-// with the arrow held homewards (see homeReturning), a gradual return.
+// Outside it with mobs in reach on the way home, it fights its way back instead:
+// jump-attacks with the arrow held homewards (see homeReturning), a gradual
+// return. Mobs only behind you (away from home) don't count: it walks home, it
+// doesn't attack the empty air in front of it.
 inline uint8_t homeDecide(const SmartInput& in) {
     if (!in.fresh || !in.havePos || !in.haveHome || !in.range) return SMART_ATTACK;
     int off = in.pos - in.home, dist = off < 0 ? -off : off;
-    bool mobs = in.mobs & (MOB_LEFT | MOB_RIGHT);
+    bool mobs = in.mobs & (off > 0 ? MOB_LEFT : MOB_RIGHT);   // in reach, homewards
     if (dist > (in.homing ? homeBack(in.range) : in.range) && !mobs) return off > 0 ? SMART_WALK_LEFT : SMART_WALK_RIGHT;
     return SMART_ATTACK;
 }

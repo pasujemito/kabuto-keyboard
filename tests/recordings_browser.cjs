@@ -30,7 +30,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    if(url.pathname.startsWith('/api/')&&pinRequired&&!loggedIn)return route.fulfill({status:401,contentType:'application/json',body:'{"ok":false,"error":"PIN required"}'});
    if(url.pathname==='/api/network'&&route.request().method()==='POST'){networkRequests.push(route.request().postData());return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/stats/reset'){statsRequests.push(url.pathname);return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
-   if(url.pathname==='/api/home/set'){homeRequests.push(url.pathname);pinnedState={home:liveState.wx??liveState.x,onMap:liveState.wx!==undefined,map:liveState.map};return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(url.pathname==='/api/home/set'){homeRequests.push(url.pathname);if(liveState)pinnedState={home:liveState.wx??liveState.x,onMap:liveState.wx!==undefined,map:liveState.map};return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/tool'){toolRequests.push(url.searchParams.get('key'));return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/home/clear'){homeRequests.push(url.pathname);pinnedState=null;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
    if(url.pathname==='/api/notices/clear'){noticeRequests.push(url.pathname);noticeState=null;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
@@ -471,6 +471,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.evaluate(()=>{status.live={fresh:true};document.querySelector('#teachMap').click();});
   await page.waitForFunction(()=>/Map list opened on your PC/.test(document.querySelector('#toast').textContent));
   assert.deepEqual(toolRequests,['map']);
+  // The 🏠 Set home pill sets home where you stand (not a button on the pad).
+  {const before=homeRequests.length,buttons=await page.evaluate(()=>cfg.workflows.length);
+   await page.evaluate(()=>{status.live={fresh:true,x:420};document.querySelector('#setHomePill').click();});
+   await page.waitForTimeout(300);
+   assert.deepEqual(homeRequests.slice(before),['/api/home/set']);assert.equal(await page.evaluate(()=>cfg.workflows.length),buttons);}
   // The rest of its keys are in Settings (no layer on the pad needed).
   assert.deepEqual(await page.locator('#toolKeys button').evaluateAll(bs=>bs.map(b=>b.getAttribute('aria-label'))),
     ['Mark','Skip','Which map','Outlines','Hide layer','Looser','Stricter','Map area'].map(n=>'Screen reader: '+n));
@@ -503,11 +508,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   // A Set home button: goes on the selected button when it's empty, its recording reused after.
   const emptyKey=await page.evaluate(()=>{selLayer=0;const i=cfg.layers[0].keys.findIndex(k=>!k.steps.length);selKey=i;return i;});
   if(emptyKey>=0){
-    await page.locator('#newSetHome').click();
+    await page.evaluate(()=>document.querySelector('#newSetHome').click());   // in Settings now
     assert.deepEqual(await page.evaluate(i=>{const k=cfg.layers[0].keys[i];return [k.name,cfg.workflows.find(w=>w.id===k.steps[0]?.workflow)?.steps];},emptyKey),['🏠 Set home',[{type:'tool',key:'home'}]]);
     assert.match(await page.locator('#recordings').textContent(),/Set home · home where you stand; never stops what's playing/);
     const homes=()=>page.evaluate(()=>cfg.workflows.filter(w=>w.steps[0]?.type==='tool'&&w.steps[0].key==='home').length);
-    await page.locator('#newSetHome').click();assert.equal(await homes(),1);
+    await page.evaluate(()=>document.querySelector('#newSetHome').click());assert.equal(await homes(),1);
   }
   // The scenarios (tests/scenarios.cpp) play the editor's default pattern from a fixture: keep them the same.
   {const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures','default_pattern.json'),'utf8'));

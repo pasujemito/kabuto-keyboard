@@ -466,7 +466,7 @@
       </div>
     </div>
     <div class="pad-pills" aria-label="Pad shortcuts">
-      <button class="pill" id="newSetHome" title="Puts a Set home button on the selected (empty) button: pressed, home is where you stand, without stopping what's playing">＋ 🏠 Set home</button>
+      <button class="pill" id="setHomePill" title="Home on this map becomes where you stand now, saved on the pad. A playing pattern switches to it straight away">🏠 Set home</button>
       <button class="pill" id="newSetupLayer" title="Adds a layer of buttons for the PC screen reader: mark, skip, which map, map area, outlines, back">＋ 🍁 Setup layer</button>
       <button class="pill" id="teachMap" title="Opens the map list on your PC (the screen reader's F9), to teach it the map you're on">🗺 Teach this map</button>
     </div>
@@ -522,6 +522,7 @@
       <h3>PC screen reader</h3>
       <p class="hint">Its keys, pressed from here: setup and teaching need no keyboard and no layer on the pad. They reach the script over the USB cable while it runs.</p>
       <div class="tool-keys" id="toolKeys"></div>
+      <p class="hint">On the pad itself: <button class="btn sm" id="newSetHome" title="Puts a Set home button on the selected (empty) pad button, for setting home without the phone">＋ 🏠 Set home button</button></p>
     </div>
   </section>
   <section class="panel" id="panelEdit">
@@ -2601,7 +2602,7 @@ function renderLiveStats(live,pattern=status.pattern){
   // Set home: pins home where you stand now (as a Set home button on the pad does),
   // without stopping what's playing; patterns use it over where they were started.
   if(live.fresh&&(live.x>=0||live.wx!==undefined)){const set=el('button','btn sm');set.type='button';set.textContent='🏠 Set home here';set.title='Home on this map becomes where you stand now, saved on the pad. A playing pattern switches to it straight away.';set.onclick=()=>setHomeHere();foot.appendChild(set);}
-  if(status.pinnedHome){const forget=el('button','btn sm');forget.type='button';forget.textContent='Forget this map\'s home';forget.title='Patterns on this map go back to making home where they start';forget.onclick=()=>forgetHome();foot.appendChild(forget);}
+  if(status.pinnedHome){const forget=el('button','btn sm');forget.type='button';forget.textContent='Forget this map\'s home';forget.title='No home zone on this map until you set home again';forget.onclick=()=>forgetHome();foot.appendChild(forget);}
   if(live.xp>=0){const reset=el('button','btn sm');reset.type='button';reset.textContent='Reset XP rate';reset.onclick=()=>api('/api/stats/reset',{method:'POST'}).catch(()=>{});foot.appendChild(reset);}
   box.appendChild(foot);
 }
@@ -2612,7 +2613,7 @@ async function setHomeHere(){
   catch(e){toast(e.message,true);}
 }
 async function forgetHome(){
-  try{await api('/api/home/clear',{method:'POST'});toast('This map\'s home forgotten: patterns here make home where they start');pollStatus();}catch(e){toast('Could not reach the pad',true);}
+  try{await api('/api/home/clear',{method:'POST'});toast('This map\'s home forgotten: no home zone here until you set one');pollStatus();}catch(e){toast('Could not reach the pad',true);}
 }
 // Notifications from the pad: each time the game turned to a stop state (its
 // test popup, a death, a disconnect), oldest first. A new one buzzes the phone.
@@ -2690,6 +2691,7 @@ async function pollStatus(){
 $("#pinDialog").addEventListener("cancel",event=>event.preventDefault());
 $("#newDynamic").onclick=()=>openDynamicEditor();
 $("#newSetHome").onclick=()=>{try{addSetHomeButton();}catch(e){toast(e.message,true);}};
+$("#setHomePill").onclick=()=>{if(!(status.live&&status.live.fresh)){toast('No position from the PC screen reader yet: run screen_stats.py with the pad on the USB cable',true);return;}setHomeHere();};
 $("#newSetupLayer").onclick=()=>{try{addSetupLayer();}catch(e){toast(e.message,true);}};
 // The PC screen reader's keys from the page ("Teach this map" is its F9): queued on the pad, which
 // hands them to the script with its next answer.

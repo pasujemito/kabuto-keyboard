@@ -716,9 +716,10 @@ are gone with Wi-Fi readings).
       fights. Inside it, it fights mobs in reach where they are, walks to ones
       in sight (not into the safety band), and with nothing to fight it waits
       where it is: nothing pulls it back home. If mobs lead it outside the
-      zone, it fights its way back (since 1.19.4): with mobs about it keeps
-      jump-attacking, the arrow held homewards, so it drifts back in as it
-      fights; with none, it walks back in (to just inside the line), then
+      zone, it fights its way back (since 1.19.4): with mobs in reach on the
+      way home it keeps jump-attacking, the arrow held homewards, so it drifts
+      back in as it fights; with none on the way home (none at all, or only
+      behind it, since 2.1.2), it walks back in (to just inside the line), then
       carries on; at the zone's edge it turns to face inwards, as at a map
       edge. If it can't get back in within 10 s (a wall, another platform),
       home stays and walking back is tried again 20 s later;

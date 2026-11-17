@@ -49,9 +49,11 @@ and show up in the pad's **Updates** panel.
   a key report without telling the pad (no send buffer free for a moment). A
   dropped release would leave the key down on the PC while the pad believes
   it's up, which nothing above would notice. Now, once nothing is held, the
-  pad sends "all keys up" again 80 ms and 160 ms later, and every second
-  while nothing is held. Reports from the playing task and the main loop are
-  sent one at a time, never interleaved
+  pad sends "all keys up" again 80 ms and 160 ms later, then stays silent
+  until something changes, as a keyboard does. Windows only makes a key
+  event when a key changes, so programs never see the repeats. Reports from
+  the playing task and the main loop are sent one at a time, never
+  interleaved
 - ⚔ **Never a break mid-fight**: with the screen reader running, a short
   break now waits, like a rest, until no mob is in reach and HP isn't low
   (it could start beside a mob since 2.0), and ends at once if one comes

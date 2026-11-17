@@ -1,32 +1,32 @@
 {
  "id": "default",
  "jump_to_attack": [
-  58,
-  144
+  30,
+  95
  ],
  "attack_to_jump_up": [
-  40,
-  148
+  77,
+  135
  ],
  "jump_up_to_attack_up": [
-  20,
-  120
+  5,
+  57
  ],
  "combo_gap": [
-  440,
-  730
+  535,
+  798
  ],
  "dir_hold": [
-  110,
-  400
+  180,
+  560
  ],
  "dir_after": [
   16,
   330
  ],
  "attacks_per_set": [
-  8,
-  15
+  1,
+  8
  ],
  "sets": [
   8,
@@ -35,12 +35,12 @@
  "turn_chance": 0.85,
  "tempo_drift": 0.15,
  "peak": 0.35,
- "hesitation": 0.08,
+ "hesitation": 0.05,
  "wobble": 0.08,
- "break_chance": 0.06,
+ "break_chance": 0.1,
  "break_ms": [
-  700,
-  2500
+  1500,
+  4500
  ],
  "rest_every_ms": [
   360000,
@@ -132,7 +132,7 @@
   600,
   1300
  ],
- "glide": 0.15,
+ "glide": 0.6,
  "attack": true,
  "char_keys": false,
  "char_potions": false,

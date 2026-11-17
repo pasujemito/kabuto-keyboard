@@ -188,7 +188,9 @@ struct Sim {
         if (zone) run.furthestPast = std::max(run.furthestPast, std::fabs(x - homeX) - rangePx);
         if (zone && std::fabs(x - homeX) > rangePx) { if (!run.outsideSince) run.outsideSince = now; run.longestOutside = std::max(run.longestOutside, now - run.outsideSince); }
         else run.outsideSince = 0;
-        if (targetInReach() && state == LIVE_OK) { if (!idleSince) idleSince = now; if (now - idleSince > run.longestIdleWithMob) { run.longestIdleWithMob = now - idleSince; run.idleFrom = idleSince; run.idleTo = now; } }
+        // A short break or a rest is a deliberate stop (its own scenario checks it): it doesn't count as idling.
+        if (patternViewSnapshot().action == SMART_BREAK) idleSince = 0;
+        else if (targetInReach() && state == LIVE_OK) { if (!idleSince) idleSince = now; if (now - idleSince > run.longestIdleWithMob) { run.longestIdleWithMob = now - idleSince; run.idleFrom = idleSince; run.idleTo = now; } }
         else idleSince = 0;
         if (now >= nextTrace) {
             nextTrace = now + 1000;

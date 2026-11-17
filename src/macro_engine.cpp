@@ -636,7 +636,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // (a quick jump) after each walk_hold, as a player walks. The arrow
                 // is let go when the walk ends: to attack, wait or turn round.
                 const DynamicRange WALK_JUMP_HOLD{60,140};
-                const DynamicRange GLIDE_RUN_UP{40,110};   // gliding: arrow down this long before the first jump
+                const DynamicRange GLIDE_RUN_UP{55,310};   // gliding: arrow down this long before the first jump (recorded play: 59-309 ms, median 148)
                 DynamicKey walking;   // the arrow held (empty: none)
                 auto stopWalking=[&]{
                     if(walking.empty())return;

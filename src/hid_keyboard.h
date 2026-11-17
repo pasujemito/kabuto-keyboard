@@ -46,6 +46,7 @@ public:
 
 private:
     void sendKeyReport();
+    void sendReport();
 
     NimBLEHIDDevice*     hid_        = nullptr;
     NimBLECharacteristic* inputKbd_  = nullptr;
@@ -56,6 +57,9 @@ private:
     uint32_t             connectedAt_ = 0;
     uint8_t              releasesOwed_ = 0;
     volatile uint32_t    lastChange_ = 0;
+    volatile uint32_t    lastSend_ = 0;
+    volatile uint8_t     allUpOwed_ = 0;   // "all keys up" repeats still due (key_guard.h)
+    void*                reportLock_ = nullptr;   // one report built and sent at a time (the playing task and the main loop both send)
 
     uint8_t modifiers_ = 0;
     uint8_t keys_[6]   = {0, 0, 0, 0, 0, 0};

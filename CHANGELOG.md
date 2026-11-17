@@ -45,6 +45,13 @@ and show up in the pad's **Updates** panel.
   playing and a key has been held unchanged for 5 s, it lets go of it. With
   the stack fix and the release after every reconnect, that's three
   separate ways a key can no longer stay down on your PC
+- 📡 **"All keys up" is said more than once**: the Bluetooth library can drop
+  a key report without telling the pad (no send buffer free for a moment). A
+  dropped release would leave the key down on the PC while the pad believes
+  it's up, which nothing above would notice. Now, once nothing is held, the
+  pad sends "all keys up" again 80 ms and 160 ms later, and every second
+  while nothing is held. Reports from the playing task and the main loop are
+  sent one at a time, never interleaved
 - ⚔ **Never a break mid-fight**: with the screen reader running, a short
   break now waits, like a rest, until no mob is in reach and HP isn't low
   (it could start beside a mob since 2.0), and ends at once if one comes

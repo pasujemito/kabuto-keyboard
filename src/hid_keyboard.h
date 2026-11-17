@@ -15,6 +15,10 @@
 class HidKeyboard {
 public:
     void begin(const char* deviceName);
+    // Call often (the main loop). `idle`: nothing is playing, so no key is meant to be down.
+    void poll(bool idle);
+    bool anyHeld() const;              // a key or modifier is down on the PC as far as the pad has told it
+    uint32_t lastChangeMs() const { return lastChange_; }   // when what's held last changed
     bool isConnected();
 
     // Low-level key report: up to 6 simultaneous keycodes + modifier bitmask.
@@ -42,11 +46,20 @@ public:
 
 private:
     void sendKeyReport();
+    void sendReport();
 
     NimBLEHIDDevice*     hid_        = nullptr;
     NimBLECharacteristic* inputKbd_  = nullptr;
     NimBLECharacteristic* inputCons_ = nullptr;
     bool                 connected_  = false;
+    // A host that has just connected may still think a key is down (the pad restarted, or the
+    // link dropped, while one was held): once it's listening it's told nothing is, twice.
+    uint32_t             connectedAt_ = 0;
+    uint8_t              releasesOwed_ = 0;
+    volatile uint32_t    lastChange_ = 0;
+    volatile uint32_t    lastSend_ = 0;
+    volatile uint8_t     allUpOwed_ = 0;   // "all keys up" repeats still due (key_guard.h)
+    void*                reportLock_ = nullptr;   // one report built and sent at a time (the playing task and the main loop both send)
 
     uint8_t modifiers_ = 0;
     uint8_t keys_[6]   = {0, 0, 0, 0, 0, 0};

@@ -984,22 +984,38 @@ alone). New patterns start as Natural.
 
 | Setting | Natural | Smooth | Flip |
 | --- | --- | --- | --- |
-| Alt down → Ctrl down | 45–120 ms | 75–105 ms | 45–120 ms |
-| Ctrl down → Alt up | 30–120 ms | 60–90 ms | 30–120 ms |
-| Alt up → Ctrl up | 16–80 ms | 40–65 ms | 16–80 ms |
-| Gap after each attack | 510–760 ms | 580–680 ms | 510–700 ms |
-| Direction hold | 85–195 ms | 100–150 ms | 85–150 ms |
+| Alt down → Ctrl down | 24–126 ms | 75–105 ms | 45–120 ms |
+| Ctrl down → Alt up | 66–140 ms | 60–90 ms | 30–120 ms |
+| Alt up → Ctrl up | 2–89 ms | 40–65 ms | 16–80 ms |
+| Gap after each attack | 498–794 ms | 580–680 ms | 510–700 ms |
+| Direction hold | 150–560 ms | 100–150 ms | 85–150 ms |
 | Gap after direction | 16–330 ms | 120–230 ms | 60–200 ms |
-| Attacks per set | 2–10 | 4–7 | 1–3 |
+| Attacks per set | 1–9 | 4–7 | 1–3 |
 | Sets per play | 8–12 | 8–12 | 20–30 |
 | Turn around after a set | 85% | 100% | 95% |
 | Tempo drift | 15% | 5% | 10% |
 
-Natural is fitted to a recorded 57-second jump-attack run (62 jump-attacks).
-Its timing ranges are that run's spread. Smooth keeps roughly the middle half
-of each, and Flip turns after nearly every 1–3 attacks. The recording's short
-delays fall on ~15 ms steps; that is the PC timer used for recording, not your
-hands, so the presets don't copy it.
+Natural is fitted to both of your recordings together (260 jump-attacks,
+4½ minutes): a steady one (98 s, long runs one way, mostly on the spot) and a
+mobile one (3 min, short runs, moving most of the time). **Steady** and
+**Mobile** are each recording on its own. Timing peak 35% in all three:
+
+| | Steady recording | Mobile recording | Natural draws (both) |
+| --- | --- | --- | --- |
+| Alt down → Ctrl down, mean | 96 ms | 60 ms | 70 ms (24–126) |
+| Ctrl down → Alt up, mean | 89 ms | 104 ms | 100 ms (66–140) |
+| Alt up → Ctrl up, mean | 64 ms | 29 ms | 40 ms (2–89) |
+| Usual gap after an attack, mean | 574 ms | 654 ms | 631 ms (498–794) |
+| Gaps 1.3–2 times as long | 9% | 4% | Hesitation 6% |
+| Attacks before turning | median 10 | median 3 | 1–9 |
+| Turning when pressing an arrow | 58% | 83% | 80% |
+| Attacks with an arrow held | 13% | 64% | Move while attacking 50% |
+| Pauses of 1.4–7 s | 2 | 9 (some for buffs) | Short break 12%, 1.5–5.5 s |
+
+The arrow goes down 45–310 ms before the first jump of a moving run (both
+recordings: 47–309, median 134). The recorder's timer only measures in ~15 ms
+steps, so the pad's continuous ranges don't copy that. Smooth and Flip are
+still built on the older ranges.
 
 **Natural rhythm** (2.0) is what keeps a long session from looking the same
 from minute to minute. New patterns have it on; patterns saved before 2.0
@@ -1014,9 +1030,10 @@ screen reader.
 | Short break | 6% after a set, 0.7–2.5 s | Stops for a moment, nothing held |
 | Rest | every 6–14 min, 8–30 s | A longer stop; 0–0 minutes = off |
 
-With the screen reader running, a short break doesn't start while HP reads
-under 40% (one still owed 15 s later is forgotten), and a rest waits until no
-mob is in reach and HP isn't low, then ends as soon as a mob comes into reach;
+With the screen reader running, neither ever starts while a mob is in reach
+or HP reads under 40%: while there's something to fight, it fights. A short
+break still owed 15 s later is forgotten; a rest waits for a quiet moment and
+ends as soon as a mob comes into reach;
 cut short before half of it, the remainder is taken at the next quiet moment.
 Potions are still drunk by the bars during both. The rest timer carries on
 over the repeats of a toggle button, and not playing for half a minute counts
@@ -1046,7 +1063,7 @@ correlation of 0.31 and similar slow/fast stretches. The press/release timings
 inside a jump-attack showed no drift in the recording (lag-1 ≈ 0), so they stay
 independent. Patterns saved before drift existed load with 0%.
 
-**Move while attacking** (fluid movement; 60% of sets for new patterns, 0 =
+**Move while attacking** (fluid movement; 50% of sets for new patterns, as in your two recordings together, 0 =
 off, which older patterns load with): in that share of sets the arrow stays
 held through the jump-attacks, so you drift through the air attacking the way
 you face, as a player holding the arrow does, instead of jumping on the spot.

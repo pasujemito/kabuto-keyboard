@@ -9,6 +9,7 @@
 #include "access.h"
 #include "live_stats.h"
 #include <WiFi.h>
+#include <esp_system.h>
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
@@ -82,6 +83,8 @@ static void handleStorage(AsyncWebServerRequest* req) {
     d["heapSize"]    = ESP.getHeapSize();
     d["heapFree"]    = ESP.getFreeHeap();
     d["heapLargest"] = ESP.getMaxAllocHeap();
+    d["engineStack"] = MacroEngine::ENGINE_STACK_BYTES;
+    d["engineStackFree"] = Macros.engineStackFree();   // 0: nothing has played yet
     String out; serializeJson(d, out);
     sendJson(req, 200, out);
 }
@@ -278,6 +281,16 @@ void webServerBegin() {
         JsonDocument d;
         homeWifiWriteStatus(d);
         // The pad's health, for the page: a long run under heavy traffic shows up here.
+        // Why the pad last started: a crash, the watchdog or a power dip must not pass unnoticed.
+        {const char* why = "power";
+         switch (esp_reset_reason()) {
+             case ESP_RST_PANIC: why = "crash"; break;
+             case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: why = "watchdog"; break;
+             case ESP_RST_BROWNOUT: why = "brownout"; break;
+             case ESP_RST_SW: why = "restart"; break;
+             default: break;
+         }
+         d["reset"] = why;}
         d["uptimeS"] = millis() / 1000; d["heapFree"] = ESP.getFreeHeap(); d["heapLargest"] = ESP.getMaxAllocHeap();
         if (WiFi.status() == WL_CONNECTED) d["rssi"] = WiFi.RSSI();
         d["pinSet"] = accessPinSet();

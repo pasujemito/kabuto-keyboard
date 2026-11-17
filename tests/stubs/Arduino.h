@@ -43,3 +43,4 @@ inline int xQueueSend(QueueHandle_t, const void*, int) { return 0; }
 inline int xQueueReceive(QueueHandle_t, void*, int) { return 0; }
 inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, int, void*, int, TaskHandle_t*, int) { return 0; }
 inline void vTaskDelete(TaskHandle_t) {}
+inline unsigned uxTaskGetStackHighWaterMark(TaskHandle_t) { return 30000; }

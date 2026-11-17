@@ -315,6 +315,7 @@
   .pill:disabled{opacity:.45}
   /* Below the pads, and never taller than a few lines: the list scrolls inside itself. */
   #notices{max-height:132px;overflow:auto}
+  .tabbar button.alert{color:var(--stop)}
   .badge{position:relative}
   .badge::after{content:"";position:absolute;top:4px;right:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--amber)}
   .btn.badge::after{top:-3px;right:-3px}
@@ -818,6 +819,10 @@ function renderNetwork(){
     const up=n.uptimeS<3600?Math.round(n.uptimeS/60)+' min':Math.floor(n.uptimeS/3600)+' h '+Math.floor(n.uptimeS%3600/60)+' min',kb=b=>Math.round(b/1024)+' KB';
     const low=n.heapLargest<45000,h=note(`Pad: up ${up} · memory ${kb(n.heapFree)} free, ${kb(n.heapLargest)} in one piece`+(n.rssi!==undefined?` · Wi-Fi ${n.rssi} dBm`+(n.rssi<-75?' (weak)':''):'')+(low?'. Low: restart the pad (unplug it a moment) before updating.':''));
     h.id='padHealth';if(low)h.classList.add('warn');box.append(h);
+    // A start that wasn't you plugging it in: say so, it explains keys left down or a pattern that stopped.
+    const why={crash:'The pad restarted by itself after a crash',watchdog:'The pad restarted by itself (it had stopped responding)',brownout:'The pad restarted because its power dipped: try another USB port or cable'}[n.reset];
+    if(why){const r=note(`⚠ ${why}, ${up} ago. Anything playing stopped; when it reconnects it tells the PC no key is held.`);r.id='padReset';r.classList.add('warn');box.append(r);}
+    $('#tabSettings').classList.toggle('alert',!!why);
   }
   if(!$('#networkForm'))panel.appendChild(buildNetworkForm());
   const form=$('#networkForm');
@@ -867,6 +872,8 @@ function renderStorage(){
     rows.push(["Config size",pending,storage.maxConfig,`${fmtBytes(pending)} of ${fmtBytes(storage.maxConfig)}`,"Largest config the device accepts on Save"]);
     rows.push(["Flash",storage.fsUsed,storage.fsTotal,`${fmtBytes(storage.fsUsed)} of ${fmtBytes(storage.fsTotal)}`,"Device filesystem: recordings and patterns"]);
     rows.push(["Device memory",storage.heapSize-storage.heapFree,storage.heapSize,`${fmtBytes(storage.heapFree)} free`,`Largest free block ${fmtBytes(storage.heapLargest)}`]);
+    // The playing task's stack: the least it ever had left. Running out crashes the pad mid-press.
+    if(storage.engineStack&&storage.engineStackFree)rows.push(["Playback stack",storage.engineStack-storage.engineStackFree,storage.engineStack,`${fmtBytes(storage.engineStackFree)} never used`,"The least stack the playing task has had left since the pad started"]);
   }
   // Collapsed summary; opens itself when something is nearly full.
   const tight=rows.some(([,used,max])=>max&&used/max>=.8);
@@ -1037,8 +1044,12 @@ const DYNAMIC_RANGES=[['jump_to_attack','Jump → attack',0,90000],['attack_to_j
 // a recorded 57 s jump-attack run (timings ~min-max, gap drift ~15%); Smooth keeps
 // its middle half; Flip turns after nearly every 1-3 attacks.
 const DYNAMIC_PRESETS={
-  natural:{label:'Natural',hint:'Fitted to recorded play: full timing spread, the attack rhythm drifts slower/faster like a person, usually turns after a set.',
-    values:{jump_to_attack:[45,120],attack_to_jump_up:[30,120],jump_up_to_attack_up:[16,80],combo_gap:[510,760],dir_hold:[85,195],dir_after:[16,330],attacks_per_set:[2,10],sets:[8,12],turn_chance:.85,tempo_drift:.15,peak:.35,hesitation:.03,wobble:.08,break_chance:.06,break_ms:[700,2500],rest_every_ms:[360000,840000],rest_ms:[8000,30000]}},
+  natural:{label:'Natural',hint:'Both your recordings together (260 jump-attacks, 4½ minutes): everything from your steady play and your mobile play, so each run can lean either way; the rhythm drifts slower/faster like a person.',
+    values:{jump_to_attack:[24,126],attack_to_jump_up:[66,140],jump_up_to_attack_up:[2,89],combo_gap:[498,794],dir_hold:[150,560],dir_after:[16,330],attacks_per_set:[1,9],sets:[8,12],turn_chance:.8,tempo_drift:.15,peak:.35,hesitation:.06,wobble:.08,break_chance:.12,break_ms:[1500,5500],rest_every_ms:[360000,840000],rest_ms:[8000,30000],glide:.5}},
+  steady:{label:'Steady',hint:'Your first recording (98 s): long runs one way (8–15 attacks), mostly attacking on the spot, a slower jump → attack.',
+    values:{jump_to_attack:[58,144],attack_to_jump_up:[40,148],jump_up_to_attack_up:[20,120],combo_gap:[440,730],dir_hold:[110,400],dir_after:[16,330],attacks_per_set:[8,15],sets:[8,12],turn_chance:.85,tempo_drift:.15,peak:.35,hesitation:.08,wobble:.08,break_chance:.06,break_ms:[700,2500],rest_every_ms:[360000,840000],rest_ms:[8000,30000],glide:.15}},
+  mobile:{label:'Mobile',hint:'Your second recording (3 min): short runs and frequent turns (median 3 attacks), moving while attacking most of the time, a quick jump → attack.',
+    values:{jump_to_attack:[30,95],attack_to_jump_up:[77,135],jump_up_to_attack_up:[5,57],combo_gap:[535,798],dir_hold:[180,560],dir_after:[16,330],attacks_per_set:[1,8],sets:[8,12],turn_chance:.85,tempo_drift:.15,peak:.35,hesitation:.05,wobble:.08,break_chance:.1,break_ms:[1500,4500],rest_every_ms:[360000,840000],rest_ms:[8000,30000],glide:.6}},
   smooth:{label:'Smooth',hint:'Steady rhythm: the middle of the recorded timings, medium sets, little drift, turns after every set.',
     values:{jump_to_attack:[75,105],attack_to_jump_up:[60,90],jump_up_to_attack_up:[40,65],combo_gap:[580,680],dir_hold:[100,150],dir_after:[120,230],attacks_per_set:[4,7],sets:[8,12],turn_chance:1,tempo_drift:.05,peak:.5,hesitation:0,wobble:.03,break_chance:.02,break_ms:[800,2000],rest_every_ms:[600000,1200000],rest_ms:[8000,20000]}},
   flip:{label:'Flip',hint:'Turns often: 1–3 attacks per set and nearly always turns, with more sets so a play lasts about as long.',
@@ -1052,7 +1063,7 @@ const POTION_LABELS={hp:'HP',mana:'Mana'};
 function defaultPotion(id,enabled=true){
   return {id,enabled,key:id==='hp'?'C':'V',backup_keys:[],below:id==='hp'?50:30,below_to:id==='hp'?62:42,bar_max:0,per_tap:0,every_ms:id==='hp'?[40000,70000]:[25000,45000],repeats:[1,1],hold:[85,110],after:[400,700]};
 }
-function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,edge_margin_to:.18,mob_sets:true,reaction_ms:[180,450],session_ms:[2700000,5400000],stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.6,attack:true,char_keys:!!activeCharacter(),char_potions:!!activeCharacter(),char_skills:!!activeCharacter(),skills:[]};}
+function defaultDynamicPattern(){return {id:freshId(),...JSON.parse(JSON.stringify(DYNAMIC_PRESETS.natural.values)),shuffle_skills:true,keys:{...DYNAMIC_DEFAULT_KEYS},potions:[defaultPotion('hp'),defaultPotion('mana')],edge_margin:.12,edge_margin_to:.18,mob_sets:true,reaction_ms:[180,450],session_ms:[2700000,5400000],stuck_after_ms:20000,face_mobs:true,smart:true,home_range:.5,auto_pause:.3,approach:true,walk_hold:[600,1300],glide:.5,attack:true,char_keys:!!activeCharacter(),char_potions:!!activeCharacter(),char_skills:!!activeCharacter(),skills:[]};}
 function isDynamicRecording(recording){return recording.steps.length===1&&recording.steps[0].type==='dynamic';}
 // Presets made before the batch -> set rename used these keys.
 function normalizeDynamicPattern(p){
@@ -1218,7 +1229,7 @@ const HELP={
   attacking:{title:'Attack',what:'Whether this pattern fights at all.',
     points:[['on','jump-attacks, with all the settings below'],['off','support only: never jumps, attacks or moves; it just drinks potions and uses skills (checked about every second) until you press the button again, or you die, disconnect or get the test popup. Play by hand meanwhile']]},
   attacks_per_set:{title:'Attacks in a row before it may turn',what:'How many jump-attacks it does facing one way. Each run picks a number between Min and Max.',
-    points:[['1–3','turns very often'],['4–7','medium runs'],['8–10','long runs one way']]},
+    points:[['1–3','turns very often'],['4–7','medium runs'],['8–15','long runs one way']]},
   sets:{title:'Runs per button press',what:'How many runs of attacks one button press plays. Then it stops by itself.',
     points:[['5','a short play (about 15 s)'],['10','about half a minute'],['30','a long play (a few minutes)']]},
   turn_chance:{title:'How often it flips direction (%)',what:'After each run of attacks, the chance it turns to face the other side. Mobs and map edges decide first, when the screen reader sees them.',
@@ -1227,8 +1238,8 @@ const HELP={
     points:[['0%','the same pause every time (robotic)'],['15%','natural (recommended)'],['30%','very uneven']]},
   peak:{title:'Timing peak (% of each range)',what:'Where most timings land inside their Min–Max. People are usually quick with the odd slow one, so a peak below the middle looks more natural than a tidy average.',
     points:[['50%','the middle: as many slow as quick (how older patterns play)'],['35%','mostly quick, a longer slow tail (recommended)'],['20%','nearly always quick, rarely slow']]},
-  hesitation:{title:'Hesitation (% of attacks)',what:'Now and then the pause after an attack is 1.5–3 times as long, like a moment\'s thought.',
-    points:[['0%','never'],['3%','about one attack in 30 (recommended)'],['10%','often']]},
+  hesitation:{title:'Hesitation (% of attacks)',what:'Now and then the pause after an attack is 1.3–1.9 times as long, like a moment\'s thought.',
+    points:[['0%','never'],['6%','about one attack in 17, as in your recorded play (recommended)'],['10%','often']]},
   wobble:{title:'Different every play (%)',what:'Each button press (and each repeat of a toggle) shifts all the timings a little quicker or slower, so no two plays have the same average.',
     points:[['0%','every play uses exactly the ranges below'],['8%','each play up to 8% quicker or slower (recommended)'],['30%','very different from play to play']]},
   break_chance:{title:'Short break (% chance after a run)',what:'After a run of attacks it sometimes just stops for a moment, nothing held. With the screen reader it waits until no mob is in reach.',
@@ -1238,7 +1249,7 @@ const HELP={
     points:[['0–0','off'],['6–14','a rest every 6 to 14 minutes (recommended)'],['20–40','rarely']]},
   rest_ms:{title:'Rest: how long (seconds)',what:'How long a rest lasts. Potions are still drunk by the bars meanwhile.'},
   glide:{title:'Move while attacking (% of runs)',what:'Holds the arrow while it jump-attacks, so the character drifts sideways through the air instead of jumping on the spot.',
-    points:[['0%','off: attacks on the spot, turns with a short tap (a small step)'],['50%','half the runs on the move'],['100%','always on the move']]},
+    points:[['0%','off: attacks on the spot, turns with a short tap (a small step)'],['50%','half the runs on the move, as in your two recordings together'],['100%','always on the move']]},
   jump_to_attack:{title:'Jump → attack (ms)',what:'Time from pressing jump to pressing attack.',points:[['shorter','attacks early in the jump'],['longer','attacks near the top of the jump']]},
   attack_to_jump_up:{title:'Attack → let go of jump (ms)',what:'Time from pressing attack to letting go of jump.'},
   jump_up_to_attack_up:{title:'Let go of jump → let go of attack (ms)',what:'Time from letting go of jump to letting go of attack.'},
@@ -1644,7 +1655,7 @@ function generateDynamicSample(p,rng=Math.random){
     for(let unit=0;unit<units;unit++){
       if(drift)tempo=Math.max(-drift,Math.min(drift,Math.trunc(tempo*9/10)+int(2*half+1)-half));
       let gap=Math.floor(t(p.combo_gap)*(1000+tempo)/1000);
-      if(p.hesitation>0&&rng()<p.hesitation)gap=Math.floor(gap*t([1500,3000])/1000);
+      if(p.hesitation>0&&rng()<p.hesitation)gap=Math.floor(gap*t([1300,1900])/1000);
       press(true,k.jump);delay(p.jump_to_attack);press(true,k.attack);delay(p.attack_to_jump_up);press(false,k.jump);delay(p.jump_up_to_attack_up);press(false,k.attack);add({type:'delay',ms:gap});at+=gap;
     }
     for(const x of p.potions){

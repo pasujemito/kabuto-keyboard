@@ -23,7 +23,7 @@ int main(){
      assert(triangularSample({0,100},350000,350)==35);   // the peak itself: 35% of draws fall below it
      assert(triangularSample({0,100},1000000,0)==100&&triangularSample({0,100},0,1000)==0&&triangularSample({0,100},1000000,1000)==100);}
     // Hesitation and per-play wobble.
-    assert(hesitate(600,1500)==900&&hesitate(600,3000)==1800&&HESITATION.min==1500&&HESITATION.max==3000);
+    assert(hesitate(600,1500)==900&&hesitate(600,3000)==1800&&HESITATION.min==1300&&HESITATION.max==1900);
     {DynamicRange r=wobbleRange({510,760},-80);assert(r.min==469&&r.max==699);r=wobbleRange({510,760},0);assert(r.min==510&&r.max==760);
      r=wobbleRange({80000,90000},300);assert(r.min==90000&&r.max==90000);   // never past the longest hold
      DynamicPattern w;w.wobblePermille=0;wobblePattern(w,[](int32_t){return 0;});assert(w.comboGap.min==510);   // off: untouched

@@ -3,6 +3,64 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 2.1.1
+
+- 🛑 **A key could stay held after the pad crashed** (2.0.0 and 2.1.0): the
+  pattern code grew in those releases, and with it the stack each step of a
+  pattern needs: 2.4 KB in 1.19.7, 3.0 KB in 2.0.0, 3.3 KB in 2.1.0. Steps
+  nest: the button's recording, the pattern, its key presses, and once more
+  when an arrow is let go of at the home zone's or the map's edge. Four deep
+  that's about 12 KB in 1.19.7 and 15.6 KB in 2.1.0, before the Bluetooth
+  send and the log, on a 16 KB stack: it ran out at the very moment it was
+  letting go of the arrow, the pad restarted, and the PC was left with the
+  arrow down (walking on until the game disconnected), with nothing on the
+  pad answering meanwhile. Worked out from the build's own stack figures,
+  not reproduced on a pad. Now:
+  - the playing task has **32 KB** of stack
+  - **after every Bluetooth connect the pad tells the PC that no key is
+    held** (1.5 s and 4 s in, unless something is playing), so whatever
+    restarts it, a key can't stay down for longer than the reconnect
+  - **Settings → Home Wi-Fi** says when the pad restarted by itself (a
+    crash, a hang, a power dip) and how long ago, with the Settings tab in
+    red; **Storage** shows "Playback stack": the least it has had left
+- 🏠 **Set home shows on the PC's overlay at once**: the pad only told the
+  screen reader where home was while a pattern was playing, so pressing Set
+  home showed nothing until you started one. Now every answer carries this
+  map's Set home, playing or not: the line appears within a couple of
+  seconds of pressing it and stays where it is
+- 🎯 **Natural fitted to both of your recordings** (260 jump-attacks): the
+  steady one (98 s: long runs one way, mostly on the spot, jump → attack
+  96 ms) and the mobile one (3 min: median 3 attacks before turning, an
+  arrow held for 64% of attacks, jump → attack 60 ms). Natural draws from
+  both together: jump → attack 24–126 ms, attack → jump up 66–140, jump up →
+  attack up 2–89, gap 498–794, 1–9 attacks per run, turn 80%, Move while
+  attacking 50% (arrow down 45–310 ms before the first jump, as yours was),
+  hesitation 6%, short breaks 12% after a run for 1.5–5.5 s. Two new
+  presets are each recording on its own: **Steady** and **Mobile** (Start
+  from also sets Move while attacking for these). Comparison table in the
+  guide. Saved patterns don't change: pick a preset to take it up
+- 🛡 **Key guard**: a check on the pad's main loop, separate from playback,
+  that can't be stuck by it. If playback stops responding for 3 s while a
+  key is held, it lets go of every key and stops playback; if nothing is
+  playing and a key has been held unchanged for 5 s, it lets go of it. With
+  the stack fix and the release after every reconnect, that's three
+  separate ways a key can no longer stay down on your PC
+- 📡 **"All keys up" is said more than once**: the Bluetooth library can drop
+  a key report without telling the pad (no send buffer free for a moment). A
+  dropped release would leave the key down on the PC while the pad believes
+  it's up, which nothing above would notice. Now, once nothing is held, the
+  pad sends "all keys up" again 80 ms and 160 ms later, then stays silent
+  until something changes, as a keyboard does. Windows only makes a key
+  event when a key changes, so programs never see the repeats. Reports from
+  the playing task and the main loop are sent one at a time, never
+  interleaved
+- ⚔ **Never a break mid-fight**: with the screen reader running, a short
+  break now waits, like a rest, until no mob is in reach and HP isn't low
+  (it could start beside a mob since 2.0), and ends at once if one comes
+  into reach. Without the screen reader breaks still run on chance alone
+- If a key ever does stay down: tap that same key on your own keyboard,
+  which gives the game the release it's waiting for
+
 ## 2.1.0
 
 New settings are off in saved patterns (they play as before) and on in new

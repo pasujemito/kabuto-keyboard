@@ -1,4 +1,5 @@
 #include "hid_keyboard.h"
+#include "key_guard.h"
 #include "keymap.h"
 
 HidKeyboard Keyboard;
@@ -55,6 +56,7 @@ class HidServerCallbacks : public NimBLEServerCallbacks {
 public:
     void onConnect(NimBLEServer* s, ble_gap_conn_desc* desc) override {
         Keyboard.connected_ = true;
+        Keyboard.connectedAt_ = millis(); Keyboard.releasesOwed_ = 2;
         // Keep advertising off while connected; request a secure link.
         NimBLEDevice::startSecurity(desc->conn_handle);
     }
@@ -66,6 +68,7 @@ public:
 };
 
 void HidKeyboard::begin(const char* deviceName) {
+    if (!reportLock_) reportLock_ = xSemaphoreCreateMutex();
     NimBLEDevice::init(deviceName);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
@@ -94,14 +97,31 @@ void HidKeyboard::begin(const char* deviceName) {
 
 bool HidKeyboard::isConnected() { return connected_; }
 
-void HidKeyboard::sendKeyReport() {
+bool HidKeyboard::anyHeld() const {
+    if (modifiers_) return true;
+    for (int i = 0; i < 6; i++) if (keys_[i]) return true;
+    return false;
+}
+
+// Sends what's held now. Called by the playing task and by the main loop, so the report
+// is built and sent under a lock: one never goes out half-updated.
+void HidKeyboard::sendReport() {
     if (!connected_ || !inputKbd_) return;
+    if (reportLock_) xSemaphoreTake((SemaphoreHandle_t)reportLock_, portMAX_DELAY);
     uint8_t report[8] = {
         modifiers_, 0x00,
         keys_[0], keys_[1], keys_[2], keys_[3], keys_[4], keys_[5]
     };
     inputKbd_->setValue(report, sizeof(report));
     inputKbd_->notify();
+    lastSend_ = millis();
+    if (reportLock_) xSemaphoreGive((SemaphoreHandle_t)reportLock_);
+}
+
+void HidKeyboard::sendKeyReport() {
+    lastChange_ = millis();
+    allUpOwed_ = anyHeld() ? 0 : 2;   // nothing held now: say it twice more (allUpDue)
+    sendReport();
 }
 
 void HidKeyboard::pressKey(uint8_t keycode, uint8_t modifiers) {
@@ -121,6 +141,22 @@ void HidKeyboard::releaseKey(uint8_t keycode) {
 void HidKeyboard::releaseModifiers(uint8_t mask) {
     modifiers_ &= ~mask;
     sendKeyReport();
+}
+
+// After a connect: "no key is down", 1.5 s and 4 s in (once the host has subscribed and the
+// link is encrypted; a report sent before that is lost). Not while something is playing.
+void HidKeyboard::poll(bool idle) {
+    if (!connected_) return;
+    // A release the radio dropped is mended here: "all keys up" again (key_guard.h).
+    if (allUpDue(anyHeld(), allUpOwed_, millis() - lastSend_)) {
+        if (allUpOwed_) --allUpOwed_;
+        sendReport();
+    }
+    if (!releasesOwed_) return;
+    uint32_t due = releasesOwed_ == 2 ? 1500 : 4000;
+    if ((uint32_t)(millis() - connectedAt_) < due) return;
+    --releasesOwed_;
+    if (idle) releaseAll();
 }
 
 void HidKeyboard::releaseAll() {

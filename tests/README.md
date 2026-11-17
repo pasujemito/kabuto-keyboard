@@ -13,6 +13,8 @@ g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o /tmp/kabuto-acces
 /tmp/kabuto-access-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/stats_logic.cpp -o /tmp/kabuto-stats-tests
 /tmp/kabuto-stats-tests
+g++ -std=c++11 -Wall -Wextra -Werror tests/key_guard.cpp -o /tmp/kabuto-keyguard-tests
+/tmp/kabuto-keyguard-tests
 g++ -std=c++11 -Wall -Wextra -Werror tests/workflow_selection.cpp -o /tmp/kabuto-selection-tests
 /tmp/kabuto-selection-tests
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp src/live_stats.cpp -o /tmp/kabuto-engine-tests

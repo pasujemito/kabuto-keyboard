@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "config.h"
 #include "hid_keyboard.h"
+#include "key_guard.h"
 #include "macro_engine.h"
 #include "storage.h"
 #include "web_server.h"
@@ -199,6 +200,24 @@ void setup() {
     Serial.println("[ok] ready");
 }
 
+// The key guard (key_guard.h), on this task rather than the playing one, so it still
+// acts when that one hangs.
+static void keyGuardPoll() {
+    uint32_t now = millis();
+    switch (keyGuard(Keyboard.anyHeld(), Macros.isRunning(), now - Keyboard.lastChangeMs(), now - g_engineTick)) {
+        case KEY_GUARD_STOP:
+            Serial.println("[guard] the playing task stopped responding: letting go of every key and stopping it");
+            Macros.requestStop();
+            Keyboard.releaseAll();
+            break;
+        case KEY_GUARD_RELEASE:
+            Serial.println("[guard] a key was held with nothing playing: letting go of it");
+            Keyboard.releaseAll();
+            break;
+        default: break;
+    }
+}
+
 void loop() {
     Macros.processCommands();   // apply queued web actions on this (engine) task
     if (homePinsTakeDirty()) {   // a Set home pressed: keep it over a restart
@@ -208,6 +227,8 @@ void loop() {
     matrixScan();
     configButtonPoll();
     usbStatsPoll();
+    Keyboard.poll(!Macros.isRunning());   // a host that just connected: nothing is held
+    keyGuardPoll();                       // nothing may stay held by accident, whatever happened
     statusLedUpdate();
     delay(1000 / MATRIX_SCAN_HZ);
 }

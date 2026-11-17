@@ -34,10 +34,13 @@ void Config::ensureLayer(size_t n) {
 }
 
 // --- interruptible delay ---------------------------------------------------
+// The playing task's heartbeat for the key guard (key_guard.h): every wait ticks it.
+volatile uint32_t g_engineTick = 0;
 static void sleepMs(uint32_t ms, volatile bool& stop) {
     const uint32_t chunk = 5;
     uint32_t started = millis();
     while (true) {
+        g_engineTick = millis();
         uint32_t elapsed = millis() - started;
         if (stop || elapsed >= ms) return;
         uint32_t remaining = ms - elapsed;
@@ -636,7 +639,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // (a quick jump) after each walk_hold, as a player walks. The arrow
                 // is let go when the walk ends: to attack, wait or turn round.
                 const DynamicRange WALK_JUMP_HOLD{60,140};
-                const DynamicRange GLIDE_RUN_UP{40,110};   // gliding: arrow down this long before the first jump
+                const DynamicRange GLIDE_RUN_UP{45,310};   // gliding: arrow down this long before the first jump (recorded play: 47-309 ms, median 134)
                 DynamicKey walking;   // the arrow held (empty: none)
                 auto stopWalking=[&]{
                     if(walking.empty())return;
@@ -833,7 +836,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if((uint32_t)(now-rest.lastRun)>=rest.wait){breaks.oweRest(timed(pattern->restMs));rest={now,sample(pattern->restEvery)};}
                     }
                     LiveStats live=liveStatsSnapshot();
-                    uint8_t kind=breaks.take(breakSafe(live.fresh,live.hp),restSafe(live.fresh,live.hp,live.mobs),now);
+                    const bool calm=restSafe(live.fresh,live.hp,live.mobs);   // nothing in reach, HP fine: a break never interrupts a fight
+                    uint8_t kind=breaks.take(calm,calm,now);
                     if(kind==BREAK_NONE)return;
                     stopWalking();moving=false;publish(SMART_BREAK);
                     uint32_t id=logStep(s,pc,now,0,false,kind==BREAK_REST?"resting":"a short break");
@@ -841,7 +845,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     while(!stop&&(uint32_t)(millis()-now)<breaks.length){
                         live=liveStatsSnapshot();
                         if(stopReason(live))break;
-                        if(kind==BREAK_REST&&restOver(live.fresh,live.mobs)){cut=true;break;}
+                        if(restOver(live.fresh,live.mobs)){cut=kind==BREAK_REST;break;}   // a mob came into reach: back to fighting
                         potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                         uint32_t left=breaks.length-(uint32_t)(millis()-now);
                         std::vector<Step> pause{delay(left<150?left:150)};executeSteps(pause,stop,state,depth+1);
@@ -1145,8 +1149,11 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
 
 void MacroEngine::taskTrampoline(void* arg) {
     MacroEngine* self = static_cast<MacroEngine*>(arg);
+    g_engineTick = millis();
     self->running_ = true;
     self->runMacro(self->activeBinding_);
+    {uint32_t left = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);   // the least this run ever had left
+     if (!self->stackLow_ || left < self->stackLow_) self->stackLow_ = left;}
     self->running_ = false;
     self->runningKey_ = -1;
     TaskHandle_t t = self->task_;
@@ -1169,7 +1176,7 @@ void MacroEngine::startMacroTask(int keyIndex, bool oneShot) {
     macroRunId_++;
     macroPass_     = 0;
     runningKey_    = keyIndex;
-    if (xTaskCreatePinnedToCore(taskTrampoline, "macro", 16384, this, 2, &task_, 1) != pdPASS) {
+    if (xTaskCreatePinnedToCore(taskTrampoline, "macro", ENGINE_STACK_BYTES, this, 2, &task_, 1) != pdPASS) {
         task_ = nullptr;
         runningKey_ = -1;
     }

@@ -122,7 +122,7 @@ async function main(){
   for(const [end,value] of [['minimum','40'],['maximum','70.5']]){const f=w.document.querySelector(`[aria-label="Skill 2 use again after (seconds) ${end}"]`);f.value=value;f.oninput();}
   // Invalid fields leave the configuration unchanged and keep the draft open.
   const originalConfig=snapshot();
-  const max=w.document.querySelector('[aria-label="Attacks per set maximum"]');max.value='1';max.oninput();
+  const max=w.document.querySelector('[aria-label="Attacks per set maximum"]');max.value='0';max.oninput();
   w.document.querySelector('#dynamicApply').click();assert.match(w.document.querySelector('#dynamicError').textContent,/ordered range/);assert.deepEqual(snapshot(),originalConfig);
   max.value='10';max.oninput();w.document.querySelector('#dynamicApply').click();assert(!w.document.querySelector('#dynamicDialog').open);
   let dynamic=snapshot().workflows.find(r=>r.steps.length===1&&r.steps[0].type==='dynamic');assert(dynamic);

@@ -639,6 +639,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // (a quick jump) after each walk_hold, as a player walks. The arrow
                 // is let go when the walk ends: to attack, wait or turn round.
                 const DynamicRange WALK_JUMP_HOLD{60,140};
+                const DynamicRange LOOK_AGAIN{90,240};   // standing (waiting, a break): how long before looking at the screen again
                 const DynamicRange GLIDE_RUN_UP{45,310};   // gliding: arrow down this long before the first jump (recorded play: 47-309 ms, median 134)
                 DynamicKey walking;   // the arrow held (empty: none)
                 auto stopWalking=[&]{
@@ -724,11 +725,11 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                             stopWalking();act=SMART_WAIT;publish(act);
                             if(doing!=(int)SMART_WAIT){logStep(s,pc,millis(),0,true,labels[act]);doing=SMART_WAIT;}
                             potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
-                            std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);continue;
+                            std::vector<Step> pause{delay(timed(LOOK_AGAIN))};executeSteps(pause,stop,state,depth+1);continue;
                         }
                         if(homing||toMobs){facingLeft=act==SMART_WALK_LEFT||act==SMART_APPROACH_LEFT;walk(facing());}
                         else{stopWalking();potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
-                             std::vector<Step> pause{delay(150)};executeSteps(pause,stop,state,depth+1);}
+                             std::vector<Step> pause{delay(timed(LOOK_AGAIN))};executeSteps(pause,stop,state,depth+1);}
                     }
                     // Stood waiting as long as a rest lasts: that was the rest (its timer starts again).
                     if(stood&&rests&&(uint32_t)(millis()-stoodSince)>=pattern->restMs.min){
@@ -848,7 +849,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if(restOver(live.fresh,live.mobs)){cut=kind==BREAK_REST;break;}   // a mob came into reach: back to fighting
                         potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                         uint32_t left=breaks.length-(uint32_t)(millis()-now);
-                        std::vector<Step> pause{delay(left<150?left:150)};executeSteps(pause,stop,state,depth+1);
+                        uint32_t look=timed(LOOK_AGAIN);std::vector<Step> pause{delay(left<look?left:look)};executeSteps(pause,stop,state,depth+1);
                     }
                     updateLogDuration(id,millis()-now,true);
                     if(cut){breaks.cut((uint32_t)(millis()-now));logStep(s,pc,millis(),0,true,"rest cut short: a mob came close");}

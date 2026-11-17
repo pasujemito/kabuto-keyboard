@@ -3,6 +3,27 @@
 Newest first. Versions from 1.14.0 on are published automatically from `main`
 and show up in the pad's **Updates** panel.
 
+## 2.1.2
+
+- 🏠 **The 🏠 Set home pill sets home**, where you stand, on the spot (as the
+  dashboard's Set home here does). In 2.1.0 it put a Set home button on an
+  empty pad key instead. That's still there, in **Settings → PC screen
+  reader**, for setting home from the pad without the phone
+- 🚶 **Walking home doesn't attack the air**: outside the home zone it fought
+  its way back whenever any mob was in reach, even one behind it, so it
+  jump-attacked towards home where there was nothing. Now it fights its way
+  back only with a mob in reach on the way home; otherwise it walks
+- 🎲 **No fixed 150 ms**: while standing (waiting for mobs, waiting at the
+  zone's line, during a break) it looked at the screen again every 150 ms.
+  Nothing is pressed in those waits, but the next press (an attack once a mob
+  arrives) landed on that 150 ms beat. Now each wait is 90–240 ms, drawn
+  afresh like every other timing
+- "Forget this map's home" said patterns would make home where they start,
+  which hasn't been true since 1.19.7: it now says there's no home zone
+  until you set one
+- 🧪 New scenario: knocked out of the zone with the mobs only behind you:
+  walks home, no attack on the way (before: one or more swings at the air)
+
 ## 2.1.1
 
 - 🛑 **A key could stay held after the pad crashed** (2.0.0 and 2.1.0): the

@@ -411,7 +411,7 @@ int main() {
     // 9. Knocked out of the zone with mobs about: fights its way back, attacking.
     {Setup s; s.world.mobs = spread(0, 700, 1400, 6); s.maxMs = 60000;
      s.during = [](Sim& sim, uint32_t t) { if (t > 8000 && !sim.hitOut && !sim.air) { sim.hitOut = true; sim.x = 1300;   // a big hit: 300 px out,
-         Mob& by = sim.w.mobs[0]; by.alive = true; by.hp = 3; by.x = 1340; by.vx = 0; by.still = true; } };   // next to the mob that did it (so mobs are about, whichever were killed by then)
+         Mob& by = sim.w.mobs[0]; by.alive = true; by.hp = 3; by.x = 1260; by.vx = 0; by.still = true; } };   // the mob that did it, between you and home
      auto m = repeat(s, with([](JsonObject p) { p["home_range"] = 0.1; }));
      auto e = rules(m, true);
      double outside = least(m, [](const Run& r) { return r.attacksOutside; }), back = worst(m, [](const Run& r) { return r.longestOutside / 1000.0; });
@@ -478,6 +478,18 @@ int main() {
      e.push_back({"keeps attacking: never more than 4 s with a mob in reach and no attack", idle(m) <= 4});
      report("No Set home on this map", "home only comes from the Set home button: without one there's no zone, it plays as with 0%, and the dashboard says so",
             e, fmt("x %.0f–%.0f px (a zone would have been 800–1200), dashboard told: %s", lo, hi, told ? "yes" : "no"));}
+
+    // 10b. Knocked out with the mobs only behind you (away from home): it walks home, no attacking the air.
+    {Setup s; s.world.mobs = spread(0, 1450, 1700, 4); s.maxMs = 30000;
+     s.during = [](Sim& sim, uint32_t t) { if (t > 3000 && !sim.hitOut && !sim.air) { sim.hitOut = true; sim.x = 1300;
+         for (auto& m : sim.w.mobs) { m.x = 1320 + 30 * (&m - &sim.w.mobs[0]); m.vx = 0; m.still = true; m.alive = true; } } };   // all of them just behind you
+     auto m = repeat(s, with([](JsonObject p) { p["home_range"] = 0.1; }));
+     auto e = rules(m, false);
+     double outside = worst(m, [](const Run& r) { return r.attacksOutside; }), back = worst(m, [](const Run& r) { return r.longestOutside / 1000.0; });
+     e.push_back({"walks home: no attack while outside (before 2.1.2 it swung at the empty air homewards)", outside == 0});
+     e.push_back({"back inside the zone within 5 s", back <= 5});
+     report("Knocked out, mobs only behind", "pushed out of the zone with the mobs on the far side from home, it walks back instead of attacking the air on the way",
+            e, fmt("%.0f attacks while outside, back inside after %.1f s", outside, back));}
 
     // 11. Death: it stops, nothing left held.
     {Setup s; s.world.mobs = spread(0, 100, 1900, 10); s.maxMs = 60000;

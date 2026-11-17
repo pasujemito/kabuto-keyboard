@@ -836,7 +836,8 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                         if((uint32_t)(now-rest.lastRun)>=rest.wait){breaks.oweRest(timed(pattern->restMs));rest={now,sample(pattern->restEvery)};}
                     }
                     LiveStats live=liveStatsSnapshot();
-                    uint8_t kind=breaks.take(breakSafe(live.fresh,live.hp),restSafe(live.fresh,live.hp,live.mobs),now);
+                    const bool calm=restSafe(live.fresh,live.hp,live.mobs);   // nothing in reach, HP fine: a break never interrupts a fight
+                    uint8_t kind=breaks.take(calm,calm,now);
                     if(kind==BREAK_NONE)return;
                     stopWalking();moving=false;publish(SMART_BREAK);
                     uint32_t id=logStep(s,pc,now,0,false,kind==BREAK_REST?"resting":"a short break");
@@ -844,7 +845,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                     while(!stop&&(uint32_t)(millis()-now)<breaks.length){
                         live=liveStatsSnapshot();
                         if(stopReason(live))break;
-                        if(kind==BREAK_REST&&restOver(live.fresh,live.mobs)){cut=true;break;}
+                        if(restOver(live.fresh,live.mobs)){cut=kind==BREAK_REST;break;}   // a mob came into reach: back to fighting
                         potionCheck();int value;for(const auto& potion:pattern->potions)if(!stop&&potionLive(potion,value)&&potionDue(potion))drink(potion);
                         uint32_t left=breaks.length-(uint32_t)(millis()-now);
                         std::vector<Step> pause{delay(left<150?left:150)};executeSteps(pause,stop,state,depth+1);

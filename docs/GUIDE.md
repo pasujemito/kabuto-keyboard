@@ -1030,9 +1030,10 @@ screen reader.
 | Short break | 6% after a set, 0.7–2.5 s | Stops for a moment, nothing held |
 | Rest | every 6–14 min, 8–30 s | A longer stop; 0–0 minutes = off |
 
-With the screen reader running, a short break doesn't start while HP reads
-under 40% (one still owed 15 s later is forgotten), and a rest waits until no
-mob is in reach and HP isn't low, then ends as soon as a mob comes into reach;
+With the screen reader running, neither ever starts while a mob is in reach
+or HP reads under 40%: while there's something to fight, it fights. A short
+break still owed 15 s later is forgotten; a rest waits for a quiet moment and
+ends as soon as a mob comes into reach;
 cut short before half of it, the remainder is taken at the next quiet moment.
 Potions are still drunk by the bars during both. The rest timer carries on
 over the repeats of a toggle button, and not playing for half a minute counts

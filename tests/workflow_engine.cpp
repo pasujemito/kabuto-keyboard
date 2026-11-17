@@ -294,11 +294,13 @@ int main() {
         testDelayHook=[&]{if(patternViewSnapshot().action==SMART_BREAK){sawBreak=true;heldInBreak=heldInBreak||!held.empty()||heldMods;}};
         uint32_t began=millis();run(engine,{step});testDelayHook={};
         assert(sawBreak&&!heldInBreak&&longest()>=2510&&millis()-began>=4000&&held.empty()&&!heldMods);
-        // A couple of seconds: mobs about don't stop it, low HP on the bars does.
+        // With the screen reader: never with a mob in reach (it keeps fighting), nor on low HP; a quiet moment, yes.
         hidEvents.clear();testDelayHook=[&]{liveStatsUpdate(500,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT);};
-        run(engine,{step});testDelayHook={};assert(longest()>=2510);
-        hidEvents.clear();testDelayHook=[&]{liveStatsUpdate(300,500,-1,LIVE_OK,500,500,MOB_READ|MOB_LEFT);};
         run(engine,{step});testDelayHook={};assert(longest()<1500);
+        hidEvents.clear();testDelayHook=[&]{liveStatsUpdate(300,500,-1,LIVE_OK,500,500,MOB_READ);};
+        run(engine,{step});testDelayHook={};assert(longest()<1500);
+        hidEvents.clear();testDelayHook=[&]{liveStatsUpdate(800,500,-1,LIVE_OK,500,500,MOB_READ);};
+        run(engine,{step});testDelayHook={};assert(longest()>=2510);
         // A rest every 30 s for 5 s: taken on the timer alone, never with a mob in reach.
         q.breakChancePermille=0;q.sets={60,60};q.restEvery={30000,30000};q.restMs={5000,5000};step.setPattern(q);
         liveStatsUpdate(-1,-1,-1);testClock+=LIVE_STATS_STALE_MS+1;engine.dynamicSkillTimers_.clear();

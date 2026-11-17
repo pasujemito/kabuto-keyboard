@@ -289,14 +289,13 @@ struct AutoPause {
 
 // ---- breaks and rests ---------------------------------------------------------
 // A person stops now and then: a short break after some sets (the pattern's
-// chance), and a longer rest every so often (its timer). Both work on their own.
-// With the screen reader: neither starts while HP reads under BREAK_MIN_HP (a
-// short break is a couple of seconds, so mobs about don't stop it; low health
-// does), and a rest also waits until no mob is in reach (restSafe). A short
-// break still owed after BREAK_OWED_MS is forgotten (the moment has passed); a
-// rest stays owed until it's safe. A rest ends early when a mob comes into
-// reach (restOver): cut before half of it, the remainder is owed again. Not
-// playing for REST_IDLE_MS counts as having rested.
+// chance), and a longer rest every so often (its timer). Both work on their own
+// (timers only). With the screen reader neither ever starts while a mob is in
+// reach or HP reads under BREAK_MIN_HP: while there's something to fight, it
+// fights (restSafe). A short break still owed after BREAK_OWED_MS is forgotten
+// (the moment has passed); a rest stays owed until it's safe. A rest ends early
+// when a mob comes into reach (restOver): cut before half of it, the remainder
+// is owed again. Not playing for REST_IDLE_MS counts as having rested.
 const uint32_t BREAK_OWED_MS = 15000;
 const uint32_t REST_IDLE_MS = 30000;
 const int BREAK_MIN_HP = 400;   // tenths of a percent

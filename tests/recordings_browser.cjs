@@ -194,7 +194,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.getByLabel('Walking: hop every (ms) minimum',{exact:true}).inputValue(),'600');
   await page.getByLabel('Smart mode',{exact:true}).uncheck();await page.getByRole('button',{name:'Default for Smart mode',exact:true}).click();
   assert(await page.getByLabel('Smart mode',{exact:true}).isChecked());
-  assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking \(% of runs\).*0%: off: attacks on the spot.*100%: always on the move.*Default: 60%/s);
+  assert.match(await page.locator('#dynamicMain').textContent(),/Move while attacking \(% of runs\).*0%: off: attacks on the spot.*100%: always on the move.*Default: 50%/s);
   assert.match(await page.locator('#dynamicMain').textContent(),/How often it flips direction \(%\).*0%: always faces the same way.*20%: occasionally flips sides/s);
   assert.match(await page.locator('#dynamicAware').textContent(),/10%: turns 10% from each edge: uses the middle 80% of the map/);
   // Attack off: support only. Everything about fighting greys out and says so; potions and skills don't.
@@ -241,7 +241,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.getByRole('button',{name:'Smooth',exact:true}).click();
   assert.equal(await page.getByLabel('Gap after attack (ms) minimum',{exact:true}).inputValue(),'580');
   await page.getByRole('button',{name:'Natural',exact:true}).click();
-  assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'8');
+  assert.equal(await page.getByLabel('Attacks per set maximum',{exact:true}).inputValue(),'9');
   // Movement keys: Space jumps, X attacks; clashes are refused, and skills can't pick them.
   await page.locator('#dynamicKeysSummary').click();
   await page.getByLabel('Jump key',{exact:true}).selectOption('SPACE');await page.getByLabel('Attack key',{exact:true}).selectOption('SPACE');

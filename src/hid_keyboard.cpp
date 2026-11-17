@@ -95,7 +95,14 @@ void HidKeyboard::begin(const char* deviceName) {
 
 bool HidKeyboard::isConnected() { return connected_; }
 
+bool HidKeyboard::anyHeld() const {
+    if (modifiers_) return true;
+    for (int i = 0; i < 6; i++) if (keys_[i]) return true;
+    return false;
+}
+
 void HidKeyboard::sendKeyReport() {
+    lastChange_ = millis();
     if (!connected_ || !inputKbd_) return;
     uint8_t report[8] = {
         modifiers_, 0x00,

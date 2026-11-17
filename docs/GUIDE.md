@@ -984,36 +984,38 @@ alone). New patterns start as Natural.
 
 | Setting | Natural | Smooth | Flip |
 | --- | --- | --- | --- |
-| Alt down → Ctrl down | 30–95 ms | 75–105 ms | 45–120 ms |
-| Ctrl down → Alt up | 77–135 ms | 60–90 ms | 30–120 ms |
-| Alt up → Ctrl up | 5–57 ms | 40–65 ms | 16–80 ms |
-| Gap after each attack | 535–798 ms | 580–680 ms | 510–700 ms |
-| Direction hold | 180–560 ms | 100–150 ms | 85–150 ms |
+| Alt down → Ctrl down | 24–126 ms | 75–105 ms | 45–120 ms |
+| Ctrl down → Alt up | 66–140 ms | 60–90 ms | 30–120 ms |
+| Alt up → Ctrl up | 2–89 ms | 40–65 ms | 16–80 ms |
+| Gap after each attack | 498–794 ms | 580–680 ms | 510–700 ms |
+| Direction hold | 150–560 ms | 100–150 ms | 85–150 ms |
 | Gap after direction | 16–330 ms | 120–230 ms | 60–200 ms |
-| Attacks per set | 1–8 | 4–7 | 1–3 |
+| Attacks per set | 1–9 | 4–7 | 1–3 |
 | Sets per play | 8–12 | 8–12 | 20–30 |
 | Turn around after a set | 85% | 100% | 95% |
 | Tempo drift | 15% | 5% | 10% |
 
-Natural is fitted to a 3-minute recording of your own play (181
-jump-attacks), with the timing peak at 35%:
+Natural is fitted to both of your recordings together (260 jump-attacks,
+4½ minutes): a steady one (98 s, long runs one way, mostly on the spot) and a
+mobile one (3 min, short runs, moving most of the time). **Steady** and
+**Mobile** are each recording on its own. Timing peak 35% in all three:
 
-| | Your recording | What the pad draws |
-| --- | --- | --- |
-| Alt down → Ctrl down | mean 60 ms, 10–90%: 43–76 | mean 59, 42–78 |
-| Ctrl down → Alt up | mean 104 ms, 89–120 | mean 103, 88–120 |
-| Alt up → Ctrl up | mean 29 ms, 16–45 | mean 29, 15–44 |
-| Gap after an attack (the usual ones) | mean 654 ms, 586–734 | mean 654, 585–731 |
-| Gaps 1.3–2 times as long | 4% | Hesitation 5% |
-| Pauses of 2–4.5 s | 4 in 3 minutes | Short break 10% after a set, 1.5–4.5 s |
-| Attacks before turning the other way | median 3, 1–9 | 1–8 |
-| Turning when pressing an arrow | 83% | Turn chance 85% |
-| Attacks with an arrow held | 64% | Move while attacking 60% of sets |
-| Arrow down before the first jump | median 148 ms, 59–309 | 55–310 ms |
-| Tempo: a slow gap followed by a slow one | lag-1 correlation 0.38 | Tempo drift 15% (≈0.31) |
+| | Steady recording | Mobile recording | Natural draws (both) |
+| --- | --- | --- | --- |
+| Alt down → Ctrl down, mean | 96 ms | 60 ms | 70 ms (24–126) |
+| Ctrl down → Alt up, mean | 89 ms | 104 ms | 100 ms (66–140) |
+| Alt up → Ctrl up, mean | 64 ms | 29 ms | 40 ms (2–89) |
+| Usual gap after an attack, mean | 574 ms | 654 ms | 631 ms (498–794) |
+| Gaps 1.3–2 times as long | 9% | 4% | Hesitation 6% |
+| Attacks before turning | median 10 | median 3 | 1–9 |
+| Turning when pressing an arrow | 58% | 83% | 80% |
+| Attacks with an arrow held | 13% | 64% | Move while attacking 50% |
+| Pauses of 1.4–7 s | 2 | 9 (some for buffs) | Short break 12%, 1.5–5.5 s |
 
-The recorder's timer only measures in ~15 ms steps, so the pad's continuous
-ranges don't copy that. Smooth and Flip are still built on the older ranges.
+The arrow goes down 45–310 ms before the first jump of a moving run (both
+recordings: 47–309, median 134). The recorder's timer only measures in ~15 ms
+steps, so the pad's continuous ranges don't copy that. Smooth and Flip are
+still built on the older ranges.
 
 **Natural rhythm** (2.0) is what keeps a long session from looking the same
 from minute to minute. New patterns have it on; patterns saved before 2.0
@@ -1060,7 +1062,7 @@ correlation of 0.31 and similar slow/fast stretches. The press/release timings
 inside a jump-attack showed no drift in the recording (lag-1 ≈ 0), so they stay
 independent. Patterns saved before drift existed load with 0%.
 
-**Move while attacking** (fluid movement; 60% of sets for new patterns, as in your recorded play, 0 =
+**Move while attacking** (fluid movement; 50% of sets for new patterns, as in your two recordings together, 0 =
 off, which older patterns load with): in that share of sets the arrow stays
 held through the jump-attacks, so you drift through the air attacking the way
 you face, as a player holding the arrow does, instead of jumping on the spot.

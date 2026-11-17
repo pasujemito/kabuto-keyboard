@@ -149,6 +149,9 @@ enum class EngineCmd : uint8_t {
 };
 
 // ---------------------------------------------------------------------------
+// When the playing task last ticked (millis); the main loop's key guard watches it.
+extern volatile uint32_t g_engineTick;
+
 class MacroEngine {
 public:
     void begin();
@@ -176,6 +179,7 @@ public:
     // Stop whatever macro is running.
     void stopAll();
     bool isRunning() const { return running_; }
+    void requestStop() { stopFlag_ = true; }   // safe from another task: the playing one winds down at its next wait
     // The macro task's stack: its size, and the least ever left free while playing (bytes; 0
     // until something has played). The dynamic pattern's step function is big and nests (a
     // button's recording, the pattern, its key presses, and once more when an arrow is let go of

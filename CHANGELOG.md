@@ -28,19 +28,23 @@ and show up in the pad's **Updates** panel.
   home showed nothing until you started one. Now every answer carries this
   map's Set home, playing or not: the line appears within a couple of
   seconds of pressing it and stays where it is
-- 🎯 **Natural refitted to your own play**: a 3-minute recording of yours
-  (181 jump-attacks) plays very differently from the "Sample gameplay"
-  the preset was built on: a quicker jump → attack (60 ms against 96), a
-  longer attack hold (104 against 89), Alt and Ctrl let go almost together
-  (29 against 64), a slower gap between attacks (654 against 574), short runs
-  with frequent turns (median 3 attacks before turning, 83% of arrow presses
-  turn), and an arrow held for 64% of attacks. New patterns and the Natural
-  preset now draw: jump → attack 30–95 ms, attack → jump up 77–135, jump up
-  → attack up 5–57, gap 535–798, 1–8 attacks per run, turn 85%, Move while
-  attacking 60% (the arrow down 55–310 ms before the first jump, as yours
-  was), hesitation 5%, short breaks 10% after a run for 1.5–4.5 s. Every
-  mean sits within 2 ms of yours (table in the guide). Saved patterns don't
-  change: pick **Start from → Natural** to take it up
+- 🎯 **Natural fitted to both of your recordings** (260 jump-attacks): the
+  steady one (98 s: long runs one way, mostly on the spot, jump → attack
+  96 ms) and the mobile one (3 min: median 3 attacks before turning, an
+  arrow held for 64% of attacks, jump → attack 60 ms). Natural draws from
+  both together: jump → attack 24–126 ms, attack → jump up 66–140, jump up →
+  attack up 2–89, gap 498–794, 1–9 attacks per run, turn 80%, Move while
+  attacking 50% (arrow down 45–310 ms before the first jump, as yours was),
+  hesitation 6%, short breaks 12% after a run for 1.5–5.5 s. Two new
+  presets are each recording on its own: **Steady** and **Mobile** (Start
+  from also sets Move while attacking for these). Comparison table in the
+  guide. Saved patterns don't change: pick a preset to take it up
+- 🛡 **Key guard**: a check on the pad's main loop, separate from playback,
+  that can't be stuck by it. If playback stops responding for 3 s while a
+  key is held, it lets go of every key and stops playback; if nothing is
+  playing and a key has been held unchanged for 5 s, it lets go of it. With
+  the stack fix and the release after every reconnect, that's three
+  separate ways a key can no longer stay down on your PC
 - 🧪 Scenarios: "keeps attacking: never more than 4 s with a mob in reach and
   no attack" no longer counts a deliberate short break as idling. With your
   pauses (up to 4.5 s, as in your play) it would otherwise fail by design;

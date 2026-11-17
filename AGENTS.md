@@ -25,6 +25,7 @@ firmware updates from this repo's GitHub releases.
 | `src/update_logic.h` | version/payload/rollback rules (pure) |
 | `src/live_stats.*` | latest readings from the PC (bars, game state incl. the test popup, minimap x/y and map position, mob sides/counts/distances, map name) and what a playing pattern is doing (dashboard) |
 | `src/stats_logic.h` | XP rate, live potions, stop reasons, notifications, edge/mob facing, stuck, smart decisions, auto-pause, breaks and rests, mob-driven sets, session cap (pure) |
+| `src/key_guard.h` | the main loop's last line of defence: nothing stays held when playback hangs or ends (pure) |
 | `src/config.h` | pins, base `FIRMWARE_VERSION`, `UPDATE_REPO` |
 | `web/index.html` | the whole web UI, one file, embedded at build time |
 | `data/macros.json` | example config, only flashed by `uploadfs` |
@@ -46,6 +47,7 @@ g++ -std=c++11 -Wall -Wextra -Werror tests/dynamic_pattern.cpp -o /tmp/t && /tmp
 g++ -std=c++11 -Wall -Wextra -Werror tests/update_logic.cpp -o /tmp/t && /tmp/t
 g++ -std=c++11 -Wall -Wextra -Werror tests/access_logic.cpp -o /tmp/t && /tmp/t
 g++ -std=c++11 -Wall -Wextra -Werror tests/stats_logic.cpp -o /tmp/t && /tmp/t
+g++ -std=c++11 -Wall -Wextra -Werror tests/key_guard.cpp -o /tmp/t && /tmp/t
 g++ -std=c++11 -Wall -Wextra -Werror -I tests/stubs tests/workflow_engine.cpp src/macro_engine.cpp src/live_stats.cpp -o /tmp/t && /tmp/t
 python3 tools/next_version.py --selftest && python3 tools/release_index.py --selftest
 ```

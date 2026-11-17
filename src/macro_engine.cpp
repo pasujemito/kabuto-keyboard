@@ -34,10 +34,13 @@ void Config::ensureLayer(size_t n) {
 }
 
 // --- interruptible delay ---------------------------------------------------
+// The playing task's heartbeat for the key guard (key_guard.h): every wait ticks it.
+volatile uint32_t g_engineTick = 0;
 static void sleepMs(uint32_t ms, volatile bool& stop) {
     const uint32_t chunk = 5;
     uint32_t started = millis();
     while (true) {
+        g_engineTick = millis();
         uint32_t elapsed = millis() - started;
         if (stop || elapsed >= ms) return;
         uint32_t remaining = ms - elapsed;
@@ -636,7 +639,7 @@ void MacroEngine::executeSteps(const std::vector<Step>& steps, volatile bool& st
                 // (a quick jump) after each walk_hold, as a player walks. The arrow
                 // is let go when the walk ends: to attack, wait or turn round.
                 const DynamicRange WALK_JUMP_HOLD{60,140};
-                const DynamicRange GLIDE_RUN_UP{55,310};   // gliding: arrow down this long before the first jump (recorded play: 59-309 ms, median 148)
+                const DynamicRange GLIDE_RUN_UP{45,310};   // gliding: arrow down this long before the first jump (recorded play: 47-309 ms, median 134)
                 DynamicKey walking;   // the arrow held (empty: none)
                 auto stopWalking=[&]{
                     if(walking.empty())return;
@@ -1145,6 +1148,7 @@ void MacroEngine::runMacro(const KeyBinding& kb) {
 
 void MacroEngine::taskTrampoline(void* arg) {
     MacroEngine* self = static_cast<MacroEngine*>(arg);
+    g_engineTick = millis();
     self->running_ = true;
     self->runMacro(self->activeBinding_);
     {uint32_t left = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);   // the least this run ever had left
